@@ -1,6 +1,6 @@
 # AstraNova Client
 
-![AstraNova Logo](assets/logo-bg.png){width=200px}
+![AstraNova Logo](assets/logo-bg.png){width=150px}
 
 AstraNova Client is a desktop application built with Rust and Iced, designed to provide a user-friendly interface for making HTTP requests. It allows users to specify URLs, HTTP methods, headers, and request bodies, and then displays the response.
 
