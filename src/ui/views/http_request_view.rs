@@ -1,5 +1,7 @@
 use iced::{widget::{column, row, text_input, button, text, scrollable, image::{self, Handle}, container, pick_list}, Element};
 
+const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
+
 static HTTP_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 #[derive(Debug, Clone)]
@@ -171,7 +173,7 @@ Method: {method}"#,
         };
 
         column![
-            image::Image::new(Handle::from_path("assets/logo-bg.png")).width(iced::Length::Fixed(100.0)).height(iced::Length::Fixed(100.0)),
+            image::Image::new(Handle::from_memory(LOGO_BG_BYTES.to_vec())).width(iced::Length::Fixed(100.0)).height(iced::Length::Fixed(100.0)),
             row![
                 text_input("URL", &self.url_input)
                     .on_input(Message::UrlInputChanged)
