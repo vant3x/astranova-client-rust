@@ -21,11 +21,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/your-username/astranova-client.git
+    git clone https://github.com/vant3/astranova-client.git
     cd astranova-client
     ```
-
-    *(Note: Replace `https://github.com/your-username/astranova-client.git` with the actual repository URL if it's hosted elsewhere.)*
 
 2.  **Run the application:**
 
