@@ -17,3 +17,12 @@ http = "1.0.0"
 
 image = "0.25.1"
 arboard = "3.2.0"
+
+[package.metadata.bundle]
+name = "AstraNova"
+identifier = "com.astranova.client"
+icon = ["assets/icon.png"]
+version = "0.1.0"
+copyright = "Copyright (C) AstraNova 2025"
+category = "Developer Tool"
+short_description = "A simple HTTP client."
