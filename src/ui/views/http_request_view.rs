@@ -1,4 +1,5 @@
-use iced::{widget::{column, row, text_input, button, text, scrollable, image::{self, Handle}, container}, Element};
+use iced::{widget::{column, row, text_input, button, text, scrollable, image::{self, Handle}, container}, Element, advanced::Widget};
+
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -8,6 +9,7 @@ pub enum Message {
     BodyInputChanged(String),
     SendRequest,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
+    CopyResponse,
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +26,8 @@ pub struct HttpRequestView {
     pub headers_input: String,
     pub body_input: String,
     request_status: RequestStatus,
+    pub status_code: Option<u16>, // New field
+    pub content_type: Option<String>, // New field
 }
 
 impl HttpRequestView {
@@ -34,6 +38,8 @@ impl HttpRequestView {
             headers_input: "".to_string(),
             body_input: "".to_string(),
             request_status: RequestStatus::Idle,
+            status_code: None, // Initialize
+            content_type: None, // Initialize
         }
     }
 
@@ -53,26 +59,63 @@ impl HttpRequestView {
             }
             Message::SendRequest => {
                 self.request_status = RequestStatus::Loading;
+                self.status_code = None; // Clear on new request
+                self.content_type = None; // Clear on new request
             }
             Message::ResponseReceived(result) => {
                 match result {
                     Ok(response) => {
-                        self.request_status = RequestStatus::Success(format!(r#"Status: {}\nHeaders: {:#?}\nBody: {}"#,
-                            response.status,
-                            response.headers,
-                            response.body,
+                        self.status_code = Some(response.status); // Update status code
+                        let content_type = response.headers.iter()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        self.content_type = Some(content_type.clone()); // Update content type
+
+                        let formatted_body = if content_type.contains("application/json") {
+                            match serde_json::from_str::<serde_json::Value>(&response.body) {
+                                Ok(json_value) => {
+                                    match serde_json::to_string_pretty(&json_value) {
+                                        Ok(pretty_json) => pretty_json,
+                                        Err(_) => response.body.clone(), 
+                                    }
+                                },
+                                Err(_) => response.body.clone(),
+                            }
+                        } else {
+                            response.body.clone()
+                        };
+
+                        self.request_status = RequestStatus::Success(format!(
+                            r#"Headers: {headers:#?}
+
+Body: {body}"#, // Added "Body: " prefix
+                            headers = response.headers,
+                            body = formatted_body,
                         ));
                     }
                     Err(e) => {
                         self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                        self.status_code = None; // Clear on error
+                        self.content_type = None; // Clear on error
                     }
                 }
             }
+            Message::CopyResponse => {
+                if let RequestStatus::Success(response_text) = &self.request_status {
+                    let mut clipboard = arboard::Clipboard::new().unwrap();
+                    clipboard.set_text(response_text.clone()).unwrap();
+                } else if let RequestStatus::Error(error_message) = &self.request_status {
+                    let mut clipboard = arboard::Clipboard::new().unwrap();
+                    clipboard.set_text(error_message.clone()).unwrap();
+                }
+            }
+            
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let response_content = match &self.request_status {
+        let response_content_widget = match &self.request_status {
             RequestStatus::Idle => {
                 let content = container(
                     text("Enter URL and send request.")
@@ -97,6 +140,33 @@ impl HttpRequestView {
                 .width(iced::Length::Fill)
                 .height(iced::Length::Fill)
                 .into(),
+        };
+
+        let copy_button = if let RequestStatus::Success(response_text) = &self.request_status {
+            let btn = button("Copy").on_press(Message::CopyResponse);
+            Element::new(btn)
+        } else if let RequestStatus::Error(error_message) = &self.request_status {
+            let btn = button("Copy").on_press(Message::CopyResponse);
+            Element::new(btn)
+        } else {
+            column![].into()
+        };
+
+        let response_area = container(response_content_widget)
+            .width(iced::Length::Fill)
+            .height(iced::Length::Fill)
+            ;
+
+        let status_code_text = if let Some(code) = self.status_code {
+            text(format!("Status: {}", code)).size(16)
+        } else {
+            text("Status: N/A").size(16)
+        };
+
+        let content_type_text = if let Some(ctype) = &self.content_type {
+            text(format!("Content-Type: {}", ctype)).size(16)
+        } else {
+            text("Content-Type: N/A").size(16)
         };
 
         column![
@@ -131,7 +201,18 @@ impl HttpRequestView {
             ]
             .spacing(10)
             .padding(10),
-            response_content
+            row![
+                status_code_text,
+                content_type_text,
+            ]
+            .spacing(10)
+            .padding(10),
+            row![
+                response_area,
+                copy_button,
+            ]
+            .spacing(10)
+            .padding(10),
         ]
         .into()
     }
