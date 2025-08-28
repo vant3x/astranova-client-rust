@@ -1,5 +1,6 @@
-use iced::{widget::{column, row, text_input, button, text, scrollable, image::{self, Handle}, container}, Element, advanced::Widget};
+use iced::{widget::{column, row, text_input, button, text, scrollable, image::{self, Handle}, container, pick_list}, Element};
 
+static HTTP_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -26,8 +27,8 @@ pub struct HttpRequestView {
     pub headers_input: String,
     pub body_input: String,
     request_status: RequestStatus,
-    pub status_code: Option<u16>, // New field
-    pub content_type: Option<String>, // New field
+    pub status_code: Option<u16>,
+    pub content_type: Option<String>,
 }
 
 impl HttpRequestView {
@@ -38,8 +39,8 @@ impl HttpRequestView {
             headers_input: "".to_string(),
             body_input: "".to_string(),
             request_status: RequestStatus::Idle,
-            status_code: None, // Initialize
-            content_type: None, // Initialize
+            status_code: None,
+            content_type: None,
         }
     }
 
@@ -59,18 +60,18 @@ impl HttpRequestView {
             }
             Message::SendRequest => {
                 self.request_status = RequestStatus::Loading;
-                self.status_code = None; // Clear on new request
-                self.content_type = None; // Clear on new request
+                self.status_code = None;
+                self.content_type = None;
             }
             Message::ResponseReceived(result) => {
                 match result {
                     Ok(response) => {
-                        self.status_code = Some(response.status); // Update status code
+                        self.status_code = Some(response.status);
                         let content_type = response.headers.iter()
                             .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
                             .map(|(_, v)| v.clone())
                             .unwrap_or_else(|| "unknown".to_string());
-                        self.content_type = Some(content_type.clone()); // Update content type
+                        self.content_type = Some(content_type.clone());
 
                         let formatted_body = if content_type.contains("application/json") {
                             match serde_json::from_str::<serde_json::Value>(&response.body) {
@@ -89,15 +90,15 @@ impl HttpRequestView {
                         self.request_status = RequestStatus::Success(format!(
                             r#"Headers: {headers:#?}
 
-Body: {body}"#, // Added "Body: " prefix
+Body: {body}"#,
                             headers = response.headers,
                             body = formatted_body,
                         ));
                     }
                     Err(e) => {
                         self.request_status = RequestStatus::Error(format!("Error: {}", e));
-                        self.status_code = None; // Clear on error
-                        self.content_type = None; // Clear on error
+                        self.status_code = None;
+                        self.content_type = None;
                     }
                 }
             }
@@ -110,7 +111,6 @@ Body: {body}"#, // Added "Body: " prefix
                     clipboard.set_text(error_message.clone()).unwrap();
                 }
             }
-            
         }
     }
 
@@ -142,20 +142,15 @@ Body: {body}"#, // Added "Body: " prefix
                 .into(),
         };
 
-        let copy_button = if let RequestStatus::Success(response_text) = &self.request_status {
-            let btn = button("Copy").on_press(Message::CopyResponse);
-            Element::new(btn)
-        } else if let RequestStatus::Error(error_message) = &self.request_status {
-            let btn = button("Copy").on_press(Message::CopyResponse);
-            Element::new(btn)
+        let copy_button = if matches!(self.request_status, RequestStatus::Success(_) | RequestStatus::Error(_)) {
+            Element::new(button("Copy").on_press(Message::CopyResponse))
         } else {
-            column![].into()
+            Element::from(column![])
         };
 
         let response_area = container(response_content_widget)
             .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            ;
+            .height(iced::Length::Fill);
 
         let status_code_text = if let Some(code) = self.status_code {
             text(format!("Status: {}", code)).size(16)
@@ -176,10 +171,11 @@ Body: {body}"#, // Added "Body: " prefix
                     .on_input(Message::UrlInputChanged)
                     .padding(10)
                     .width(iced::Length::Fill),
-                button("GET").on_press(Message::MethodSelected("GET".to_string())),
-                button("POST").on_press(Message::MethodSelected("POST".to_string())),
-                button("PUT").on_press(Message::MethodSelected("PUT".to_string())),
-                button("DELETE").on_press(Message::MethodSelected("DELETE".to_string())),
+                pick_list(
+                    &HTTP_METHODS[..],
+                    Some(self.method.as_str()),
+                    |s| Message::MethodSelected(s.to_string()),
+                ),
                 button("Send").on_press(Message::SendRequest)
             ]
             .spacing(10)
@@ -196,8 +192,7 @@ Body: {body}"#, // Added "Body: " prefix
                 text_input("Request Body", &self.body_input)
                     .on_input(Message::BodyInputChanged)
                     .padding(10)
-                    .width(iced::Length::Fill)
-                    .line_height(2.0),
+                    .width(iced::Length::Fill),
             ]
             .spacing(10)
             .padding(10),
