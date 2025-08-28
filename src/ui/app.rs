@@ -57,8 +57,21 @@ impl Application for AstraNovaApp {
                         let request = HttpRequest {
                             method: self.http_request_view.method.clone(),
                             url: self.http_request_view.url_input.clone(),
-                            headers: Vec::new(), // TODO: Add headers input
-                            body: None, // TODO: Add body input
+                            headers: self.http_request_view.headers_input.split(',')
+                                .filter_map(|s| {
+                                    let parts: Vec<&str> = s.splitn(2, ':').collect();
+                                    if parts.len() == 2 {
+                                        Some((parts[0].trim().to_string(), parts[1].trim().to_string()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                            body: if self.http_request_view.body_input.is_empty() {
+                                None
+                            } else {
+                                Some(self.http_request_view.body_input.clone())
+                            },
                         };
                         return Command::perform(async move {
                             let result = client::send_request(request).await;

@@ -4,6 +4,8 @@ use iced::{widget::{column, row, text_input, button, text, scrollable, image::{s
 pub enum Message {
     UrlInputChanged(String),
     MethodSelected(String),
+    HeadersInputChanged(String),
+    BodyInputChanged(String),
     SendRequest,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
 }
@@ -19,6 +21,8 @@ pub enum RequestStatus {
 pub struct HttpRequestView {
     pub url_input: String,
     pub method: String,
+    pub headers_input: String,
+    pub body_input: String,
     request_status: RequestStatus,
 }
 
@@ -27,6 +31,8 @@ impl HttpRequestView {
         Self {
             url_input: "https://jsonplaceholder.typicode.com/todos/1".to_string(),
             method: "GET".to_string(),
+            headers_input: "".to_string(),
+            body_input: "".to_string(),
             request_status: RequestStatus::Idle,
         }
     }
@@ -38,6 +44,12 @@ impl HttpRequestView {
             }
             Message::MethodSelected(method) => {
                 self.method = method;
+            }
+            Message::HeadersInputChanged(headers) => {
+                self.headers_input = headers;
+            }
+            Message::BodyInputChanged(body) => {
+                self.body_input = body;
             }
             Message::SendRequest => {
                 self.request_status = RequestStatus::Loading;
@@ -99,6 +111,23 @@ impl HttpRequestView {
                 button("PUT").on_press(Message::MethodSelected("PUT".to_string())),
                 button("DELETE").on_press(Message::MethodSelected("DELETE".to_string())),
                 button("Send").on_press(Message::SendRequest)
+            ]
+            .spacing(10)
+            .padding(10),
+            row![
+                text_input("Headers (e.g., Content-Type: application/json)", &self.headers_input)
+                    .on_input(Message::HeadersInputChanged)
+                    .padding(10)
+                    .width(iced::Length::Fill),
+            ]
+            .spacing(10)
+            .padding(10),
+            row![
+                text_input("Request Body", &self.body_input)
+                    .on_input(Message::BodyInputChanged)
+                    .padding(10)
+                    .width(iced::Length::Fill)
+                    .line_height(2.0),
             ]
             .spacing(10)
             .padding(10),
