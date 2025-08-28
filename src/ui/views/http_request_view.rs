@@ -90,9 +90,15 @@ impl HttpRequestView {
                         self.request_status = RequestStatus::Success(format!(
                             r#"Headers: {headers:#?}
 
-Body: {body}"#,
+Body: {body}
+
+--------------------
+URL: {url}
+Method: {method}"#,
                             headers = response.headers,
                             body = formatted_body,
+                            url = response.url,
+                            method = response.method,
                         ));
                     }
                     Err(e) => {
