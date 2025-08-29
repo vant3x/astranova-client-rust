@@ -35,5 +35,15 @@ pub async fn send_request(request: HttpRequest) -> Result<HttpResponse, String> 
     let body_read_duration = body_start_time.elapsed();
     println!("[HTTP_CLIENT] Body read completed in: {:?}", body_read_duration);
 
-    Ok(HttpResponse { url: url_for_log, method: method_for_log, status, headers, body })
+    let size = body.len() as u64;
+
+    Ok(HttpResponse {
+        url: url_for_log,
+        method: method_for_log,
+        status,
+        headers,
+        body,
+        duration: network_duration,
+        size,
+    })
 }

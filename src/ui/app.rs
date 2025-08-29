@@ -57,15 +57,9 @@ impl Application for AstraNovaApp {
                         let request = HttpRequest {
                             method: self.http_request_view.method.clone(),
                             url: self.http_request_view.url_input.clone(),
-                            headers: self.http_request_view.headers_input.split(',')
-                                .filter_map(|s| {
-                                    let parts: Vec<&str> = s.splitn(2, ':').collect();
-                                    if parts.len() == 2 {
-                                        Some((parts[0].trim().to_string(), parts[1].trim().to_string()))
-                                    } else {
-                                        None
-                                    }
-                                })
+                            headers: self.http_request_view.headers_editor.entries.iter()
+                                .filter(|h| !h.key.is_empty())
+                                .map(|h| (h.key.clone(), h.value.clone()))
                                 .collect(),
                             body: if self.http_request_view.body_input.is_empty() {
                                 None
