@@ -21,6 +21,7 @@ pub enum Message {
     MethodSelected(String),
     RequestTabSelected(RequestTabId),
     HeadersEditorMessage(key_value_editor::Message),
+    ParamsEditorMessage(key_value_editor::Message),
     BodyInputChanged(String),
     SendRequest,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
@@ -40,6 +41,7 @@ pub struct HttpRequestView {
     pub method: String,
     pub body_input: String,
     pub headers_editor: KeyValueEditor,
+    pub params_editor: KeyValueEditor,
     active_request_tab: RequestTabId,
     request_status: RequestStatus,
     pub status_code: Option<u16>,
@@ -55,6 +57,7 @@ impl HttpRequestView {
             method: "GET".to_string(),
             body_input: "".to_string(),
             headers_editor: KeyValueEditor::new(),
+            params_editor: KeyValueEditor::new(),
             active_request_tab: RequestTabId::Body,
             request_status: RequestStatus::Idle,
             status_code: None,
@@ -70,6 +73,7 @@ impl HttpRequestView {
             Message::MethodSelected(method) => self.method = method,
             Message::RequestTabSelected(tab_id) => self.active_request_tab = tab_id,
             Message::HeadersEditorMessage(msg) => self.headers_editor.update(msg),
+            Message::ParamsEditorMessage(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(body) => self.body_input = body,
             Message::SendRequest => {
                 self.request_status = RequestStatus::Loading;
@@ -142,7 +146,7 @@ Method: {method}"#,
             .set_active_tab(&self.active_request_tab)
             .push(RequestTabId::Body, TabLabel::Text("Body".to_string()), text_input("Request Body", &self.body_input).on_input(Message::BodyInputChanged).padding(10))
             .push(RequestTabId::Headers, TabLabel::Text("Headers".to_string()), self.headers_editor.view().map(Message::HeadersEditorMessage))
-            .push(RequestTabId::Params, TabLabel::Text("Params".to_string()), text("Params not implemented yet"));
+            .push(RequestTabId::Params, TabLabel::Text("Params".to_string()), self.params_editor.view().map(Message::ParamsEditorMessage));
 
         let response_area: Element<Message> = match &self.request_status {
             RequestStatus::Idle => container(text("Enter URL and send request."))
@@ -190,6 +194,8 @@ Method: {method}"#,
             ].spacing(10).padding(10),
             
             request_tabs,
+
+            text(format!("Debug: Active Tab is {:?}", self.active_request_tab)),
 
             Rule::horizontal(10),
 

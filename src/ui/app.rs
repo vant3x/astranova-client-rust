@@ -54,9 +54,28 @@ impl Application for AstraNovaApp {
             Message::HttpRequestViewMessage(msg) => {
                 match msg {
                     http_request_view::Message::SendRequest => {
+                        let base_url = self.http_request_view.url_input.clone();
+                        let params: Vec<(String, String)> = self.http_request_view.params_editor.entries.iter()
+                            .filter(|p| !p.key.is_empty())
+                            .map(|p| (p.key.clone(), p.value.clone()))
+                            .collect();
+
+                        let query_string = params.iter()
+                            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+                            .collect::<Vec<String>>()
+                            .join("&");
+
+                        let final_url = if query_string.is_empty() {
+                            base_url
+                        } else if base_url.contains('?') {
+                            format!("{}&{}", base_url, query_string)
+                        } else {
+                            format!("{}?{}", base_url, query_string)
+                        };
+
                         let request = HttpRequest {
                             method: self.http_request_view.method.clone(),
-                            url: self.http_request_view.url_input.clone(),
+                            url: final_url,
                             headers: self.http_request_view.headers_editor.entries.iter()
                                 .filter(|h| !h.key.is_empty())
                                 .map(|h| (h.key.clone(), h.value.clone()))
