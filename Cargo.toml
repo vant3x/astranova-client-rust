@@ -9,6 +9,7 @@ edition = "2021"
 iced = { version = "0.13.1", features = ["wgpu", "tiny-skia", "image", "tokio"] }
 iced_aw = { version = "0.12.2", features = ["tabs"] }
 
+
 bytes = "1.0.0"
 tokio = { version = "1.38.0", features = ["full"] }
 reqwest = { version = "0.12.5", features = ["json"] }

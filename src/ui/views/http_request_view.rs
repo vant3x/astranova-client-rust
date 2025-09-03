@@ -1,7 +1,8 @@
-use iced::{widget::{column, row, text_input, button, text, scrollable, container, pick_list, Rule}, Element, Alignment, Length};
+
+use iced::{widget::{column, row, text_input, button, text, scrollable, container, pick_list, Rule}, Element, Alignment, Length, Theme, Renderer};
 use iced::widget::image::{Handle, Image};
 use bytes::Bytes;
-use iced_aw::{TabLabel, Tabs};
+
 use std::time::Duration;
 
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
@@ -145,15 +146,27 @@ Method: {method}"#,                            headers = response.headers,      
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let body_tab = container(text_input("Request Body", &self.body_input).on_input(Message::BodyInputChanged).padding(10));
-        let headers_tab = container(self.headers_editor.view().map(Message::HeadersEditorMessage));
-        let params_tab = container(self.params_editor.view().map(Message::ParamsEditorMessage));
+        
 
-        let request_tabs = Tabs::new(Message::RequestTabSelected)
-            .set_active_tab(&self.active_request_tab)
-            .push(TAB_BODY, TabLabel::Text("Body".to_string()), body_tab)
-            .push(TAB_HEADERS, TabLabel::Text("Headers".to_string()), headers_tab)
-            .push(TAB_PARAMS, TabLabel::Text("Params".to_string()), params_tab);
+        let tab_buttons = row![
+            button(text("Body"))
+                .on_press(Message::RequestTabSelected(TAB_BODY))
+                .padding(10),
+            button(text("Headers"))
+                .on_press(Message::RequestTabSelected(TAB_HEADERS))
+                .padding(10),
+            button(text("Params"))
+                .on_press(Message::RequestTabSelected(TAB_PARAMS))
+                .padding(10),
+        ]
+        .spacing(10);
+
+        let tab_content: Element<'_, Message> = match self.active_request_tab {
+            TAB_BODY => container(text_input("Request Body", &self.body_input).on_input(Message::BodyInputChanged).padding(10)).into(),
+            TAB_HEADERS => container(self.headers_editor.view().map(Message::HeadersEditorMessage)).into(),
+            TAB_PARAMS => container(self.params_editor.view().map(Message::ParamsEditorMessage)).into(),
+            _ => container(text("Error: Unknown tab")).into(),
+        };
 
         let response_area: Element<Message> = match &self.request_status {
             RequestStatus::Idle => container(text("Enter URL and send request."))
@@ -200,7 +213,8 @@ Method: {method}"#,                            headers = response.headers,      
                 button("Send").on_press(Message::SendRequest)
             ].spacing(10).padding(10),
             
-            request_tabs,
+            tab_buttons,
+            tab_content,
 
             Rule::horizontal(10),
 
