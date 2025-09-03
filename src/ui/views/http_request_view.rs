@@ -60,7 +60,7 @@ pub struct HttpRequestView {
 impl Default for HttpRequestView {
     fn default() -> Self {
         Self {
-            url_input: String::new(),
+            url_input: "https://jsonplaceholder.typicode.com/todos/1".to_string(),
             method: "GET",
             body_input: String::new(),
             headers_editor: KeyValueEditor::default(),

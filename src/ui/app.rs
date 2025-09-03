@@ -74,3 +74,4 @@ fn view(app: &AstraNovaApp) -> Element<'_, Message> {
     ]
     .into()
 }
+
