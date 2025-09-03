@@ -31,13 +31,16 @@ pub enum Message {
     RemoveEntry(usize),
 }
 
-impl KeyValueEditor {
-    pub fn new() -> Self {
+impl Default for KeyValueEditor {
+    fn default() -> Self {
         Self {
             entries: vec![KeyValueEntry::new(0)],
             next_id: 1,
         }
     }
+}
+
+impl KeyValueEditor {
 
     pub fn update(&mut self, message: Message) {
         match message {

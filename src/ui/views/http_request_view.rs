@@ -1,4 +1,6 @@
-use iced::{widget::{column, row, text_input, button, text, scrollable, image::{self, Handle}, container, pick_list, Rule}, Element, Alignment};
+use iced::{widget::{column, row, text_input, button, text, scrollable, container, pick_list, Rule}, Element, Alignment, Length};
+use iced::widget::image::{Handle, Image};
+use bytes::Bytes;
 use iced_aw::{TabLabel, Tabs};
 use std::time::Duration;
 
@@ -6,20 +8,18 @@ use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 
 const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
 
-static HTTP_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+static HTTP_METHODS: [&'static str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RequestTabId {
-    Body,
-    Headers,
-    Params,
-}
+// Tab IDs as constants
+const TAB_BODY: usize = 0;
+const TAB_HEADERS: usize = 1;
+const TAB_PARAMS: usize = 2;
 
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
-    MethodSelected(String),
-    RequestTabSelected(RequestTabId),
+    MethodSelected(&'static str),
+    RequestTabSelected(usize),
     HeadersEditorMessage(key_value_editor::Message),
     ParamsEditorMessage(key_value_editor::Message),
     BodyInputChanged(String),
@@ -36,13 +36,20 @@ pub enum RequestStatus {
     Error(String),
 }
 
+impl Default for RequestStatus {
+    fn default() -> Self {
+        RequestStatus::Idle
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct HttpRequestView {
     pub url_input: String,
-    pub method: String,
+    pub method: &'static str,
     pub body_input: String,
     pub headers_editor: KeyValueEditor,
     pub params_editor: KeyValueEditor,
-    active_request_tab: RequestTabId,
+    active_request_tab: usize,
     request_status: RequestStatus,
     pub status_code: Option<u16>,
     pub content_type: Option<String>,
@@ -50,15 +57,15 @@ pub struct HttpRequestView {
     pub response_size: Option<u64>,
 }
 
-impl HttpRequestView {
-    pub fn new() -> Self {
+impl Default for HttpRequestView {
+    fn default() -> Self {
         Self {
-            url_input: "https://jsonplaceholder.typicode.com/todos/1".to_string(),
-            method: "GET".to_string(),
-            body_input: "".to_string(),
-            headers_editor: KeyValueEditor::new(),
-            params_editor: KeyValueEditor::new(),
-            active_request_tab: RequestTabId::Body,
+            url_input: String::new(),
+            method: "GET",
+            body_input: String::new(),
+            headers_editor: KeyValueEditor::default(),
+            params_editor: KeyValueEditor::default(),
+            active_request_tab: 0,
             request_status: RequestStatus::Idle,
             status_code: None,
             content_type: None,
@@ -66,7 +73,9 @@ impl HttpRequestView {
             response_size: None,
         }
     }
+}
 
+impl HttpRequestView {
     pub fn update(&mut self, message: Message) {
         match message {
             Message::UrlInputChanged(url) => self.url_input = url,
@@ -103,19 +112,13 @@ impl HttpRequestView {
                             response.body.clone()
                         };
 
-                        self.request_status = RequestStatus::Success(format!(
-                            r#"Headers: {headers:#?}
+                        self.request_status = RequestStatus::Success(format!(                            r#"Headers: {headers:#?}
 
 Body: {body}
 
 --------------------
 URL: {url}
-Method: {method}"#,
-                            headers = response.headers,
-                            body = formatted_body,
-                            url = response.url,
-                            method = response.method,
-                        ));
+Method: {method}"#,                            headers = response.headers,                            body = formatted_body,                            url = response.url,                            method = response.method,                        ));
                     }
                     Err(e) => {
                         self.request_status = RequestStatus::Error(format!("Error: {}", e));
@@ -142,60 +145,62 @@ Method: {method}"#,
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        let body_tab = container(text_input("Request Body", &self.body_input).on_input(Message::BodyInputChanged).padding(10));
+        let headers_tab = container(self.headers_editor.view().map(Message::HeadersEditorMessage));
+        let params_tab = container(self.params_editor.view().map(Message::ParamsEditorMessage));
+
         let request_tabs = Tabs::new(Message::RequestTabSelected)
             .set_active_tab(&self.active_request_tab)
-            .push(RequestTabId::Body, TabLabel::Text("Body".to_string()), text_input("Request Body", &self.body_input).on_input(Message::BodyInputChanged).padding(10))
-            .push(RequestTabId::Headers, TabLabel::Text("Headers".to_string()), self.headers_editor.view().map(Message::HeadersEditorMessage))
-            .push(RequestTabId::Params, TabLabel::Text("Params".to_string()), self.params_editor.view().map(Message::ParamsEditorMessage));
+            .push(TAB_BODY, TabLabel::Text("Body".to_string()), body_tab)
+            .push(TAB_HEADERS, TabLabel::Text("Headers".to_string()), headers_tab)
+            .push(TAB_PARAMS, TabLabel::Text("Params".to_string()), params_tab);
 
         let response_area: Element<Message> = match &self.request_status {
             RequestStatus::Idle => container(text("Enter URL and send request."))
-                .width(iced::Length::Fill)
-                .height(iced::Length::Fill)
-                .center_x()
-                .center_y()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
                 .into(),
             RequestStatus::Loading => container(text("Loading..."))
-                .width(iced::Length::Fill)
-                .height(iced::Length::Fill)
-                .center_x()
-                .center_y()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
                 .into(),
             RequestStatus::Success(response_text) => container(scrollable(text(response_text)))
-                .width(iced::Length::Fill)
-                .height(iced::Length::Fill)
+                .width(Length::Fill)
+                .height(Length::Fill)
                 .into(),
             RequestStatus::Error(error_message) => container(text(format!("Error: {}", error_message)))
-                .width(iced::Length::Fill)
-                .height(iced::Length::Fill)
-                .center_x()
-                .center_y()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
                 .into(),
         };
 
         let copy_button = if matches!(self.request_status, RequestStatus::Success(_) | RequestStatus::Error(_)) {
-            button("Copy").on_press(Message::CopyResponse).into()
+            Element::from(button("Copy").on_press(Message::CopyResponse))
         } else {
             Element::from(column![])
         };
 
         let status_code_text = text(format!("Status: {}", self.status_code.map(|s| s.to_string()).unwrap_or_else(|| "N/A".to_string()))).size(16);
         let content_type_text = text(format!("Content-Type: {}", self.content_type.as_deref().unwrap_or("N/A"))).size(16);
-        let duration_text = text(format!("Time: {}", self.response_duration.map(|d| format!("{}ms", d.as_millis())).unwrap_or_else(|| "N/A".to_string()))).size(16);
-        let size_text = text(format!("Size: {}", self.response_size.map(|s| format!("{} B", s)).unwrap_or_else(|| "N/A".to_string()))).size(16);
+        let duration_text = text(format!("Time: {}ms", self.response_duration.map(|d| d.as_millis().to_string()).unwrap_or_else(|| "N/A".to_string()))).size(16);
+        let size_text = text(format!("Size: {} B", self.response_size.map(|s| s.to_string()).unwrap_or_else(|| "N/A".to_string()))).size(16);
 
 
         let main_column = column![
-            image::Image::new(Handle::from_memory(LOGO_BG_BYTES.to_vec())).width(iced::Length::Fixed(100.0)).height(iced::Length::Fixed(100.0)),
+            Image::new(Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES))).width(Length::Fixed(100.0)).height(Length::Fixed(100.0)),
             row![
-                pick_list(&HTTP_METHODS[..], Some(self.method.as_str()), |s| Message::MethodSelected(s.to_string())),
+                pick_list(&HTTP_METHODS[..], Some(self.method), Message::MethodSelected).padding(10),
                 text_input("URL", &self.url_input).on_input(Message::UrlInputChanged).padding(10),
                 button("Send").on_press(Message::SendRequest)
             ].spacing(10).padding(10),
             
             request_tabs,
-
-            text(format!("Debug: Active Tab is {:?}", self.active_request_tab)),
 
             Rule::horizontal(10),
 
@@ -209,9 +214,9 @@ Method: {method}"#,
             row![
                 response_area,
                 copy_button,
-            ].spacing(10).padding(10).height(iced::Length::Fill),
+            ].spacing(10).padding(10).height(Length::Fill),
         ]
-        .align_items(Alignment::Center);
+        .align_x(Alignment::Center);
 
         main_column.into()
     }
