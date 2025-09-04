@@ -1,0 +1,213 @@
+name: CI/CD AstraNova
+
+on:
+  push:
+    branches: [ master, main, develop, release/* ]
+  pull_request:
+    branches: [ master, main ]
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Install system dependencies (for Iced)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run tests
+      run: cargo test --verbose
+    
+    - name: Check formatting
+      run: cargo fmt -- --check
+    
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+
+  # Build simple binaries (para desarrollo en main/develop)
+  build-binaries:
+    name: Build Binaries
+    runs-on: ${{ matrix.os }}
+    needs: test
+    if: |
+      (github.event_name == 'push' && 
+       (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: macos-apple-silicon
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Build release
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Package binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release
+        tar -czf ../../../astranova-client-${{ matrix.name }}-binary.tar.gz astranova-client
+    
+    - name: Package binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release
+        7z a ../../../astranova-client-${{ matrix.name }}-binary.zip astranova-client.exe
+    
+    - name: Upload binary artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: binaries-${{ matrix.name }}
+        path: |
+          *.tar.gz
+          *.zip
+
+  # Build native packages (para ramas release/* y releases oficiales)
+  build-packages:
+    name: Build Native Packages
+    runs-on: ${{ matrix.os }}
+    needs: test
+    if: |
+      github.event_name == 'release' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/'))
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install cargo-bundle
+      run: cargo install cargo-bundle
+    
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-bundle-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Build native packages
+      run: cargo bundle --release
+    
+    - name: Upload package artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: packages-${{ matrix.name }}
+        path: |
+          target/release/bundle/deb/*.deb
+          target/release/bundle/rpm/*.rpm
+          target/release/bundle/osx/*.app
+          target/release/bundle/msi/*.msi
+        if-no-files-found: ignore
+
+  # Upload a release solo cuando hay packages
+  upload-release:
+    name: Upload to Release
+    runs-on: ubuntu-latest
+    needs: [build-packages]
+    if: github.event_name == 'release'
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Upload to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          packages-*/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Upload artifacts para ramas release/* (pre-release)
+  upload-prerelease:
+    name: Upload Pre-release Artifacts
+    runs-on: ubuntu-latest
+    needs: [build-packages]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Get branch name
+      run: echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+    
+    - name: Create pre-release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: pre-${{ env.BRANCH_NAME }}-${{ github.sha }}
+        name: "Pre-release: ${{ env.BRANCH_NAME }}"
+        prerelease: true
+        files: "**"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
