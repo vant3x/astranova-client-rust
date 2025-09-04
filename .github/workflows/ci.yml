@@ -161,13 +161,13 @@ jobs:
           target
         key: ${{ runner.os }}-bundle-cargo-${{ hashFiles('**/Cargo.lock') }}
     
-    - name: Build native packages
-      run: |
-        if ("${{ matrix.os }}" -eq "windows-latest") {
-          cargo bundle --release --verbose
-        } else {
-          cargo bundle --release
-        }
+    - name: Build native packages (Windows - verbose)
+      if: matrix.os == 'windows-latest'
+      run: cargo bundle --release --verbose
+
+    - name: Build native packages (Unix)
+      if: matrix.os != 'windows-latest'
+      run: cargo bundle --release
     
     - name: Upload package artifacts
       uses: actions/upload-artifact@v4
