@@ -141,6 +141,10 @@ jobs:
     
     - name: Install cargo-bundle
       run: cargo install cargo-bundle
+
+    - name: Install WiX Toolset (Windows)
+      if: matrix.os == 'windows-latest'
+      run: choco install wixtoolset -y
     
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
