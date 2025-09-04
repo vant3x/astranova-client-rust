@@ -24,7 +24,7 @@ pub enum Message {
     HeadersEditor(key_value_editor::Message),
     ParamsEditor(key_value_editor::Message),
     BodyInputChanged(String),
-    SendRequest,
+    SendRequest(crate::http_client::request::HttpRequest),
     SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
@@ -179,7 +179,7 @@ impl HttpRequestView {
             Message::HeadersEditor(msg) => self.headers_editor.update(msg),
             Message::ParamsEditor(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(body) => self.body_input = body,
-            Message::SendRequest => {}
+            Message::SendRequest(_) => {}
             Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
                 self.status_code = None;
@@ -288,8 +288,7 @@ Method: {method}"#,
                     .height(Length::Fill),
             )
             .set_active_tab(&self.active_tab)
-            .width(Length::Fill)
-            .height(Length::Fixed(300.0));
+            .width(Length::Fill);
 
         let response_area: Element<Message> = match &self.request_status {
             RequestStatus::Idle => container(text("Enter URL and send request."))
@@ -368,11 +367,11 @@ Method: {method}"#,
                 text_input("URL", &self.url_input)
                     .on_input(Message::UrlInputChanged)
                     .padding(10),
-                button("Send").on_press(Message::SendRequest)
+                button("Send").on_press(Message::SendRequest(self.build_request()))
             ]
             .spacing(10)
             .padding(10),
-            tabs,
+            tabs.height(Length::Fixed(300.0)),
             Rule::horizontal(10),
             column![
                 row![

@@ -20,12 +20,9 @@ pub enum Message {
 fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
     match message {
         Message::HttpRequestViewMessage(msg) => {
-            if let http_request_view::Message::SendRequest = msg {
+            if let http_request_view::Message::SendRequest(request) = msg {
                 app.http_request_view
                     .update(http_request_view::Message::SetLoading);
-
-                // dlegate request building to the view
-                let request = app.http_request_view.build_request();
 
                 return Task::perform(
                     async move { client::send_request(request).await },
