@@ -12,33 +12,28 @@ use iced_aw::{TabLabel, Tabs};
 
 const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
 
-static HTTP_METHODS: [&'static str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+static HTTP_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
     MethodSelected(&'static str),
     TabSelected(usize),
-    HeadersEditorMessage(key_value_editor::Message),
-    ParamsEditorMessage(key_value_editor::Message),
+    HeadersEditor(key_value_editor::Message),
+    ParamsEditor(key_value_editor::Message),
     BodyInputChanged(String),
     SendRequest,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum RequestStatus {
+    #[default]
     Idle,
     Loading,
     Success(String),
     Error(String),
-}
-
-impl Default for RequestStatus {
-    fn default() -> Self {
-        RequestStatus::Idle
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,8 +75,8 @@ impl HttpRequestView {
             Message::UrlInputChanged(url) => self.url_input = url,
             Message::MethodSelected(method) => self.method = method,
             Message::TabSelected(index) => self.active_tab_index = index,
-            Message::HeadersEditorMessage(msg) => self.headers_editor.update(msg),
-            Message::ParamsEditorMessage(msg) => self.params_editor.update(msg),
+            Message::HeadersEditor(msg) => self.headers_editor.update(msg),
+            Message::ParamsEditor(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(body) => self.body_input = body,
             Message::SendRequest => {
                 self.request_status = RequestStatus::Loading;
@@ -151,7 +146,7 @@ Method: {method}"#,
     }
 
     pub fn view(&self) -> Element<'_, Message, Theme, Renderer> {
-        let mut tabs = Tabs::new(|tab_id| Message::TabSelected(tab_id));
+        let mut tabs = Tabs::new(Message::TabSelected);
 
         tabs = tabs.push(
             0, // TabId
@@ -167,9 +162,7 @@ Method: {method}"#,
             1, // TabId
             TabLabel::Text("Headers".to_string()),
             Into::<Element<'_, Message, Theme, Renderer>>::into(container(
-                self.headers_editor
-                    .view()
-                    .map(Message::HeadersEditorMessage),
+                self.headers_editor.view().map(Message::HeadersEditor),
             )),
         );
 
@@ -177,7 +170,7 @@ Method: {method}"#,
             2, // TabId
             TabLabel::Text("Params".to_string()),
             Into::<Element<'_, Message, Theme, Renderer>>::into(container(
-                self.params_editor.view().map(Message::ParamsEditorMessage),
+                self.params_editor.view().map(Message::ParamsEditor),
             )),
         );
 
