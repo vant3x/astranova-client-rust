@@ -27,7 +27,7 @@ jobs:
         sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
     
     - name: Cache dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
@@ -36,7 +36,7 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test 
     
     - name: Check formatting
       run: cargo fmt -- --check
@@ -54,6 +54,7 @@ jobs:
        (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
       github.event_name == 'pull_request'
     strategy:
+      fail-fast: false # No cancelar otros jobs si uno falla
       matrix:
         include:
           - os: ubuntu-latest
@@ -84,7 +85,7 @@ jobs:
         sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
     
     - name: Cache dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
@@ -112,8 +113,8 @@ jobs:
       with:
         name: binaries-${{ matrix.name }}
         path: |
-          *.tar.gz
-          *.zip
+          astranova-client-*-binary.tar.gz
+          astranova-client-*-binary.zip
 
   # Build native packages (para ramas release/* y releases oficiales)
   build-packages:
@@ -124,6 +125,7 @@ jobs:
       github.event_name == 'release' ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/'))
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -142,18 +144,27 @@ jobs:
     - name: Install cargo-bundle
       run: cargo install cargo-bundle
 
-    - name: Install WiX Toolset (Windows)
+    - name: Install cargo-wix
       if: matrix.os == 'windows-latest'
-      run: choco install wixtoolset -y
-    
+      run: cargo install cargo-wix -v
+
+    # --- FIX PARA WINDOWS ---
+    - name: Install WiX Toolset and Add to PATH (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install wixtoolset -y
+        # Añade la ruta por defecto de WiX al PATH del workflow
+        echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      shell: pwsh # Usar powershell para este paso
+
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
+        sudo apt-get install -y libxkbcommon-dev libwayland-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev build-essential
     
     - name: Cache dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
@@ -161,14 +172,14 @@ jobs:
           target
         key: ${{ runner.os }}-bundle-cargo-${{ hashFiles('**/Cargo.lock') }}
     
-    - name: Build native packages
-      run: |
-        if [ "${{ matrix.os }}" == "windows-latest" ]; then
-          cargo bundle --release --verbose
-        else
-          cargo bundle --release
-        fi
+    - name: Build native package (non-Windows)
+      if: matrix.os != 'windows-latest'
+      run: cargo bundle --release 
     
+    - name: Build native package (Windows)
+      if: matrix.os == 'windows-latest'
+      run: cargo wix -v
+
     - name: Upload package artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -176,8 +187,8 @@ jobs:
         path: |
           target/release/bundle/deb/*.deb
           target/release/bundle/rpm/*.rpm
-          target/release/bundle/osx/*.app
-          target/release/bundle/msi/*.msi
+          target/release/bundle/osx/*.app.tgz
+          target/wix/*.msi
         if-no-files-found: ignore
 
   # Upload a release solo cuando hay packages
@@ -186,17 +197,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-packages]
     if: github.event_name == 'release'
+    permissions:
+      contents: write
     steps:
-    - name: Download all artifacts
+    - name: Download all package artifacts
       uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     
     - name: Upload to release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        files: |
-          packages-*/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        files: artifacts/**/*
 
   # Upload artifacts para ramas release/* (pre-release)
   upload-prerelease:
@@ -204,19 +216,22 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-packages]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      contents: write
     steps:
-    - name: Download all artifacts
+    - name: Download all package artifacts
       uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     
     - name: Get branch name
-      run: echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+      id: get_branch
+      run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
     
     - name: Create pre-release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        tag_name: pre-${{ env.BRANCH_NAME }}-${{ github.sha }}
-        name: "Pre-release: ${{ env.BRANCH_NAME }}"
+        tag_name: pre-${{ steps.get_branch.outputs.name }}-${{ github.sha }}
+        name: "Pre-release: ${{ steps.get_branch.outputs.name }}"
         prerelease: true
-        files: "**"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        files: artifacts/**/*

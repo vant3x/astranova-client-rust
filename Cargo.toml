@@ -2,6 +2,7 @@
 name = "astranova-client"
 version = "0.1.0"
 edition = "2021"
+authors = ["vant3x"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -31,6 +32,12 @@ version = "0.1.0"
 copyright = "Copyright (C) AstraNova 2025"
 category = "Developer Tool"
 short_description = "A simple HTTP client."
+
+[package.metadata.bundle.mac_os_x]
+icon = ["assets/icon.png"]
+
+[package.metadata.bundle.windows]
+icon = ["assets/icon.ico"]
 
 osx_frameworks = []
 osx_minimum_system_version = "10.11"
