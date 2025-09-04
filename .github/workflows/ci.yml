@@ -36,7 +36,7 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test 
     
     - name: Check formatting
       run: cargo fmt -- --check
@@ -169,9 +169,8 @@ jobs:
         key: ${{ runner.os }}-bundle-cargo-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Build native package
-      # Unificamos el paso de build, ya que el comando es el mismo
-      # El flag --verbose nos dará más información si algo falla
-      run: cargo bundle --release --verbose
+      
+      run: cargo bundle --release 
     
     - name: Upload package artifacts
       uses: actions/upload-artifact@v4
