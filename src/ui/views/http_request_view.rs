@@ -23,6 +23,7 @@ pub enum Message {
     ParamsEditor(key_value_editor::Message),
     BodyInputChanged(String),
     SendRequest,
+    SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
 }
@@ -70,6 +71,47 @@ impl Default for HttpRequestView {
 }
 
 impl HttpRequestView {
+    pub fn build_request(&self) -> crate::http_client::request::HttpRequest {
+        let params: Vec<(String, String)> = self
+            .params_editor
+            .entries
+            .iter()
+            .filter(|p| !p.key.is_empty())
+            .map(|p| (p.key.clone(), p.value.clone()))
+            .collect();
+
+        let query_string = params
+            .iter()
+            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+            .collect::<Vec<String>>()
+            .join("&");
+
+        let final_url = if query_string.is_empty() {
+            self.url_input.clone()
+        } else if self.url_input.contains('?') {
+            format!("{}&{}", self.url_input, query_string)
+        } else {
+            format!("{}?{}", self.url_input, query_string)
+        };
+
+        crate::http_client::request::HttpRequest {
+            method: self.method.to_string(),
+            url: final_url,
+            headers: self
+                .headers_editor
+                .entries
+                .iter()
+                .filter(|h| !h.key.is_empty())
+                .map(|h| (h.key.clone(), h.value.clone()))
+                .collect(),
+            body: if self.body_input.is_empty() {
+                None
+            } else {
+                Some(self.body_input.clone())
+            },
+        }
+    }
+
     pub fn update(&mut self, message: Message) {
         match message {
             Message::UrlInputChanged(url) => self.url_input = url,
@@ -79,6 +121,9 @@ impl HttpRequestView {
             Message::ParamsEditor(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(body) => self.body_input = body,
             Message::SendRequest => {
+       
+            }
+            Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
                 self.status_code = None;
                 self.content_type = None;

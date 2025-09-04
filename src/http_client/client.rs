@@ -21,7 +21,6 @@ pub async fn send_request(request: HttpRequest) -> Result<HttpResponse, String> 
     }
 
     if let Some(body) = request_body_for_log.clone() {
-        // Use cloned body for req_builder
         req_builder = req_builder.body(body);
     }
 

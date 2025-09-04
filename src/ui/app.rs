@@ -21,49 +21,11 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
     match message {
         Message::HttpRequestViewMessage(msg) => {
             if let http_request_view::Message::SendRequest = msg {
-                let base_url = app.http_request_view.url_input.clone();
-                let params: Vec<(String, String)> = app
-                    .http_request_view
-                    .params_editor
-                    .entries
-                    .iter()
-                    .filter(|p| !p.key.is_empty())
-                    .map(|p| (p.key.clone(), p.value.clone()))
-                    .collect();
+                app.http_request_view
+                    .update(http_request_view::Message::SetLoading);
 
-                let query_string = params
-                    .iter()
-                    .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
-                    .collect::<Vec<String>>()
-                    .join("&");
-
-                let final_url = if query_string.is_empty() {
-                    base_url
-                } else if base_url.contains('?') {
-                    format!("{}&{}", base_url, query_string)
-                } else {
-                    format!("{}?{}", base_url, query_string)
-                };
-
-                let request = HttpRequest {
-                    method: app.http_request_view.method.to_string(),
-                    url: final_url,
-                    headers: app
-                        .http_request_view
-                        .headers_editor
-                        .entries
-                        .iter()
-                        .filter(|h| !h.key.is_empty())
-                        .map(|h| (h.key.clone(), h.value.clone()))
-                        .collect(),
-                    body: if app.http_request_view.body_input.is_empty() {
-                        None
-                    } else {
-                        Some(app.http_request_view.body_input.clone())
-                    },
-                };
-
-                app.http_request_view.update(msg.clone());
+                // dlegate request building to the view
+                let request = app.http_request_view.build_request();
 
                 return Task::perform(
                     async move { client::send_request(request).await },
