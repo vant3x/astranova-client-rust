@@ -1,14 +1,14 @@
+use crate::data::auth::{Auth, AuthType};
+use crate::ui::components::key_value_editor::{self, KeyValueEditor};
+use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use iced::widget::image::{Handle, Image};
 use iced::{
     widget::{button, column, container, pick_list, row, scrollable, text, text_input, Rule},
     Alignment, Element, Length, Renderer, Theme,
 };
-
-use std::time::Duration;
-
-use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use iced_aw::{TabLabel, Tabs};
+use std::time::Duration;
 
 const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
 
@@ -18,7 +18,9 @@ static HTTP_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 pub enum Message {
     UrlInputChanged(String),
     MethodSelected(&'static str),
-    TabSelected(usize),
+    TabSelected(TabId),
+    AuthTypeSelected(AuthType),
+    AuthInputChanged(AuthInput),
     HeadersEditor(key_value_editor::Message),
     ParamsEditor(key_value_editor::Message),
     BodyInputChanged(String),
@@ -26,6 +28,22 @@ pub enum Message {
     SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum TabId {
+    #[default]
+    Body,
+    Headers,
+    Params,
+    Authorization,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthInput {
+    BearerToken(String),
+    BasicUser(String),
+    BasicPass(String),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,9 +60,10 @@ pub struct HttpRequestView {
     pub url_input: String,
     pub method: &'static str,
     pub body_input: String,
+    pub auth: Auth,
     pub headers_editor: KeyValueEditor,
     pub params_editor: KeyValueEditor,
-    active_tab_index: usize,
+    active_tab: TabId,
     request_status: RequestStatus,
     pub status_code: Option<u16>,
     pub content_type: Option<String>,
@@ -58,9 +77,10 @@ impl Default for HttpRequestView {
             url_input: "https://jsonplaceholder.typicode.com/todos/1".to_string(),
             method: "GET",
             body_input: String::new(),
-            headers_editor: KeyValueEditor::default(),
-            params_editor: KeyValueEditor::default(),
-            active_tab_index: 0,
+            auth: Auth::default(),
+            headers_editor: KeyValueEditor::new("Add Header".to_string()),
+            params_editor: KeyValueEditor::new("Add Param".to_string()),
+            active_tab: TabId::Body,
             request_status: RequestStatus::Idle,
             status_code: None,
             content_type: None,
@@ -94,16 +114,33 @@ impl HttpRequestView {
             format!("{}?{}", self.url_input, query_string)
         };
 
+        let mut headers: Vec<(String, String)> = self
+            .headers_editor
+            .entries
+            .iter()
+            .filter(|h| !h.key.is_empty())
+            .map(|h| (h.key.clone(), h.value.clone()))
+            .collect();
+
+        match &self.auth {
+            Auth::BearerToken(token) => {
+                if !token.is_empty() {
+                    headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
+                }
+            }
+            Auth::BasicAuth { user, pass } => {
+                if !user.is_empty() || !pass.is_empty() {
+                    let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
+                    headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
+                }
+            }
+            _ => {}
+        }
+
         crate::http_client::request::HttpRequest {
             method: self.method.to_string(),
             url: final_url,
-            headers: self
-                .headers_editor
-                .entries
-                .iter()
-                .filter(|h| !h.key.is_empty())
-                .map(|h| (h.key.clone(), h.value.clone()))
-                .collect(),
+            headers,
             body: if self.body_input.is_empty() {
                 None
             } else {
@@ -116,13 +153,33 @@ impl HttpRequestView {
         match message {
             Message::UrlInputChanged(url) => self.url_input = url,
             Message::MethodSelected(method) => self.method = method,
-            Message::TabSelected(index) => self.active_tab_index = index,
+            Message::TabSelected(tab_id) => self.active_tab = tab_id,
+            Message::AuthTypeSelected(auth_type) => {
+                self.auth = match auth_type {
+                    AuthType::NoAuth => Auth::NoAuth,
+                    AuthType::BearerToken => Auth::BearerToken(String::new()),
+                    AuthType::BasicAuth => Auth::BasicAuth {
+                        user: String::new(),
+                        pass: String::new(),
+                    },
+                };
+            }
+            Message::AuthInputChanged(input) => match (&mut self.auth, input) {
+                (Auth::BearerToken(token), AuthInput::BearerToken(new_token)) => {
+                    *token = new_token;
+                }
+                (Auth::BasicAuth { user, .. }, AuthInput::BasicUser(new_user)) => {
+                    *user = new_user;
+                }
+                (Auth::BasicAuth { pass, .. }, AuthInput::BasicPass(new_pass)) => {
+                    *pass = new_pass;
+                }
+                _ => {}
+            },
             Message::HeadersEditor(msg) => self.headers_editor.update(msg),
             Message::ParamsEditor(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(body) => self.body_input = body,
-            Message::SendRequest => {
-       
-            }
+            Message::SendRequest => {}
             Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
                 self.status_code = None;
@@ -191,35 +248,48 @@ Method: {method}"#,
     }
 
     pub fn view(&self) -> Element<'_, Message, Theme, Renderer> {
-        let mut tabs = Tabs::new(Message::TabSelected);
+        let auth_tab_content = self.create_auth_tab_content();
 
-        tabs = tabs.push(
-            0, // TabId
-            TabLabel::Text("Body".to_string()),
-            Into::<Element<'_, Message, Theme, Renderer>>::into(container(
-                text_input("Request Body", &self.body_input)
-                    .on_input(Message::BodyInputChanged)
-                    .padding(10),
-            )),
-        );
-
-        tabs = tabs.push(
-            1, // TabId
-            TabLabel::Text("Headers".to_string()),
-            Into::<Element<'_, Message, Theme, Renderer>>::into(container(
-                self.headers_editor.view().map(Message::HeadersEditor),
-            )),
-        );
-
-        tabs = tabs.push(
-            2, // TabId
-            TabLabel::Text("Params".to_string()),
-            Into::<Element<'_, Message, Theme, Renderer>>::into(container(
-                self.params_editor.view().map(Message::ParamsEditor),
-            )),
-        );
-
-        let tabs = tabs.set_active_tab(&self.active_tab_index);
+        let tabs = Tabs::new(Message::TabSelected)
+            .push(
+                TabId::Body,
+                TabLabel::Text("Body".to_string()),
+                container(
+                    text_input("Request Body", &self.body_input)
+                        .on_input(Message::BodyInputChanged)
+                        .padding(10),
+                )
+                .padding(10)
+                .width(Length::Fill)
+                .height(Length::Fill),
+            )
+            .push(
+                TabId::Headers,
+                TabLabel::Text("Headers".to_string()),
+                container(self.headers_editor.view().map(Message::HeadersEditor))
+                    .padding(10)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .push(
+                TabId::Params,
+                TabLabel::Text("Params".to_string()),
+                container(self.params_editor.view().map(Message::ParamsEditor))
+                    .padding(10)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .push(
+                TabId::Authorization,
+                TabLabel::Text("Authorization".to_string()),
+                container(auth_tab_content)
+                    .padding(10)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .set_active_tab(&self.active_tab)
+            .width(Length::Fill)
+            .height(Length::Fixed(300.0));
 
         let response_area: Element<Message> = match &self.request_status {
             RequestStatus::Idle => container(text("Enter URL and send request."))
@@ -304,21 +374,71 @@ Method: {method}"#,
             .padding(10),
             tabs,
             Rule::horizontal(10),
-            row![
-                status_code_text,
-                content_type_text,
-                duration_text,
-                size_text,
+            column![
+                row![
+                    status_code_text,
+                    content_type_text,
+                    duration_text,
+                    size_text,
+                ]
+                .spacing(20)
+                .padding(10),
+                row![response_area, copy_button,]
+                    .spacing(10)
+                    .padding(10)
+                    .height(Length::Fill),
             ]
-            .spacing(20)
-            .padding(10),
-            row![response_area, copy_button,]
-                .spacing(10)
-                .padding(10)
-                .height(Length::Fill),
+            .height(Length::Fill),
         ]
         .align_x(Alignment::Center);
 
         main_column.into()
+    }
+
+    fn create_auth_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
+        let current_auth_type = match self.auth {
+            Auth::NoAuth => AuthType::NoAuth,
+            Auth::BearerToken(_) => AuthType::BearerToken,
+            Auth::BasicAuth { .. } => AuthType::BasicAuth,
+        };
+
+        let auth_type_selector = pick_list(
+            &AuthType::ALL[..],
+            Some(current_auth_type),
+            Message::AuthTypeSelected,
+        )
+        .padding(10);
+
+        let auth_inputs = match &self.auth {
+            Auth::BearerToken(token) => column![text_input("Bearer Token", token)
+                .on_input(|t| Message::AuthInputChanged(AuthInput::BearerToken(t)))
+                .padding(10)
+                .secure(true),]
+            .spacing(10),
+            Auth::BasicAuth { user, pass } => column![
+                text_input("Username", user)
+                    .on_input(|u| Message::AuthInputChanged(AuthInput::BasicUser(u)))
+                    .padding(10),
+                text_input("Password", pass)
+                    .on_input(|p| Message::AuthInputChanged(AuthInput::BasicPass(p)))
+                    .padding(10)
+                    .secure(true),
+            ]
+            .spacing(10),
+            Auth::NoAuth => column![text("No authentication required.").size(14),]
+                .spacing(10)
+                .padding(10),
+        };
+
+        container(
+            column![
+                text("Authentication Type").size(16),
+                auth_type_selector,
+                auth_inputs
+            ]
+            .spacing(15)
+            .padding(20),
+        )
+        .into()
     }
 }

@@ -1,3 +1,4 @@
+mod data;
 mod http_client;
 mod ui;
 

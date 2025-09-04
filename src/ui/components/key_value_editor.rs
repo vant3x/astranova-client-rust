@@ -24,6 +24,7 @@ impl KeyValueEntry {
 pub struct KeyValueEditor {
     pub entries: Vec<KeyValueEntry>,
     next_id: usize,
+    button_text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -36,14 +37,18 @@ pub enum Message {
 
 impl Default for KeyValueEditor {
     fn default() -> Self {
-        Self {
-            entries: vec![KeyValueEntry::new(0)],
-            next_id: 1,
-        }
+        Self::new("Add Entry".to_string())
     }
 }
 
 impl KeyValueEditor {
+    pub fn new(button_text: String) -> Self {
+        Self {
+            entries: vec![KeyValueEntry::new(0)],
+            next_id: 1,
+            button_text,
+        }
+    }
     pub fn update(&mut self, message: Message) {
         match message {
             Message::EntryKeyChanged(id, new_key) => {
@@ -82,7 +87,7 @@ impl KeyValueEditor {
 
         column![
             entries_view,
-            button(text("Add Header")).on_press(Message::AddEntry)
+            button(text(&self.button_text)).on_press(Message::AddEntry)
         ]
         .spacing(10)
         .into()

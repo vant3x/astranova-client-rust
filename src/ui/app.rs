@@ -1,7 +1,7 @@
 use iced::{widget::column, Element, Task};
 
 use super::views::http_request_view::{self, HttpRequestView};
-use crate::http_client::{client, request::HttpRequest};
+use crate::http_client::client;
 
 pub fn main() -> iced::Result {
     iced::application("AstraNova Client", update, view).run()
