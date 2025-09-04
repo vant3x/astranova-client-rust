@@ -26,7 +26,7 @@ arboard = "3.2.0"
 [package.metadata.bundle]
 name = "AstraNova"
 identifier = "com.astranova.client"
-icon = ["assets/icon.png", "assets/icon.ico"]
+icon = ["assets/icon.png", "assets\\icon.ico"]
 version = "0.1.0"
 copyright = "Copyright (C) AstraNova 2025"
 category = "Developer Tool"
@@ -36,7 +36,7 @@ short_description = "A simple HTTP client."
 icon = ["assets/icon.png"]
 
 [package.metadata.bundle.windows]
-icon = ["assets/icon.ico"]
+icon = ["assets\\icon.ico"]
 
 osx_frameworks = []
 osx_minimum_system_version = "10.11"
