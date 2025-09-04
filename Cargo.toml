@@ -32,6 +32,12 @@ copyright = "Copyright (C) AstraNova 2025"
 category = "Developer Tool"
 short_description = "A simple HTTP client."
 
+[package.metadata.bundle.mac_os_x]
+icon = ["assets/icon.png"]
+
+[package.metadata.bundle.windows]
+icon = ["assets/icon.ico"]
+
 osx_frameworks = []
 osx_minimum_system_version = "10.11"
 windows_console_mode = false  
