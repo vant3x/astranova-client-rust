@@ -1,11 +1,10 @@
 use iced::{widget::column, Element, Task};
 
-use crate::http_client::{client, request::HttpRequest};
 use super::views::http_request_view::{self, HttpRequestView};
+use crate::http_client::{client, request::HttpRequest};
 
 pub fn main() -> iced::Result {
-    iced::application("AstraNova Client", update, view)
-        .run()
+    iced::application("AstraNova Client", update, view).run()
 }
 
 #[derive(Default)]
@@ -23,12 +22,17 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
         Message::HttpRequestViewMessage(msg) => {
             if let http_request_view::Message::SendRequest = msg {
                 let base_url = app.http_request_view.url_input.clone();
-                let params: Vec<(String, String)> = app.http_request_view.params_editor.entries.iter()
+                let params: Vec<(String, String)> = app
+                    .http_request_view
+                    .params_editor
+                    .entries
+                    .iter()
                     .filter(|p| !p.key.is_empty())
                     .map(|p| (p.key.clone(), p.value.clone()))
                     .collect();
 
-                let query_string = params.iter()
+                let query_string = params
+                    .iter()
                     .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
                     .collect::<Vec<String>>()
                     .join("&");
@@ -44,7 +48,11 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
                 let request = HttpRequest {
                     method: app.http_request_view.method.to_string(),
                     url: final_url,
-                    headers: app.http_request_view.headers_editor.entries.iter()
+                    headers: app
+                        .http_request_view
+                        .headers_editor
+                        .entries
+                        .iter()
                         .filter(|h| !h.key.is_empty())
                         .map(|h| (h.key.clone(), h.value.clone()))
                         .collect(),
@@ -54,12 +62,17 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
                         Some(app.http_request_view.body_input.clone())
                     },
                 };
-                
+
                 app.http_request_view.update(msg.clone());
 
-                return Task::perform(async move {
-                    client::send_request(request).await
-                }, |result| Message::HttpRequestViewMessage(http_request_view::Message::ResponseReceived(result)));
+                return Task::perform(
+                    async move { client::send_request(request).await },
+                    |result| {
+                        Message::HttpRequestViewMessage(
+                            http_request_view::Message::ResponseReceived(result),
+                        )
+                    },
+                );
             } else {
                 app.http_request_view.update(msg);
             }
@@ -69,9 +82,9 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
 }
 
 fn view(app: &AstraNovaApp) -> Element<'_, Message> {
-    column![
-        app.http_request_view.view().map(Message::HttpRequestViewMessage),
-    ]
+    column![app
+        .http_request_view
+        .view()
+        .map(Message::HttpRequestViewMessage),]
     .into()
 }
-

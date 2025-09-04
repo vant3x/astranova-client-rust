@@ -31,3 +31,20 @@ version = "0.1.0"
 copyright = "Copyright (C) AstraNova 2025"
 category = "Developer Tool"
 short_description = "A simple HTTP client."
+
+osx_frameworks = []
+osx_minimum_system_version = "10.11"
+windows_console_mode = false  
+
+deb_depends = [
+    "libxkbcommon0", 
+    "libwayland-client0",
+    "libxrandr2",
+    "libxcursor1",
+    "libxi6",
+    "libxinerama1"
+]
+
+license = "MIT" 
+homepage = "https://astranova-client.vercel.app/"
+repository = "https://github.com/vant3x/astranova-client-rust" 

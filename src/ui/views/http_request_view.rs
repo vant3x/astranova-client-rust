@@ -1,8 +1,9 @@
-
-
-use iced::{widget::{column, row, text_input, button, text, scrollable, container, pick_list, Rule}, Element, Alignment, Length, Theme, Renderer};
-use iced::widget::image::{Handle, Image};
 use bytes::Bytes;
+use iced::widget::image::{Handle, Image};
+use iced::{
+    widget::{button, column, container, pick_list, row, scrollable, text, text_input, Rule},
+    Alignment, Element, Length, Renderer, Theme,
+};
 
 use std::time::Duration;
 
@@ -89,44 +90,51 @@ impl HttpRequestView {
                 self.response_duration = None;
                 self.response_size = None;
             }
-            Message::ResponseReceived(result) => {
-                match result {
-                    Ok(response) => {
-                        self.status_code = Some(response.status);
-                        self.response_duration = Some(response.duration);
-                        self.response_size = Some(response.size);
-                        let content_type = response.headers.iter()
-                            .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                            .map(|(_, v)| v.clone())
-                            .unwrap_or_else(|| "unknown".to_string());
-                        self.content_type = Some(content_type.clone());
+            Message::ResponseReceived(result) => match result {
+                Ok(response) => {
+                    self.status_code = Some(response.status);
+                    self.response_duration = Some(response.duration);
+                    self.response_size = Some(response.size);
+                    let content_type = response
+                        .headers
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    self.content_type = Some(content_type.clone());
 
-                        let formatted_body = if content_type.contains("application/json") {
-                            match serde_json::from_str::<serde_json::Value>(&response.body) {
-                                Ok(json_value) => serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| response.body.clone()),
-                                Err(_) => response.body.clone(),
-                            }
-                        } else {
-                            response.body.clone()
-                        };
+                    let formatted_body = if content_type.contains("application/json") {
+                        match serde_json::from_str::<serde_json::Value>(&response.body) {
+                            Ok(json_value) => serde_json::to_string_pretty(&json_value)
+                                .unwrap_or_else(|_| response.body.clone()),
+                            Err(_) => response.body.clone(),
+                        }
+                    } else {
+                        response.body.clone()
+                    };
 
-                        self.request_status = RequestStatus::Success(format!(                            r#"Headers: {headers:#?}
+                    self.request_status = RequestStatus::Success(format!(
+                        r#"Headers: {headers:#?}
 
 Body: {body}
 
 --------------------
 URL: {url}
-Method: {method}"#,                            headers = response.headers,                            body = formatted_body,                            url = response.url,                            method = response.method,                        ));
-                    }
-                    Err(e) => {
-                        self.request_status = RequestStatus::Error(format!("Error: {}", e));
-                        self.status_code = None;
-                        self.content_type = None;
-                        self.response_duration = None;
-                        self.response_size = None;
-                    }
+Method: {method}"#,
+                        headers = response.headers,
+                        body = formatted_body,
+                        url = response.url,
+                        method = response.method,
+                    ));
                 }
-            }
+                Err(e) => {
+                    self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                    self.status_code = None;
+                    self.content_type = None;
+                    self.response_duration = None;
+                    self.response_size = None;
+                }
+            },
             Message::CopyResponse => {
                 let text_to_copy = match &self.request_status {
                     RequestStatus::Success(response_text) => Some(response_text.clone()),
@@ -148,19 +156,29 @@ Method: {method}"#,                            headers = response.headers,      
         tabs = tabs.push(
             0, // TabId
             TabLabel::Text("Body".to_string()),
-            Into::<Element<'_, Message, Theme, Renderer>>::into(container(text_input("Request Body", &self.body_input).on_input(Message::BodyInputChanged).padding(10))),
+            Into::<Element<'_, Message, Theme, Renderer>>::into(container(
+                text_input("Request Body", &self.body_input)
+                    .on_input(Message::BodyInputChanged)
+                    .padding(10),
+            )),
         );
 
         tabs = tabs.push(
             1, // TabId
             TabLabel::Text("Headers".to_string()),
-            Into::<Element<'_, Message, Theme, Renderer>>::into(container(self.headers_editor.view().map(Message::HeadersEditorMessage))),
+            Into::<Element<'_, Message, Theme, Renderer>>::into(container(
+                self.headers_editor
+                    .view()
+                    .map(Message::HeadersEditorMessage),
+            )),
         );
 
         tabs = tabs.push(
             2, // TabId
             TabLabel::Text("Params".to_string()),
-            Into::<Element<'_, Message, Theme, Renderer>>::into(container(self.params_editor.view().map(Message::ParamsEditorMessage)))
+            Into::<Element<'_, Message, Theme, Renderer>>::into(container(
+                self.params_editor.view().map(Message::ParamsEditorMessage),
+            )),
         );
 
         let tabs = tabs.set_active_tab(&self.active_tab_index);
@@ -182,49 +200,84 @@ Method: {method}"#,                            headers = response.headers,      
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into(),
-            RequestStatus::Error(error_message) => container(text(format!("Error: {}", error_message)))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .into(),
+            RequestStatus::Error(error_message) => {
+                container(text(format!("Error: {}", error_message)))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .into()
+            }
         };
 
-        let copy_button = if matches!(self.request_status, RequestStatus::Success(_) | RequestStatus::Error(_)) {
+        let copy_button = if matches!(
+            self.request_status,
+            RequestStatus::Success(_) | RequestStatus::Error(_)
+        ) {
             Element::from(button("Copy").on_press(Message::CopyResponse))
         } else {
             Element::from(column![])
         };
 
-        let status_code_text = text(format!("Status: {}", self.status_code.map(|s| s.to_string()).unwrap_or_else(|| "N/A".to_string()))).size(16);
-        let content_type_text = text(format!("Content-Type: {}", self.content_type.as_deref().unwrap_or("N/A"))).size(16);
-        let duration_text = text(format!("Time: {}ms", self.response_duration.map(|d| d.as_millis().to_string()).unwrap_or_else(|| "N/A".to_string()))).size(16);
-        let size_text = text(format!("Size: {} B", self.response_size.map(|s| s.to_string()).unwrap_or_else(|| "N/A".to_string()))).size(16);
-
+        let status_code_text = text(format!(
+            "Status: {}",
+            self.status_code
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "N/A".to_string())
+        ))
+        .size(16);
+        let content_type_text = text(format!(
+            "Content-Type: {}",
+            self.content_type.as_deref().unwrap_or("N/A")
+        ))
+        .size(16);
+        let duration_text = text(format!(
+            "Time: {}ms",
+            self.response_duration
+                .map(|d| d.as_millis().to_string())
+                .unwrap_or_else(|| "N/A".to_string())
+        ))
+        .size(16);
+        let size_text = text(format!(
+            "Size: {} B",
+            self.response_size
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "N/A".to_string())
+        ))
+        .size(16);
 
         let main_column = column![
-            Image::new(Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES))).width(Length::Fixed(100.0)).height(Length::Fixed(100.0)),
+            Image::new(Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES)))
+                .width(Length::Fixed(100.0))
+                .height(Length::Fixed(100.0)),
             row![
-                pick_list(&HTTP_METHODS[..], Some(self.method), Message::MethodSelected).padding(10),
-                text_input("URL", &self.url_input).on_input(Message::UrlInputChanged).padding(10),
+                pick_list(
+                    &HTTP_METHODS[..],
+                    Some(self.method),
+                    Message::MethodSelected
+                )
+                .padding(10),
+                text_input("URL", &self.url_input)
+                    .on_input(Message::UrlInputChanged)
+                    .padding(10),
                 button("Send").on_press(Message::SendRequest)
-            ].spacing(10).padding(10),
-            
+            ]
+            .spacing(10)
+            .padding(10),
             tabs,
-
             Rule::horizontal(10),
-
             row![
                 status_code_text,
                 content_type_text,
                 duration_text,
                 size_text,
-            ].spacing(20).padding(10),
-
-            row![
-                response_area,
-                copy_button,
-            ].spacing(10).padding(10).height(Length::Fill),
+            ]
+            .spacing(20)
+            .padding(10),
+            row![response_area, copy_button,]
+                .spacing(10)
+                .padding(10)
+                .height(Length::Fill),
         ]
         .align_x(Alignment::Center);
 

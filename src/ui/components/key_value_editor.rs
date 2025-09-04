@@ -1,4 +1,7 @@
-use iced::{widget::{row, text_input, button, column, text}, Element};
+use iced::{
+    widget::{button, column, row, text, text_input},
+    Element,
+};
 
 #[derive(Debug, Clone)]
 pub struct KeyValueEntry {
@@ -41,7 +44,6 @@ impl Default for KeyValueEditor {
 }
 
 impl KeyValueEditor {
-
     pub fn update(&mut self, message: Message) {
         match message {
             Message::EntryKeyChanged(id, new_key) => {
@@ -74,7 +76,7 @@ impl KeyValueEditor {
                         .on_input(move |v| Message::EntryValueChanged(entry.id, v)),
                     button(text("Remove")).on_press(Message::RemoveEntry(entry.id))
                 ]
-                .spacing(10)
+                .spacing(10),
             )
         });
 
