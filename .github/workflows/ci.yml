@@ -144,6 +144,10 @@ jobs:
     - name: Install cargo-bundle
       run: cargo install cargo-bundle
 
+    - name: Install cargo-wix
+      if: matrix.os == 'windows-latest'
+      run: cargo install cargo-wix -v
+
     # --- FIX PARA WINDOWS ---
     - name: Install WiX Toolset and Add to PATH (Windows)
       if: matrix.os == 'windows-latest'
@@ -168,10 +172,14 @@ jobs:
           target
         key: ${{ runner.os }}-bundle-cargo-${{ hashFiles('**/Cargo.lock') }}
     
-    - name: Build native package
-      
+    - name: Build native package (non-Windows)
+      if: matrix.os != 'windows-latest'
       run: cargo bundle --release 
     
+    - name: Build native package (Windows)
+      if: matrix.os == 'windows-latest'
+      run: cargo wix -v
+
     - name: Upload package artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -180,7 +188,7 @@ jobs:
           target/release/bundle/deb/*.deb
           target/release/bundle/rpm/*.rpm
           target/release/bundle/osx/*.app.tgz
-          target/release/bundle/msi/*.msi
+          target/wix/*.msi
         if-no-files-found: ignore
 
   # Upload a release solo cuando hay packages
