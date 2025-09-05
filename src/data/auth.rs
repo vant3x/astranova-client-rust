@@ -27,9 +27,9 @@ impl std::fmt::Display for AuthType {
 #[derive(Debug, Clone, Default)]
 pub enum Auth {
     #[default]
-    NoAuth,
+    None,
     BearerToken(String),
-    BasicAuth {
+    Basic {
         user: String,
         pass: String,
     },

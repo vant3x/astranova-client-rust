@@ -27,7 +27,7 @@ impl Default for AstraNovaApp {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    HttpRequestViewMessage(usize, http_request_view::Message),
+    HttpRequestViewMsg(usize, http_request_view::Message),
     AddRequestTab,
     CloseRequestTab(usize),
     SelectRequestTab(usize),
@@ -35,7 +35,7 @@ pub enum Message {
 
 fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
     match message {
-        Message::HttpRequestViewMessage(index, msg) => {
+        Message::HttpRequestViewMsg(index, msg) => {
             if let Some(view) = app.request_tabs.get_mut(index) {
                 if let http_request_view::Message::SendRequest(request) = msg {
                     view.update(http_request_view::Message::SetLoading);
@@ -43,7 +43,7 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
                     return Task::perform(
                         async move { client::send_request(request).await },
                         move |result| {
-                            Message::HttpRequestViewMessage(
+                            Message::HttpRequestViewMsg(
                                 index,
                                 http_request_view::Message::ResponseReceived(result),
                             )
@@ -88,7 +88,7 @@ fn view(app: &AstraNovaApp) -> Element<'_, Message> {
             tab_label,
             request_tab
                 .view()
-                .map(move |msg| Message::HttpRequestViewMessage(index, msg)),
+                .map(move |msg| Message::HttpRequestViewMsg(index, msg)),
         );
     }
 

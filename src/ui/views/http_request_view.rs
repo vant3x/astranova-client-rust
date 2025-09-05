@@ -128,7 +128,7 @@ impl HttpRequestView {
                     headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
                 }
             }
-            Auth::BasicAuth { user, pass } => {
+            Auth::Basic { user, pass } => {
                 if !user.is_empty() || !pass.is_empty() {
                     let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
                     headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
@@ -156,9 +156,9 @@ impl HttpRequestView {
             Message::TabSelected(tab_id) => self.active_tab = tab_id,
             Message::AuthTypeSelected(auth_type) => {
                 self.auth = match auth_type {
-                    AuthType::NoAuth => Auth::NoAuth,
+                    AuthType::NoAuth => Auth::None,
                     AuthType::BearerToken => Auth::BearerToken(String::new()),
-                    AuthType::BasicAuth => Auth::BasicAuth {
+                    AuthType::BasicAuth => Auth::Basic {
                         user: String::new(),
                         pass: String::new(),
                     },
@@ -168,10 +168,10 @@ impl HttpRequestView {
                 (Auth::BearerToken(token), AuthInput::BearerToken(new_token)) => {
                     *token = new_token;
                 }
-                (Auth::BasicAuth { user, .. }, AuthInput::BasicUser(new_user)) => {
+                (Auth::Basic { user, .. }, AuthInput::BasicUser(new_user)) => {
                     *user = new_user;
                 }
-                (Auth::BasicAuth { pass, .. }, AuthInput::BasicPass(new_pass)) => {
+                (Auth::Basic { pass, .. }, AuthInput::BasicPass(new_pass)) => {
                     *pass = new_pass;
                 }
                 _ => {}
@@ -396,9 +396,9 @@ Method: {method}"#,
 
     fn create_auth_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
         let current_auth_type = match self.auth {
-            Auth::NoAuth => AuthType::NoAuth,
+            Auth::None => AuthType::NoAuth,
             Auth::BearerToken(_) => AuthType::BearerToken,
-            Auth::BasicAuth { .. } => AuthType::BasicAuth,
+            Auth::Basic { .. } => AuthType::BasicAuth,
         };
 
         let auth_type_selector = pick_list(
@@ -414,7 +414,7 @@ Method: {method}"#,
                 .padding(10)
                 .secure(true),]
             .spacing(10),
-            Auth::BasicAuth { user, pass } => column![
+            Auth::Basic { user, pass } => column![
                 text_input("Username", user)
                     .on_input(|u| Message::AuthInputChanged(AuthInput::BasicUser(u)))
                     .padding(10),
@@ -424,7 +424,7 @@ Method: {method}"#,
                     .secure(true),
             ]
             .spacing(10),
-            Auth::NoAuth => column![text("No authentication required.").size(14),]
+            Auth::None => column![text("No authentication required.").size(14),]
                 .spacing(10)
                 .padding(10),
         };
