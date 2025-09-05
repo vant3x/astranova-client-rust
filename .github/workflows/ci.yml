@@ -2,9 +2,9 @@ name: CI/CD AstraNova
 
 on:
   push:
-    branches: [ master, main, develop, release/* ]
+    branches: [ main, develop, release/*, staging ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ main, staging ]
   release:
     types: [published]
 

@@ -1,4 +1,7 @@
-use iced::{widget::{column, row, button, text}, Element, Task, Length};
+use iced::{
+    widget::{button, column, row, text},
+    Element, Length, Task,
+};
 use iced_aw::{TabLabel, Tabs};
 
 use super::views::http_request_view::{self, HttpRequestView};
@@ -50,11 +53,11 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
                     view.update(msg);
                 }
             }
-        },
+        }
         Message::AddRequestTab => {
             app.request_tabs.push(HttpRequestView::default());
             app.active_request_tab_index = app.request_tabs.len() - 1;
-        },
+        }
         Message::CloseRequestTab(index) => {
             if app.request_tabs.len() > 1 {
                 app.request_tabs.remove(index);
@@ -62,10 +65,10 @@ fn update(app: &mut AstraNovaApp, message: Message) -> Task<Message> {
                     app.active_request_tab_index = app.request_tabs.len() - 1;
                 }
             }
-        },
+        }
         Message::SelectRequestTab(index) => {
             app.active_request_tab_index = index;
-        },
+        }
     }
     Task::none()
 }
@@ -83,7 +86,9 @@ fn view(app: &AstraNovaApp) -> Element<'_, Message> {
         tabs = tabs.push(
             index,
             tab_label,
-            request_tab.view().map(move |msg| Message::HttpRequestViewMessage(index, msg)),
+            request_tab
+                .view()
+                .map(move |msg| Message::HttpRequestViewMessage(index, msg)),
         );
     }
 
@@ -100,7 +105,9 @@ fn view(app: &AstraNovaApp) -> Element<'_, Message> {
     };
 
     column![
-        row![add_tab_button, close_tab_button].spacing(10).padding(10),
+        row![add_tab_button, close_tab_button]
+            .spacing(10)
+            .padding(10),
         tabs_widget,
     ]
     .into()
