@@ -50,8 +50,9 @@ pub enum AuthInput {
     BasicPass(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum RequestStatus {
+    #[default]
     Idle,
     Loading,
     Success(text_editor::Content),
@@ -71,11 +72,7 @@ impl Clone for RequestStatus {
     }
 }
 
-impl Default for RequestStatus {
-    fn default() -> Self {
-        RequestStatus::Idle
-    }
-}
+
 
 #[derive(Debug)]
 pub struct HttpRequestView {
