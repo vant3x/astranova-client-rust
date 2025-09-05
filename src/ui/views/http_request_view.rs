@@ -434,7 +434,7 @@ Method: {method}"#,
             ]
             .spacing(10)
             .padding(10),
-            tabs.height(Length::Fixed(400.0)),
+            tabs.height(Length::Fixed(250.0)),
             Rule::horizontal(10),
             column![
                 row![
