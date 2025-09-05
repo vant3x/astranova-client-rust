@@ -1,9 +1,10 @@
 use super::request::HttpRequest;
 use super::response::HttpResponse;
 
-pub async fn send_request(client: &reqwest::Client, request: HttpRequest) -> Result<HttpResponse, String> {
-    
-
+pub async fn send_request(
+    client: &reqwest::Client,
+    request: HttpRequest,
+) -> Result<HttpResponse, String> {
     let url_for_log = request.url.clone();
     let method_for_log = request.method.clone();
     let request_body_for_log = request.body.clone();
