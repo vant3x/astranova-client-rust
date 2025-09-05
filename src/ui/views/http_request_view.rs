@@ -72,8 +72,6 @@ impl Clone for RequestStatus {
     }
 }
 
-
-
 #[derive(Debug)]
 pub struct HttpRequestView {
     pub url_input: String,
