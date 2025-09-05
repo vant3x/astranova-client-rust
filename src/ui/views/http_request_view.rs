@@ -12,7 +12,7 @@ use std::time::Duration;
 
 const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
 
-static HTTP_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+static HTTP_METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 #[derive(Debug, Clone)]
 pub enum Message {
