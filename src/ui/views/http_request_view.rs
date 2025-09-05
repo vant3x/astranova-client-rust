@@ -4,10 +4,12 @@ use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use iced::widget::image::{Handle, Image};
 use iced::{
-    widget::{button, column, container, pick_list, row, scrollable, text, text_input, Rule},
+    widget::{
+        button, column, container, pick_list, row, scrollable, text, text_editor, text_input, Rule,
+    },
     Alignment, Element, Length, Renderer, Theme,
 };
-use iced_aw::{TabLabel, Tabs};
+use iced_aw::{ContextMenu, TabLabel, Tabs};
 use std::time::Duration;
 
 const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
@@ -28,6 +30,8 @@ pub enum Message {
     SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
+    ResponseContentChanged(text_editor::Action),
+    CopySelection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -46,16 +50,34 @@ pub enum AuthInput {
     BasicPass(String),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub enum RequestStatus {
-    #[default]
     Idle,
     Loading,
-    Success(String),
+    Success(text_editor::Content),
     Error(String),
 }
 
-#[derive(Debug, Clone)]
+impl Clone for RequestStatus {
+    fn clone(&self) -> Self {
+        match self {
+            RequestStatus::Idle => RequestStatus::Idle,
+            RequestStatus::Loading => RequestStatus::Loading,
+            RequestStatus::Success(content) => {
+                RequestStatus::Success(text_editor::Content::with_text(&content.text()))
+            }
+            RequestStatus::Error(s) => RequestStatus::Error(s.clone()),
+        }
+    }
+}
+
+impl Default for RequestStatus {
+    fn default() -> Self {
+        RequestStatus::Idle
+    }
+}
+
+#[derive(Debug)]
 pub struct HttpRequestView {
     pub url_input: String,
     pub method: &'static str,
@@ -69,6 +91,25 @@ pub struct HttpRequestView {
     pub content_type: Option<String>,
     pub response_duration: Option<Duration>,
     pub response_size: Option<u64>,
+}
+
+impl Clone for HttpRequestView {
+    fn clone(&self) -> Self {
+        Self {
+            url_input: self.url_input.clone(),
+            method: self.method,
+            body_input: self.body_input.clone(),
+            auth: self.auth.clone(),
+            headers_editor: self.headers_editor.clone(),
+            params_editor: self.params_editor.clone(),
+            active_tab: self.active_tab.clone(),
+            request_status: self.request_status.clone(),
+            status_code: self.status_code,
+            content_type: self.content_type.clone(),
+            response_duration: self.response_duration,
+            response_size: self.response_size,
+        }
+    }
 }
 
 impl Default for HttpRequestView {
@@ -210,7 +251,7 @@ impl HttpRequestView {
                         response.body.clone()
                     };
 
-                    self.request_status = RequestStatus::Success(format!(
+                    let response_text = format!(
                         r#"Headers: {headers:#?}
 
 Body: {body}
@@ -222,7 +263,9 @@ Method: {method}"#,
                         body = formatted_body,
                         url = response.url,
                         method = response.method,
-                    ));
+                    );
+                    self.request_status =
+                        RequestStatus::Success(text_editor::Content::with_text(&response_text));
                 }
                 Err(e) => {
                     self.request_status = RequestStatus::Error(format!("Error: {}", e));
@@ -234,7 +277,7 @@ Method: {method}"#,
             },
             Message::CopyResponse => {
                 let text_to_copy = match &self.request_status {
-                    RequestStatus::Success(response_text) => Some(response_text.clone()),
+                    RequestStatus::Success(content) => Some(content.text()),
                     RequestStatus::Error(error_message) => Some(error_message.clone()),
                     _ => None,
                 };
@@ -242,6 +285,19 @@ Method: {method}"#,
                 if let Some(text) = text_to_copy {
                     let mut clipboard = arboard::Clipboard::new().unwrap();
                     clipboard.set_text(text).unwrap();
+                }
+            }
+            Message::ResponseContentChanged(action) => {
+                if let RequestStatus::Success(content) = &mut self.request_status {
+                    content.perform(action);
+                }
+            }
+            Message::CopySelection => {
+                if let RequestStatus::Success(content) = &self.request_status {
+                    if let Some(selection) = content.selection() {
+                        let mut clipboard = arboard::Clipboard::new().unwrap();
+                        clipboard.set_text(selection).unwrap();
+                    }
                 }
             }
         }
@@ -303,10 +359,20 @@ Method: {method}"#,
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
                 .into(),
-            RequestStatus::Success(response_text) => container(scrollable(text(response_text)))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
+            RequestStatus::Success(content) => {
+                let editor = text_editor(content).on_action(Message::ResponseContentChanged);
+
+                let context_menu = ContextMenu::new(scrollable(editor), || {
+                    button("Copy Selection")
+                        .on_press(Message::CopySelection)
+                        .into()
+                });
+
+                container(context_menu)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
+            }
             RequestStatus::Error(error_message) => {
                 container(text(format!("Error: {}", error_message)))
                     .width(Length::Fill)
@@ -371,7 +437,7 @@ Method: {method}"#,
             ]
             .spacing(10)
             .padding(10),
-            tabs.height(Length::Fixed(300.0)),
+            tabs.height(Length::Fixed(400.0)),
             Rule::horizontal(10),
             column![
                 row![
