@@ -80,7 +80,13 @@ fn view(app: &AstraNovaApp) -> Element<'_, Message> {
         let tab_label = if request_tab.url_input.is_empty() {
             TabLabel::Text(format!("New Request {}", index + 1))
         } else {
-            TabLabel::Text(request_tab.url_input.clone())
+            let url = request_tab.url_input.chars().take(25).collect::<String>();
+            let truncated_url = if request_tab.url_input.len() > 25 {
+                format!("{}...", url)
+            } else {
+                url
+            };
+            TabLabel::Text(format!("{} {}", request_tab.method, truncated_url))
         };
 
         tabs = tabs.push(
