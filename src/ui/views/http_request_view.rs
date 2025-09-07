@@ -16,6 +16,38 @@ const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
 
 static HTTP_METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentType {
+    Json,
+    Text,
+    Html,
+    Xml,
+}
+
+impl ContentType {
+    pub const ALL: [ContentType; 4] = [
+        ContentType::Json,
+        ContentType::Text,
+        ContentType::Html,
+        ContentType::Xml,
+    ];
+}
+
+impl std::fmt::Display for ContentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ContentType::Json => "JSON",
+                ContentType::Text => "Text",
+                ContentType::Html => "HTML",
+                ContentType::Xml => "XML",
+            }
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
@@ -25,7 +57,8 @@ pub enum Message {
     AuthInputChanged(AuthInput),
     HeadersEditor(key_value_editor::Message),
     ParamsEditor(key_value_editor::Message),
-    BodyInputChanged(String),
+    BodyInputChanged(text_editor::Action),
+    RequestContentTypeSelected(ContentType),
     SendRequest(crate::http_client::request::HttpRequest),
     SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
@@ -76,7 +109,7 @@ impl Clone for RequestStatus {
 pub struct HttpRequestView {
     pub url_input: String,
     pub method: &'static str,
-    pub body_input: String,
+    pub body_input: text_editor::Content,
     pub auth: Auth,
     pub headers_editor: KeyValueEditor,
     pub params_editor: KeyValueEditor,
@@ -86,6 +119,7 @@ pub struct HttpRequestView {
     pub content_type: Option<String>,
     pub response_duration: Option<Duration>,
     pub response_size: Option<u64>,
+    pub request_content_type: ContentType,
 }
 
 impl Clone for HttpRequestView {
@@ -93,7 +127,7 @@ impl Clone for HttpRequestView {
         Self {
             url_input: self.url_input.clone(),
             method: self.method,
-            body_input: self.body_input.clone(),
+            body_input: text_editor::Content::with_text(&self.body_input.text()),
             auth: self.auth.clone(),
             headers_editor: self.headers_editor.clone(),
             params_editor: self.params_editor.clone(),
@@ -103,6 +137,7 @@ impl Clone for HttpRequestView {
             content_type: self.content_type.clone(),
             response_duration: self.response_duration,
             response_size: self.response_size,
+            request_content_type: self.request_content_type,
         }
     }
 }
@@ -112,7 +147,7 @@ impl Default for HttpRequestView {
         Self {
             url_input: "https://jsonplaceholder.typicode.com/todos/1".to_string(),
             method: "GET",
-            body_input: String::new(),
+            body_input: text_editor::Content::new(),
             auth: Auth::default(),
             headers_editor: KeyValueEditor::new("Add Header".to_string()),
             params_editor: KeyValueEditor::new("Add Param".to_string()),
@@ -122,6 +157,7 @@ impl Default for HttpRequestView {
             content_type: None,
             response_duration: None,
             response_size: None,
+            request_content_type: ContentType::Json,
         }
     }
 }
@@ -172,15 +208,23 @@ impl HttpRequestView {
             }
             _ => {}
         }
+        
+        let content_type_str = match self.request_content_type {
+            ContentType::Json => "application/json",
+            ContentType::Text => "text/plain",
+            ContentType::Html => "text/html",
+            ContentType::Xml => "application/xml",
+        };
+        headers.push(("Content-Type".to_string(), content_type_str.to_string()));
 
         crate::http_client::request::HttpRequest {
             method: self.method.to_string(),
             url: final_url,
             headers,
-            body: if self.body_input.is_empty() {
+            body: if self.body_input.text().is_empty() {
                 None
             } else {
-                Some(self.body_input.clone())
+                Some(self.body_input.text())
             },
         }
     }
@@ -214,7 +258,10 @@ impl HttpRequestView {
             },
             Message::HeadersEditor(msg) => self.headers_editor.update(msg),
             Message::ParamsEditor(msg) => self.params_editor.update(msg),
-            Message::BodyInputChanged(body) => self.body_input = body,
+            Message::BodyInputChanged(action) => self.body_input.perform(action),
+            Message::RequestContentTypeSelected(content_type) => {
+                self.request_content_type = content_type
+            }
             Message::SendRequest(_) => {}
             Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
@@ -300,19 +347,13 @@ Method: {method}"#,
 
     pub fn view(&self) -> Element<'_, Message, Theme, Renderer> {
         let auth_tab_content = self.create_auth_tab_content();
+        let body_tab_content = self.create_body_tab_content();
 
         let tabs = Tabs::new(Message::TabSelected)
             .push(
                 TabId::Body,
                 TabLabel::Text("Body".to_string()),
-                container(
-                    text_input("Request Body", &self.body_input)
-                        .on_input(Message::BodyInputChanged)
-                        .padding(10),
-                )
-                .padding(10)
-                .width(Length::Fill)
-                .height(Length::Fill),
+                body_tab_content,
             )
             .push(
                 TabId::Headers,
@@ -485,9 +526,7 @@ Method: {method}"#,
                     .secure(true),
             ]
             .spacing(10),
-            Auth::None => column![text("No authentication required.").size(14),]
-                .spacing(10)
-                .padding(10),
+            Auth::None => column![text("No authentication required.").size(14),].spacing(10),
         };
 
         container(
@@ -499,6 +538,31 @@ Method: {method}"#,
             .spacing(15)
             .padding(20),
         )
+        .into()
+    }
+
+    fn create_body_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
+        let content_type_selector = pick_list(
+            &ContentType::ALL[..],
+            Some(self.request_content_type),
+            Message::RequestContentTypeSelected,
+        )
+        .padding(10);
+
+        let body_editor = text_editor(&self.body_input)
+            .on_action(Message::BodyInputChanged)
+            .height(Length::Fill);
+
+        container(
+            column![
+                row![text("Content-Type:").size(16), content_type_selector].spacing(10),
+                body_editor
+            ]
+            .spacing(15)
+            .padding(10),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
     }
 }
