@@ -209,23 +209,27 @@ impl HttpRequestView {
             _ => {}
         }
         
-        let content_type_str = match self.request_content_type {
-            ContentType::Json => "application/json",
-            ContentType::Text => "text/plain",
-            ContentType::Html => "text/html",
-            ContentType::Xml => "application/xml",
+        let body = if self.body_input.text().is_empty() {
+            None
+        } else {
+            Some(self.body_input.text())
         };
-        headers.push(("Content-Type".to_string(), content_type_str.to_string()));
+
+        if body.is_some() {
+            let content_type_str = match self.request_content_type {
+                ContentType::Json => "application/json",
+                ContentType::Text => "text/plain",
+                ContentType::Html => "text/html",
+                ContentType::Xml => "application/xml",
+            };
+            headers.push(("Content-Type".to_string(), content_type_str.to_string()));
+        }
 
         crate::http_client::request::HttpRequest {
             method: self.method.to_string(),
             url: final_url,
             headers,
-            body: if self.body_input.text().is_empty() {
-                None
-            } else {
-                Some(self.body_input.text())
-            },
+            body,
         }
     }
 
