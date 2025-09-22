@@ -208,7 +208,7 @@ impl HttpRequestView {
             }
             _ => {}
         }
-        
+
         let body = if self.body_input.text().is_empty() {
             None
         } else {

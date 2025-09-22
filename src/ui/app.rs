@@ -1,7 +1,7 @@
 use crate::persistence::database::{self, Environment};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use iced::{
-    widget::{button, column, row, text, pick_list, container},
+    widget::{button, column, container, pick_list, row, text},
     Element, Length, Task,
 };
 use iced_aw::{TabLabel, Tabs};
@@ -122,7 +122,10 @@ impl AstraNovaApp {
                 self.env_manager_view.update(msg.clone());
                 match msg {
                     environment_manager::Message::CreateEnvironment => {
-                        match database::create_environment(&self.db_conn, &self.env_manager_view.new_environment_name) {
+                        match database::create_environment(
+                            &self.db_conn,
+                            &self.env_manager_view.new_environment_name,
+                        ) {
                             Ok(new_env) => {
                                 self.environments.push(new_env.clone());
                                 self.env_manager_view.environments = self.environments.clone();
@@ -135,18 +138,25 @@ impl AstraNovaApp {
                     environment_manager::Message::SaveEnvironment => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
                             match database::update_environment(&self.db_conn, env) {
-                                Ok(_) => {
-                                    match database::get_environments(&self.db_conn) {
-                                        Ok(environments) => {
-                                            self.environments = environments;
-                                            self.env_manager_view.environments = self.environments.clone();
-                                            if let Some(selected_env) = &self.env_manager_view.selected_environment {
-                                                self.env_manager_view.selected_environment = self.environments.iter().find(|e| e.id == selected_env.id).cloned();
-                                            }
+                                Ok(_) => match database::get_environments(&self.db_conn) {
+                                    Ok(environments) => {
+                                        self.environments = environments;
+                                        self.env_manager_view.environments =
+                                            self.environments.clone();
+                                        if let Some(selected_env) =
+                                            &self.env_manager_view.selected_environment
+                                        {
+                                            self.env_manager_view.selected_environment = self
+                                                .environments
+                                                .iter()
+                                                .find(|e| e.id == selected_env.id)
+                                                .cloned();
                                         }
-                                        Err(e) => eprintln!("Error getting environments after save: {}", e),
                                     }
-                                }
+                                    Err(e) => {
+                                        eprintln!("Error getting environments after save: {}", e)
+                                    }
+                                },
                                 Err(e) => eprintln!("Error saving environment: {}", e),
                             }
                         }
@@ -154,15 +164,16 @@ impl AstraNovaApp {
                     environment_manager::Message::DeleteEnvironment => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
                             match database::delete_environment(&self.db_conn, env.id) {
-                                Ok(_) => {
-                                    match database::get_environments(&self.db_conn) {
-                                        Ok(environments) => {
-                                            self.environments = environments;
-                                            self.env_manager_view.environments = self.environments.clone();
-                                        }
-                                        Err(e) => eprintln!("Error getting environments after delete: {}", e),
+                                Ok(_) => match database::get_environments(&self.db_conn) {
+                                    Ok(environments) => {
+                                        self.environments = environments;
+                                        self.env_manager_view.environments =
+                                            self.environments.clone();
                                     }
-                                }
+                                    Err(e) => {
+                                        eprintln!("Error getting environments after delete: {}", e)
+                                    }
+                                },
                                 Err(e) => eprintln!("Error deleting environment: {}", e),
                             }
                         }
@@ -170,7 +181,7 @@ impl AstraNovaApp {
                     environment_manager::Message::Close => {
                         self.current_view = View::Main;
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
             Message::SelectEnvironment(id) => {
@@ -217,7 +228,8 @@ impl AstraNovaApp {
 
                 let add_tab_button = button(text("+")).on_press(Message::AddRequestTab);
                 let close_tab_button = if self.request_tabs.len() > 1 {
-                    button(text("x")).on_press(Message::CloseRequestTab(self.active_request_tab_index))
+                    button(text("x"))
+                        .on_press(Message::CloseRequestTab(self.active_request_tab_index))
                 } else {
                     button(text("x"))
                 };
@@ -230,16 +242,20 @@ impl AstraNovaApp {
                 .placeholder("No Environment");
 
                 column![
-                    row![add_tab_button, close_tab_button, env_selector, button(text("Manage Environments")).on_press(Message::SwitchView(View::EnvironmentManager))]
-                        .spacing(10)
-                        .padding(10),
+                    row![
+                        add_tab_button,
+                        close_tab_button,
+                        env_selector,
+                        button(text("Manage Environments"))
+                            .on_press(Message::SwitchView(View::EnvironmentManager))
+                    ]
+                    .spacing(10)
+                    .padding(10),
                     tabs_widget,
-                ].into()
+                ]
+                .into()
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
         }
     }
 }
-
-
-
