@@ -1,10 +1,11 @@
 use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
-use iced::{
-    widget::{button, column, container, pick_list, row, text, text_input},
-    Element, Length, theme,
-};
 use iced::widget::container as iced_container;
+use iced::{
+    theme,
+    widget::{button, column, container, pick_list, row, text, text_input},
+    Element, Length,
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -93,18 +94,18 @@ impl EnvironmentManagerView {
         let mut environment_details = column![];
         if let Some(selected_env) = &self.selected_environment {
             environment_details = environment_details
-                .push(text_input("Name", &selected_env.name).on_input(Message::EnvironmentNameChanged))
+                .push(
+                    text_input("Name", &selected_env.name)
+                        .on_input(Message::EnvironmentNameChanged),
+                )
                 .push(self.variables_editor.view().map(Message::VariablesEditor))
                 .push(button("Save").on_press(Message::SaveEnvironment))
                 .push(button("Delete").on_press(Message::DeleteEnvironment));
         }
 
         let create_new_env_section = column![
-            text_input(
-                "New Environment Name",
-                &self.new_environment_name
-            )
-            .on_input(Message::NewEnvironmentNameChanged),
+            text_input("New Environment Name", &self.new_environment_name)
+                .on_input(Message::NewEnvironmentNameChanged),
             button("Create").on_press(Message::CreateEnvironment)
         ];
 
