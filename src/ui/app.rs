@@ -114,13 +114,6 @@ impl AstraNovaApp {
             Message::SelectRequestTab(index) => {
                 self.active_request_tab_index = index;
             }
-            Message::Loaded(Ok(environments)) => {
-                self.environments = environments;
-                self.env_manager_view = EnvironmentManagerView::new(self.environments.clone());
-            }
-            Message::Loaded(Err(e)) => {
-                eprintln!("Error loading environments: {}", e);
-            }
             Message::EnvManagerMsg(msg) => {
                 self.env_manager_view.update(msg.clone());
                 match msg {
