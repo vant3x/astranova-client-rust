@@ -97,6 +97,6 @@ pub fn update_environment(conn: &Connection, env: &Environment) -> Result<()> {
 }
 
 pub fn delete_environment(conn: &Connection, id: i32) -> Result<()> {
-    conn.execute("DELETE FROM environments WHERE id = ?1", &[&id.to_string()])?;
+    conn.execute("DELETE FROM environments WHERE id = ?1", [&id.to_string()])?;
     Ok(())
 }
