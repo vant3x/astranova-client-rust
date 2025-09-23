@@ -1,12 +1,12 @@
 use crate::data::auth::{Auth, AuthType};
+use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use iced::widget::image::{Handle, Image};
+use iced::widget::text_editor;
 use iced::{
-    widget::{
-        button, column, container, pick_list, row, scrollable, text, text_editor, text_input, Rule,
-    },
+    widget::{button, column, container, pick_list, row, scrollable, text, text_input, Rule},
     Alignment, Element, Length, Renderer, Theme,
 };
 use iced_aw::{ContextMenu, TabLabel, Tabs};
@@ -59,7 +59,7 @@ pub enum Message {
     ParamsEditor(key_value_editor::Message),
     BodyInputChanged(text_editor::Action),
     RequestContentTypeSelected(ContentType),
-    SendRequest(crate::http_client::request::HttpRequest),
+    SendRequest,
     SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
@@ -163,6 +163,34 @@ impl Default for HttpRequestView {
 }
 
 impl HttpRequestView {
+    pub fn apply_environment(&mut self, env: &Environment) {
+        for (key, value) in &env.variables {
+            let placeholder = format!("{{{{{}}}}}", key);
+            self.url_input = self.url_input.replace(&placeholder, value);
+
+            let new_body = self.body_input.text().replace(&placeholder, value);
+            self.body_input = text_editor::Content::with_text(&new_body);
+
+            for entry in &mut self.headers_editor.entries {
+                entry.value = entry.value.replace(&placeholder, value);
+            }
+            for entry in &mut self.params_editor.entries {
+                entry.value = entry.value.replace(&placeholder, value);
+            }
+
+            match &mut self.auth {
+                Auth::BearerToken(token) => {
+                    *token = token.replace(&placeholder, value);
+                }
+                Auth::Basic { user, pass } => {
+                    *user = user.replace(&placeholder, value);
+                    *pass = pass.replace(&placeholder, value);
+                }
+                Auth::None => {}
+            }
+        }
+    }
+
     pub fn build_request(&self) -> crate::http_client::request::HttpRequest {
         let params: Vec<(String, String)> = self
             .params_editor
@@ -208,7 +236,7 @@ impl HttpRequestView {
             }
             _ => {}
         }
-        
+
         let body = if self.body_input.text().is_empty() {
             None
         } else {
@@ -266,7 +294,7 @@ impl HttpRequestView {
             Message::RequestContentTypeSelected(content_type) => {
                 self.request_content_type = content_type
             }
-            Message::SendRequest(_) => {}
+            Message::SendRequest => {}
             Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
                 self.status_code = None;
@@ -473,7 +501,7 @@ Method: {method}"#,
                 text_input("URL", &self.url_input)
                     .on_input(Message::UrlInputChanged)
                     .padding(10),
-                button("Send").on_press(Message::SendRequest(self.build_request()))
+                button("Send").on_press(Message::SendRequest)
             ]
             .spacing(10)
             .padding(10),

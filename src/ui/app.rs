@@ -1,8 +1,8 @@
 use crate::persistence::database::{self, Environment};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use iced::{
-    widget::{button, column, row, text, pick_list, container},
-    Element, Length, Task,
+    widget::{button, column, pick_list, row, text},
+    Alignment, Element, Length, Task,
 };
 use iced_aw::{TabLabel, Tabs};
 use reqwest;
@@ -38,7 +38,6 @@ pub enum Message {
     AddRequestTab,
     CloseRequestTab(usize),
     SelectRequestTab(usize),
-    Loaded(Result<Vec<Environment>, String>),
     EnvManagerMsg(environment_manager::Message),
     SelectEnvironment(i32),
     SwitchView(View),
@@ -65,39 +64,43 @@ impl AstraNovaApp {
         match message {
             Message::HttpRequestViewMsg(index, msg) => {
                 if let Some(view) = self.request_tabs.get_mut(index) {
-                    if let http_request_view::Message::SendRequest(mut request) = msg {
-                        if let Some(env) = &self.active_environment {
-                            for (key, value) in &env.variables {
-                                let placeholder = format!("{{{{{}}}}}", key);
-                                request.url = request.url.replace(&placeholder, value);
-                                if let Some(body) = &mut request.body {
-                                    *body = body.replace(&placeholder, value);
-                                }
-                                for (_, header_value) in &mut request.headers {
-                                    *header_value = header_value.replace(&placeholder, value);
-                                }
+                    match msg {
+                        http_request_view::Message::SendRequest => {
+                            let mut temp_view = view.clone();
+
+                            if let Some(env) = &self.active_environment {
+                                temp_view.apply_environment(env);
                             }
+
+                            let request = temp_view.build_request();
+
+                            view.update(http_request_view::Message::SetLoading);
+
+                            let http_client = self.http_client.clone(); // Clone the client for the async task
+                            return Task::perform(
+                                async move { client::send_request(&http_client, request).await },
+                                move |result| {
+                                    Message::HttpRequestViewMsg(
+                                        index,
+                                        http_request_view::Message::ResponseReceived(result),
+                                    )
+                                },
+                            );
                         }
-
-                        view.update(http_request_view::Message::SetLoading);
-
-                        let http_client = self.http_client.clone(); // Clone the client for the async task
-                        return Task::perform(
-                            async move { client::send_request(&http_client, request).await },
-                            move |result| {
-                                Message::HttpRequestViewMsg(
-                                    index,
-                                    http_request_view::Message::ResponseReceived(result),
-                                )
-                            },
-                        );
-                    } else {
-                        view.update(msg);
+                        _ => view.update(msg),
                     }
                 }
             }
             Message::AddRequestTab => {
-                self.request_tabs.push(HttpRequestView::default());
+                let mut new_view = HttpRequestView::default();
+                if let Some(env) = &self.active_environment {
+                    if let Some(url) = &env.default_endpoint {
+                        if !url.is_empty() {
+                            new_view.url_input = url.clone();
+                        }
+                    }
+                }
+                self.request_tabs.push(new_view);
                 self.active_request_tab_index = self.request_tabs.len() - 1;
             }
             Message::CloseRequestTab(index) => {
@@ -122,7 +125,10 @@ impl AstraNovaApp {
                 self.env_manager_view.update(msg.clone());
                 match msg {
                     environment_manager::Message::CreateEnvironment => {
-                        match database::create_environment(&self.db_conn, &self.env_manager_view.new_environment_name) {
+                        match database::create_environment(
+                            &self.db_conn,
+                            &self.env_manager_view.new_environment_name,
+                        ) {
                             Ok(new_env) => {
                                 self.environments.push(new_env.clone());
                                 self.env_manager_view.environments = self.environments.clone();
@@ -135,18 +141,25 @@ impl AstraNovaApp {
                     environment_manager::Message::SaveEnvironment => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
                             match database::update_environment(&self.db_conn, env) {
-                                Ok(_) => {
-                                    match database::get_environments(&self.db_conn) {
-                                        Ok(environments) => {
-                                            self.environments = environments;
-                                            self.env_manager_view.environments = self.environments.clone();
-                                            if let Some(selected_env) = &self.env_manager_view.selected_environment {
-                                                self.env_manager_view.selected_environment = self.environments.iter().find(|e| e.id == selected_env.id).cloned();
-                                            }
+                                Ok(_) => match database::get_environments(&self.db_conn) {
+                                    Ok(environments) => {
+                                        self.environments = environments;
+                                        self.env_manager_view.environments =
+                                            self.environments.clone();
+                                        if let Some(selected_env) =
+                                            &self.env_manager_view.selected_environment
+                                        {
+                                            self.env_manager_view.selected_environment = self
+                                                .environments
+                                                .iter()
+                                                .find(|e| e.id == selected_env.id)
+                                                .cloned();
                                         }
-                                        Err(e) => eprintln!("Error getting environments after save: {}", e),
                                     }
-                                }
+                                    Err(e) => {
+                                        eprintln!("Error getting environments after save: {}", e)
+                                    }
+                                },
                                 Err(e) => eprintln!("Error saving environment: {}", e),
                             }
                         }
@@ -154,15 +167,16 @@ impl AstraNovaApp {
                     environment_manager::Message::DeleteEnvironment => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
                             match database::delete_environment(&self.db_conn, env.id) {
-                                Ok(_) => {
-                                    match database::get_environments(&self.db_conn) {
-                                        Ok(environments) => {
-                                            self.environments = environments;
-                                            self.env_manager_view.environments = self.environments.clone();
-                                        }
-                                        Err(e) => eprintln!("Error getting environments after delete: {}", e),
+                                Ok(_) => match database::get_environments(&self.db_conn) {
+                                    Ok(environments) => {
+                                        self.environments = environments;
+                                        self.env_manager_view.environments =
+                                            self.environments.clone();
                                     }
-                                }
+                                    Err(e) => {
+                                        eprintln!("Error getting environments after delete: {}", e)
+                                    }
+                                },
                                 Err(e) => eprintln!("Error deleting environment: {}", e),
                             }
                         }
@@ -170,7 +184,7 @@ impl AstraNovaApp {
                     environment_manager::Message::Close => {
                         self.current_view = View::Main;
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
             Message::SelectEnvironment(id) => {
@@ -217,29 +231,57 @@ impl AstraNovaApp {
 
                 let add_tab_button = button(text("+")).on_press(Message::AddRequestTab);
                 let close_tab_button = if self.request_tabs.len() > 1 {
-                    button(text("x")).on_press(Message::CloseRequestTab(self.active_request_tab_index))
+                    button(text("x"))
+                        .on_press(Message::CloseRequestTab(self.active_request_tab_index))
                 } else {
                     button(text("x"))
                 };
 
                 let env_selector = pick_list(
-                    self.environments.iter().map(|e| e.id).collect::<Vec<_>>(),
-                    self.active_environment.as_ref().map(|e| e.id),
-                    Message::SelectEnvironment,
+                    &self.environments[..],
+                    self.active_environment.clone(),
+                    |env| Message::SelectEnvironment(env.id),
                 )
                 .placeholder("No Environment");
 
+                let mut env_controls = row![
+                    env_selector,
+                    button(text("Manage Environments"))
+                        .on_press(Message::SwitchView(View::EnvironmentManager))
+                ]
+                .spacing(10);
+
+                if let Some(active_env) = &self.active_environment {
+                    let variables_text = if active_env.variables.is_empty() {
+                        "This environment has no variables.".to_string()
+                    } else {
+                        let keys: Vec<_> = active_env
+                            .variables
+                            .iter()
+                            .map(|(k, _)| k.as_str())
+                            .collect();
+                        format!("Available: {}", keys.join(", "))
+                    };
+
+                    let help_texts = column![
+                        text("Use {{variable}} in URL, Headers, or Body.").size(12),
+                        text(variables_text).size(12)
+                    ]
+                    .spacing(5);
+
+                    env_controls = env_controls.push(help_texts);
+                }
+
                 column![
-                    row![add_tab_button, close_tab_button, env_selector, button(text("Manage Environments")).on_press(Message::SwitchView(View::EnvironmentManager))]
+                    row![add_tab_button, close_tab_button, env_controls,]
                         .spacing(10)
-                        .padding(10),
+                        .padding(10)
+                        .align_y(Alignment::Center),
                     tabs_widget,
-                ].into()
+                ]
+                .into()
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
         }
     }
 }
-
-
-
