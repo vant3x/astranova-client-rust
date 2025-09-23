@@ -1,5 +1,5 @@
 use directories::ProjectDirs;
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::path::PathBuf;
@@ -9,6 +9,7 @@ pub struct Environment {
     pub id: i32,
     pub name: String,
     pub variables: Vec<(String, String)>,
+    pub default_endpoint: Option<String>,
 }
 
 impl std::fmt::Display for Environment {
@@ -35,6 +36,12 @@ pub fn init() -> Result<Connection> {
         )",
         [],
     )?;
+    // Add the new column, ignoring errors if it already exists
+    conn.execute(
+        "ALTER TABLE environments ADD COLUMN default_endpoint TEXT",
+        [],
+    )
+    .ok();
     Ok(conn)
 }
 
@@ -43,18 +50,20 @@ pub fn create_environment(conn: &Connection, name: &str) -> Result<Environment> 
     let variables_json = serde_json::to_value(&variables).unwrap();
     conn.execute(
         "INSERT INTO environments (name, variables) VALUES (?1, ?2)",
-        &[name, &variables_json.to_string()],
+        [name, &variables_json.to_string()],
     )?;
     let id = conn.last_insert_rowid();
     Ok(Environment {
         id: id as i32,
         name: name.to_string(),
         variables,
+        default_endpoint: None,
     })
 }
 
 pub fn get_environments(conn: &Connection) -> Result<Vec<Environment>> {
-    let mut stmt = conn.prepare("SELECT id, name, variables FROM environments")?;
+    let mut stmt =
+        conn.prepare("SELECT id, name, variables, default_endpoint FROM environments")?;
     let env_iter = stmt.query_map([], |row| {
         let variables_json: String = row.get(2)?;
         let variables: Vec<(String, String)> = serde_json::from_str(&variables_json).unwrap();
@@ -62,6 +71,7 @@ pub fn get_environments(conn: &Connection) -> Result<Vec<Environment>> {
             id: row.get(0)?,
             name: row.get(1)?,
             variables,
+            default_endpoint: row.get(3)?,
         })
     })?;
 
@@ -75,8 +85,13 @@ pub fn get_environments(conn: &Connection) -> Result<Vec<Environment>> {
 pub fn update_environment(conn: &Connection, env: &Environment) -> Result<()> {
     let variables_json = serde_json::to_value(&env.variables).unwrap();
     conn.execute(
-        "UPDATE environments SET name = ?1, variables = ?2 WHERE id = ?3",
-        &[&env.name, &variables_json.to_string(), &env.id.to_string()],
+        "UPDATE environments SET name = ?1, variables = ?2, default_endpoint = ?3 WHERE id = ?4",
+        params![
+            &env.name,
+            &variables_json.to_string(),
+            &env.default_endpoint,
+            &env.id.to_string(),
+        ],
     )?;
     Ok(())
 }

@@ -2,8 +2,7 @@ use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use iced::widget::container as iced_container;
 use iced::{
-    theme,
-    widget::{button, column, container, pick_list, row, text, text_input},
+    widget::{button, column, pick_list, row, text, text_input},
     Element, Length,
 };
 
@@ -11,6 +10,7 @@ use iced::{
 pub enum Message {
     SelectEnvironment(i32),
     EnvironmentNameChanged(String),
+    DefaultEndpointChanged(String),
     NewEnvironmentNameChanged(String),
     VariablesEditor(key_value_editor::Message),
     CreateEnvironment,
@@ -59,6 +59,11 @@ impl EnvironmentManagerView {
                     env.name = name;
                 }
             }
+            Message::DefaultEndpointChanged(url) => {
+                if let Some(env) = &mut self.selected_environment {
+                    env.default_endpoint = Some(url);
+                }
+            }
             Message::NewEnvironmentNameChanged(name) => {
                 self.new_environment_name = name;
             }
@@ -97,6 +102,13 @@ impl EnvironmentManagerView {
                 .push(
                     text_input("Name", &selected_env.name)
                         .on_input(Message::EnvironmentNameChanged),
+                )
+                .push(
+                    text_input(
+                        "Default Endpoint URL",
+                        selected_env.default_endpoint.as_deref().unwrap_or(""),
+                    )
+                    .on_input(Message::DefaultEndpointChanged),
                 )
                 .push(self.variables_editor.view().map(Message::VariablesEditor))
                 .push(button("Save").on_press(Message::SaveEnvironment))
