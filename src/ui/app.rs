@@ -39,6 +39,7 @@ pub enum Message {
     CloseRequestTab(usize),
     SelectRequestTab(usize),
     EnvManagerMsg(environment_manager::Message),
+    EnvFileLoaded(Option<Vec<(String, String)>>),
     SelectEnvironment(i32),
     SwitchView(View),
 }
@@ -174,10 +175,32 @@ impl AstraNovaApp {
                             }
                         }
                     }
+                    environment_manager::Message::LoadEnvFile => {
+                        return Task::perform(
+                            async {
+                                let file = rfd::AsyncFileDialog::new().pick_file().await;
+                                if let Some(file_handle) = file {
+                                    let data = file_handle.read().await;
+                                    // Dummy implementation for debugging
+                                    let vars = vec![("DUMMY".to_string(), "VALUE".to_string())];
+                                    Some(vars)
+                                } else {
+                                    None
+                                }
+                            },
+                            Message::EnvFileLoaded,
+                        );
+                    }
                     environment_manager::Message::Close => {
                         self.current_view = View::Main;
                     }
                     _ => (),
+                }
+            }
+            Message::EnvFileLoaded(vars) => {
+                if let Some(vars) = vars {
+                    self.env_manager_view
+                        .update(environment_manager::Message::UpdateVariables(vars));
                 }
             }
             Message::SelectEnvironment(id) => {

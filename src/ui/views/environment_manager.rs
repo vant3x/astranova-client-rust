@@ -13,9 +13,11 @@ pub enum Message {
     DefaultEndpointChanged(String),
     NewEnvironmentNameChanged(String),
     VariablesEditor(key_value_editor::Message),
+    UpdateVariables(Vec<(String, String)>),
     CreateEnvironment,
     SaveEnvironment,
     DeleteEnvironment,
+    LoadEnvFile,
     Close,
 }
 
@@ -67,6 +69,19 @@ impl EnvironmentManagerView {
             Message::NewEnvironmentNameChanged(name) => {
                 self.new_environment_name = name;
             }
+            Message::UpdateVariables(new_vars) => {
+                for (key, value) in new_vars {
+                    if let Some(entry) = self.variables_editor.entries.iter_mut().find(|e| e.key == key) {
+                        entry.value = value;
+                    } else {
+                        self.variables_editor.entries.push(key_value_editor::KeyValueEntry {
+                            id: self.variables_editor.entries.len(),
+                            key,
+                            value,
+                        });
+                    }
+                }
+            }
             Message::VariablesEditor(msg) => self.variables_editor.update(msg),
             Message::CreateEnvironment => {
                 // This message is handled in app.rs
@@ -83,6 +98,9 @@ impl EnvironmentManagerView {
             }
             Message::DeleteEnvironment => {
                 self.selected_environment = None;
+            }
+            Message::LoadEnvFile => {
+                // This message is handled in app.rs
             }
             Message::Close => {}
         }
@@ -111,8 +129,14 @@ impl EnvironmentManagerView {
                     .on_input(Message::DefaultEndpointChanged),
                 )
                 .push(self.variables_editor.view().map(Message::VariablesEditor))
-                .push(button("Save").on_press(Message::SaveEnvironment))
-                .push(button("Delete").on_press(Message::DeleteEnvironment));
+                .push(
+                    row![
+                        button("Save").on_press(Message::SaveEnvironment),
+                        button("Delete").on_press(Message::DeleteEnvironment),
+                        button("Load from .env").on_press(Message::LoadEnvFile)
+                    ]
+                    .spacing(10),
+                );
         }
 
         let create_new_env_section = column![
