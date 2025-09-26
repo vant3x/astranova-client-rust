@@ -181,8 +181,18 @@ impl AstraNovaApp {
                                 let file = rfd::AsyncFileDialog::new().pick_file().await;
                                 if let Some(file_handle) = file {
                                     let data = file_handle.read().await;
-                                    // Dummy implementation for debugging
-                                    let vars = vec![("DUMMY".to_string(), "VALUE".to_string())];
+                                    let mut vars = Vec::new();
+                                    if let Ok(content) = std::str::from_utf8(&data) {
+                                        for line in content.lines() {
+                                            let trimmed_line = line.trim();
+                                            if trimmed_line.starts_with('#') || trimmed_line.is_empty() {
+                                                continue;
+                                            }
+                                            if let Some((key, value)) = trimmed_line.split_once('=') {
+                                                vars.push((key.trim().to_string(), value.trim().to_string()));
+                                            }
+                                        }
+                                    }
                                     Some(vars)
                                 } else {
                                     None
