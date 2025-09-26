@@ -185,11 +185,17 @@ impl AstraNovaApp {
                                     if let Ok(content) = std::str::from_utf8(&data) {
                                         for line in content.lines() {
                                             let trimmed_line = line.trim();
-                                            if trimmed_line.starts_with('#') || trimmed_line.is_empty() {
+                                            if trimmed_line.starts_with('#')
+                                                || trimmed_line.is_empty()
+                                            {
                                                 continue;
                                             }
-                                            if let Some((key, value)) = trimmed_line.split_once('=') {
-                                                vars.push((key.trim().to_string(), value.trim().to_string()));
+                                            if let Some((key, value)) = trimmed_line.split_once('=')
+                                            {
+                                                vars.push((
+                                                    key.trim().to_string(),
+                                                    value.trim().to_string(),
+                                                ));
                                             }
                                         }
                                     }

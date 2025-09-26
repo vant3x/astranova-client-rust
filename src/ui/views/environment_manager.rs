@@ -71,14 +71,21 @@ impl EnvironmentManagerView {
             }
             Message::UpdateVariables(new_vars) => {
                 for (key, value) in new_vars {
-                    if let Some(entry) = self.variables_editor.entries.iter_mut().find(|e| e.key == key) {
+                    if let Some(entry) = self
+                        .variables_editor
+                        .entries
+                        .iter_mut()
+                        .find(|e| e.key == key)
+                    {
                         entry.value = value;
                     } else {
-                        self.variables_editor.entries.push(key_value_editor::KeyValueEntry {
-                            id: self.variables_editor.entries.len(),
-                            key,
-                            value,
-                        });
+                        self.variables_editor
+                            .entries
+                            .push(key_value_editor::KeyValueEntry {
+                                id: self.variables_editor.entries.len(),
+                                key,
+                                value,
+                            });
                     }
                 }
             }
