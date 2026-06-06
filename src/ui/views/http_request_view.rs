@@ -236,6 +236,7 @@ pub struct HttpRequestView {
     pub show_snippets: bool,
     pub snippet_format: SnippetFormat,
     pub snippet_content: text_editor::Content,
+    logo_handle: iced::widget::image::Handle,
 }
 
 impl Clone for HttpRequestView {
@@ -265,6 +266,7 @@ impl Clone for HttpRequestView {
             show_snippets: self.show_snippets,
             snippet_format: self.snippet_format,
             snippet_content: text_editor::Content::with_text(&self.snippet_content.text()),
+            logo_handle: self.logo_handle.clone(),
         }
     }
 }
@@ -296,6 +298,7 @@ impl Default for HttpRequestView {
             show_snippets: false,
             snippet_format: SnippetFormat::Curl,
             snippet_content: text_editor::Content::new(),
+            logo_handle: Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES)),
         }
     }
 }
@@ -705,7 +708,10 @@ impl HttpRequestView {
             .push(
                 TabId::Settings,
                 TabLabel::Text("Settings".to_string()),
-                settings_tab_content,
+                container(settings_tab_content)
+                    .padding(10)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
             )
             .set_active_tab(&self.active_tab)
             .width(Length::Fill);
@@ -816,7 +822,7 @@ impl HttpRequestView {
         .size(14);
 
         let main_column = column![
-            Image::new(Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES)))
+            Image::new(self.logo_handle.clone())
                 .width(Length::Fixed(100.0))
                 .height(Length::Fixed(100.0)),
             row![
@@ -834,7 +840,7 @@ impl HttpRequestView {
             ]
             .spacing(10)
             .padding(10),
-            tabs.height(Length::Fixed(250.0)),
+            tabs.height(Length::Fixed(380.0)),
             rule::horizontal(10),
             column![
                 row![
@@ -857,7 +863,7 @@ impl HttpRequestView {
         if self.show_snippets {
             let snippets_panel = self.create_snippets_panel();
             row![
-                main_column.width(Length::FillPortion(3)),
+                scrollable(main_column.width(Length::FillPortion(3))),
                 rule::vertical(1),
                 container(snippets_panel)
                     .width(Length::FillPortion(2))
@@ -865,7 +871,7 @@ impl HttpRequestView {
             ]
             .into()
         } else {
-            main_column.into()
+            scrollable(main_column).into()
         }
     }
 
@@ -1186,6 +1192,7 @@ impl HttpRequestView {
 
         container(
             column![
+                text("hola soy una config").size(14),
                 text("Request Settings").size(18),
                 row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
                 row![redirect_toggle].spacing(10),
