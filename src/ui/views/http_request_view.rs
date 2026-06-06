@@ -214,6 +214,7 @@ pub struct HttpRequestView {
     pub highlighter_theme: highlighter::Theme,
     pub show_snippets: bool,
     pub snippet_format: SnippetFormat,
+    pub snippet_content: text_editor::Content,
 }
 
 impl Clone for HttpRequestView {
@@ -242,6 +243,7 @@ impl Clone for HttpRequestView {
             highlighter_theme: self.highlighter_theme,
             show_snippets: self.show_snippets,
             snippet_format: self.snippet_format,
+            snippet_content: text_editor::Content::with_text(&self.snippet_content.text()),
         }
     }
 }
@@ -272,6 +274,7 @@ impl Default for HttpRequestView {
             highlighter_theme: highlighter::Theme::SolarizedDark,
             show_snippets: false,
             snippet_format: SnippetFormat::Curl,
+            snippet_content: text_editor::Content::new(),
         }
     }
 }
@@ -606,18 +609,23 @@ impl HttpRequestView {
             }
             Message::ShowSnippets => {
                 self.show_snippets = true;
+                let request = self.build_request();
+                let code = snippets::generate(&request, self.snippet_format);
+                self.snippet_content = text_editor::Content::with_text(&code);
             }
             Message::HideSnippets => {
                 self.show_snippets = false;
             }
             Message::SnippetFormatSelected(format) => {
                 self.snippet_format = format;
-            }
-            Message::CopySnippet => {
                 let request = self.build_request();
                 let code = snippets::generate(&request, self.snippet_format);
+                self.snippet_content = text_editor::Content::with_text(&code);
+            }
+            Message::CopySnippet => {
+                let text = self.snippet_content.text();
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(code);
+                    let _ = clipboard.set_text(text);
                 }
             }
             Message::ResetSettings => {
@@ -1122,40 +1130,33 @@ impl HttpRequestView {
         )
         .padding(10);
 
-        container(
-            column![
-                text("Request Settings").size(18),
-                row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
-                row![redirect_toggle].spacing(10),
-                row![text("Max Redirects:"), max_redirects_input]
-                    .spacing(10)
-                    .align_y(Alignment::Center),
-                rule::horizontal(10),
-                text("Retry").size(16),
-                row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
-                row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
-                rule::horizontal(10),
-                text("Network").size(16),
-                proxy_input,
-                ssl_toggle,
-                rule::horizontal(10),
-                text("Appearance").size(16),
-                row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
-                rule::horizontal(10),
-                button("Reset to Defaults").on_press(Message::ResetSettings),
-            ]
-            .spacing(15)
-            .padding(20),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
+        column![
+            text("Request Settings").size(18),
+            row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
+            row![redirect_toggle].spacing(10),
+            row![text("Max Redirects:"), max_redirects_input]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            rule::horizontal(10),
+            text("Retry").size(16),
+            row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
+            row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
+            rule::horizontal(10),
+            text("Network").size(16),
+            proxy_input,
+            ssl_toggle,
+            rule::horizontal(10),
+            text("Appearance").size(16),
+            row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
+            rule::horizontal(10),
+            button("Reset to Defaults").on_press(Message::ResetSettings),
+        ]
+        .spacing(15)
+        .padding(20)
         .into()
     }
 
     fn create_snippets_panel(&self) -> Element<'_, Message, Theme, Renderer> {
-        let request = self.build_request();
-        let code = snippets::generate(&request, self.snippet_format);
-
         let format_selector = pick_list(
             &SnippetFormat::ALL[..],
             Some(self.snippet_format),
@@ -1175,9 +1176,16 @@ impl HttpRequestView {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        let code_display = text(code.clone())
-            .size(13)
-            .font(iced::Font::MONOSPACE);
+        let syntax = match self.snippet_format {
+            SnippetFormat::Curl => "sh",
+            SnippetFormat::Python => "python",
+            SnippetFormat::JavaScript => "javascript",
+            SnippetFormat::Rust => "rust",
+        };
+
+        let editor = text_editor(&self.snippet_content)
+            .highlight(syntax, self.highlighter_theme)
+            .height(Length::Fill);
 
         let copy_button = button(text("Copy"))
             .on_press(Message::CopySnippet);
@@ -1186,12 +1194,8 @@ impl HttpRequestView {
             column![
                 header,
                 rule::horizontal(5),
-                scrollable(
-                    container(code_display)
-                        .padding(10)
-                        .width(Length::Fill)
-                )
-                .height(Length::Fill),
+                scrollable(editor)
+                    .height(Length::Fill),
                 copy_button,
             ]
             .spacing(10)
