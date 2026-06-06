@@ -1,7 +1,7 @@
+use crate::error::AppError;
 use directories::ProjectDirs;
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,15 +18,19 @@ impl std::fmt::Display for Environment {
     }
 }
 
-fn get_db_path() -> PathBuf {
-    let proj_dirs = ProjectDirs::from("com", "astranova", "client").unwrap();
+fn get_db_path() -> std::result::Result<PathBuf, AppError> {
+    let proj_dirs =
+        ProjectDirs::from("com", "astranova", "client").ok_or_else(|| {
+            AppError::Database("Failed to determine project directories".to_string())
+        })?;
     let data_dir = proj_dirs.data_dir();
-    std::fs::create_dir_all(data_dir).unwrap();
-    data_dir.join("astranova.db")
+    std::fs::create_dir_all(data_dir)
+        .map_err(|e| AppError::Io(format!("Failed to create data directory: {}", e)))?;
+    Ok(data_dir.join("astranova.db"))
 }
 
-pub fn init() -> Result<Connection> {
-    let db_path = get_db_path();
+pub fn init() -> std::result::Result<Connection, AppError> {
+    let db_path = get_db_path()?;
     let conn = Connection::open(db_path)?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS environments (
@@ -47,7 +51,8 @@ pub fn init() -> Result<Connection> {
 
 pub fn create_environment(conn: &Connection, name: &str) -> Result<Environment> {
     let variables: Vec<(String, String)> = Vec::new();
-    let variables_json = serde_json::to_value(&variables).unwrap();
+    let variables_json =
+        serde_json::to_value(&variables).map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
     conn.execute(
         "INSERT INTO environments (name, variables) VALUES (?1, ?2)",
         [name, &variables_json.to_string()],
@@ -66,7 +71,8 @@ pub fn get_environments(conn: &Connection) -> Result<Vec<Environment>> {
         conn.prepare("SELECT id, name, variables, default_endpoint FROM environments")?;
     let env_iter = stmt.query_map([], |row| {
         let variables_json: String = row.get(2)?;
-        let variables: Vec<(String, String)> = serde_json::from_str(&variables_json).unwrap();
+        let variables: Vec<(String, String)> =
+            serde_json::from_str(&variables_json).unwrap_or_default();
         Ok(Environment {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -83,7 +89,8 @@ pub fn get_environments(conn: &Connection) -> Result<Vec<Environment>> {
 }
 
 pub fn update_environment(conn: &Connection, env: &Environment) -> Result<()> {
-    let variables_json = serde_json::to_value(&env.variables).unwrap();
+    let variables_json =
+        serde_json::to_value(&env.variables).map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
     conn.execute(
         "UPDATE environments SET name = ?1, variables = ?2, default_endpoint = ?3 WHERE id = ?4",
         params![
@@ -99,4 +106,133 @@ pub fn update_environment(conn: &Connection, env: &Environment) -> Result<()> {
 pub fn delete_environment(conn: &Connection, id: i32) -> Result<()> {
     conn.execute("DELETE FROM environments WHERE id = ?1", [&id.to_string()])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS environments (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                variables TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "ALTER TABLE environments ADD COLUMN default_endpoint TEXT",
+            [],
+        )
+        .ok();
+        conn
+    }
+
+    #[test]
+    fn create_and_get_environment() {
+        let conn = setup_test_db();
+        let env = create_environment(&conn, "test-env").unwrap();
+        assert_eq!(env.name, "test-env");
+        assert!(env.variables.is_empty());
+        assert!(env.default_endpoint.is_none());
+
+        let envs = get_environments(&conn).unwrap();
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].name, "test-env");
+    }
+
+    #[test]
+    fn create_multiple_environments() {
+        let conn = setup_test_db();
+        create_environment(&conn, "env-1").unwrap();
+        create_environment(&conn, "env-2").unwrap();
+        create_environment(&conn, "env-3").unwrap();
+
+        let envs = get_environments(&conn).unwrap();
+        assert_eq!(envs.len(), 3);
+    }
+
+    #[test]
+    fn update_environment_name() {
+        let conn = setup_test_db();
+        let mut env = create_environment(&conn, "original").unwrap();
+        env.name = "updated".to_string();
+        update_environment(&conn, &env).unwrap();
+
+        let envs = get_environments(&conn).unwrap();
+        assert_eq!(envs[0].name, "updated");
+    }
+
+    #[test]
+    fn update_environment_variables() {
+        let conn = setup_test_db();
+        let mut env = create_environment(&conn, "with-vars").unwrap();
+        env.variables = vec![
+            ("API_URL".to_string(), "https://api.example.com".to_string()),
+            ("TOKEN".to_string(), "abc123".to_string()),
+        ];
+        update_environment(&conn, &env).unwrap();
+
+        let envs = get_environments(&conn).unwrap();
+        assert_eq!(envs[0].variables.len(), 2);
+        assert_eq!(envs[0].variables[0].0, "API_URL");
+        assert_eq!(envs[0].variables[0].1, "https://api.example.com");
+    }
+
+    #[test]
+    fn update_environment_endpoint() {
+        let conn = setup_test_db();
+        let mut env = create_environment(&conn, "with-endpoint").unwrap();
+        env.default_endpoint = Some("https://api.example.com/v1".to_string());
+        update_environment(&conn, &env).unwrap();
+
+        let envs = get_environments(&conn).unwrap();
+        assert_eq!(
+            envs[0].default_endpoint,
+            Some("https://api.example.com/v1".to_string())
+        );
+    }
+
+    #[test]
+    fn delete_existing_environment() {
+        let conn = setup_test_db();
+        let env = create_environment(&conn, "to-delete").unwrap();
+        delete_environment(&conn, env.id).unwrap();
+
+        let envs = get_environments(&conn).unwrap();
+        assert!(envs.is_empty());
+    }
+
+    #[test]
+    fn delete_nonexistent_environment_does_not_fail() {
+        let conn = setup_test_db();
+        let result = delete_environment(&conn, 999);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn environment_display() {
+        let env = Environment {
+            id: 1,
+            name: "my-env".to_string(),
+            variables: vec![],
+            default_endpoint: None,
+        };
+        assert_eq!(env.to_string(), "my-env");
+    }
+
+    #[test]
+    fn environment_clone_and_eq() {
+        let env = Environment {
+            id: 1,
+            name: "clone-test".to_string(),
+            variables: vec![("k".to_string(), "v".to_string())],
+            default_endpoint: None,
+        };
+        let cloned = env.clone();
+        assert_eq!(env, cloned);
+    }
 }

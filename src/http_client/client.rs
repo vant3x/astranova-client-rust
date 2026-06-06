@@ -7,7 +7,6 @@ pub async fn send_request(
 ) -> Result<HttpResponse, String> {
     let url_for_log = request.url.clone();
     let method_for_log = request.method.clone();
-    let request_body_for_log = request.body.clone();
 
     let mut req_builder = client.request(
         request
@@ -21,20 +20,17 @@ pub async fn send_request(
         req_builder = req_builder.header(&key, &value);
     }
 
-    if let Some(body) = request_body_for_log.clone() {
+    if let Some(body) = request.body {
         req_builder = req_builder.body(body);
     }
 
-    println!("[HTTP_CLIENT] Sending request to: {}", url_for_log);
+    log::info!("Sending {} request to: {}", method_for_log, url_for_log);
     let start_time = std::time::Instant::now();
 
     let res = req_builder.send().await.map_err(|e| e.to_string())?;
 
     let network_duration = start_time.elapsed();
-    println!(
-        "[HTTP_CLIENT] Network request completed in: {:?}",
-        network_duration
-    );
+    log::debug!("Network request completed in: {:?}", network_duration);
 
     let status = res.status().as_u16();
     let headers = res
@@ -45,10 +41,7 @@ pub async fn send_request(
     let body_start_time = std::time::Instant::now();
     let body = res.text().await.map_err(|e| e.to_string())?;
     let body_read_duration = body_start_time.elapsed();
-    println!(
-        "[HTTP_CLIENT] Body read completed in: {:?}",
-        body_read_duration
-    );
+    log::debug!("Body read completed in: {:?}", body_read_duration);
 
     let size = body.len() as u64;
 

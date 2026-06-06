@@ -1,3 +1,7 @@
 /target
 /astranova-contend-images-brand/
 astranova-contend-images-brand/
+.plan/
+*.db
+*.db-journal
+.env

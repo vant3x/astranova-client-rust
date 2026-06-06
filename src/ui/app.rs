@@ -46,8 +46,30 @@ pub enum Message {
 
 impl AstraNovaApp {
     fn new() -> (Self, Task<Message>) {
-        let db_conn = database::init().unwrap();
-        let environments = database::get_environments(&db_conn).unwrap();
+        let (db_conn, environments) = match database::init() {
+            Ok(conn) => {
+                let envs = database::get_environments(&conn).unwrap_or_default();
+                (conn, envs)
+            }
+            Err(e) => {
+                log::error!("Failed to initialize database: {}", e);
+                // Use in-memory DB as fallback
+                let conn = rusqlite::Connection::open_in_memory().expect("In-memory DB should always work");
+                let _ = conn.execute(
+                    "CREATE TABLE IF NOT EXISTS environments (
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        variables TEXT NOT NULL
+                    )",
+                    [],
+                );
+                let _ = conn.execute(
+                    "ALTER TABLE environments ADD COLUMN default_endpoint TEXT",
+                    [],
+                );
+                (conn, Vec::new())
+            }
+        };
         let app = Self {
             request_tabs: vec![HttpRequestView::default()],
             active_request_tab_index: 0,
@@ -129,7 +151,7 @@ impl AstraNovaApp {
                                 self.env_manager_view.new_environment_name = String::new();
                                 self.env_manager_view.selected_environment = Some(new_env);
                             }
-                            Err(e) => eprintln!("Error creating environment: {}", e),
+                            Err(e) => log::error!("Error creating environment: {}", e),
                         }
                     }
                     environment_manager::Message::SaveEnvironment => {
@@ -151,10 +173,10 @@ impl AstraNovaApp {
                                         }
                                     }
                                     Err(e) => {
-                                        eprintln!("Error getting environments after save: {}", e)
+                                        log::error!("Error getting environments after save: {}", e)
                                     }
                                 },
-                                Err(e) => eprintln!("Error saving environment: {}", e),
+                                Err(e) => log::error!("Error saving environment: {}", e),
                             }
                         }
                     }
@@ -168,10 +190,10 @@ impl AstraNovaApp {
                                             self.environments.clone();
                                     }
                                     Err(e) => {
-                                        eprintln!("Error getting environments after delete: {}", e)
+                                        log::error!("Error getting environments after delete: {}", e)
                                     }
                                 },
-                                Err(e) => eprintln!("Error deleting environment: {}", e),
+                                Err(e) => log::error!("Error deleting environment: {}", e),
                             }
                         }
                     }

@@ -93,3 +93,87 @@ impl KeyValueEditor {
         .into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_editor_has_one_empty_entry() {
+        let editor = KeyValueEditor::default();
+        assert_eq!(editor.entries.len(), 1);
+        assert!(editor.entries[0].key.is_empty());
+        assert!(editor.entries[0].value.is_empty());
+    }
+
+    #[test]
+    fn add_entry_increases_count() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::AddEntry);
+        assert_eq!(editor.entries.len(), 2);
+        editor.update(Message::AddEntry);
+        assert_eq!(editor.entries.len(), 3);
+    }
+
+    #[test]
+    fn add_entry_assigns_unique_ids() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::AddEntry);
+        editor.update(Message::AddEntry);
+        let ids: Vec<usize> = editor.entries.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn remove_entry_decreases_count() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::AddEntry);
+        assert_eq!(editor.entries.len(), 2);
+        editor.update(Message::RemoveEntry(0));
+        assert_eq!(editor.entries.len(), 1);
+    }
+
+    #[test]
+    fn remove_entry_by_id() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::AddEntry);
+        editor.update(Message::AddEntry);
+        editor.update(Message::RemoveEntry(1));
+        let ids: Vec<usize> = editor.entries.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![0, 2]);
+    }
+
+    #[test]
+    fn change_entry_key() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::EntryKeyChanged(0, "Content-Type".to_string()));
+        assert_eq!(editor.entries[0].key, "Content-Type");
+    }
+
+    #[test]
+    fn change_entry_value() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::EntryValueChanged(0, "application/json".to_string()));
+        assert_eq!(editor.entries[0].value, "application/json");
+    }
+
+    #[test]
+    fn change_key_on_nonexistent_entry_does_not_panic() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::EntryKeyChanged(999, "key".to_string()));
+        // Should not panic, just do nothing
+    }
+
+    #[test]
+    fn remove_nonexistent_entry_does_not_panic() {
+        let mut editor = KeyValueEditor::default();
+        editor.update(Message::RemoveEntry(999));
+        assert_eq!(editor.entries.len(), 1);
+    }
+
+    #[test]
+    fn custom_button_text() {
+        let editor = KeyValueEditor::new("Add Header".to_string());
+        assert_eq!(editor.button_text, "Add Header");
+    }
+}
