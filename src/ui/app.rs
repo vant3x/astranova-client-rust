@@ -309,12 +309,20 @@ impl AstraNovaApp {
                 self.show_history = !self.show_history;
             }
             Message::HistoryMsg(msg) => {
-                if let Some(entry) = self.history_view.update(msg) {
-                    self.request_tabs.push(HttpRequestView::default());
-                    self.active_request_tab_index = self.request_tabs.len() - 1;
-                    if let Some(view) = self.request_tabs.last_mut() {
-                        view.url_input = entry.url;
-                        view.method = Box::leak(entry.method.into_boxed_str());
+                match &msg {
+                    history_view::Message::ClearHistory => {
+                        let _ = database::delete_request_history(&self.db_conn);
+                        self.history_view.update(msg);
+                    }
+                    _ => {
+                        if let Some(entry) = self.history_view.update(msg) {
+                            self.request_tabs.push(HttpRequestView::default());
+                            self.active_request_tab_index = self.request_tabs.len() - 1;
+                            if let Some(view) = self.request_tabs.last_mut() {
+                                view.url_input = entry.url;
+                                view.method = Box::leak(entry.method.into_boxed_str());
+                            }
+                        }
                     }
                 }
             }

@@ -80,6 +80,25 @@ pub struct MultipartEntry {
     pub is_file: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MultipartFieldType {
+    Text,
+    File,
+}
+
+impl MultipartFieldType {
+    pub const ALL: [MultipartFieldType; 2] = [MultipartFieldType::Text, MultipartFieldType::File];
+}
+
+impl std::fmt::Display for MultipartFieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MultipartFieldType::Text => write!(f, "Text"),
+            MultipartFieldType::File => write!(f, "File"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
@@ -106,7 +125,7 @@ pub enum Message {
     BodyTypeSelected(BodyType),
     MultipartNameChanged(usize, String),
     MultipartValueChanged(usize, String),
-    MultipartToggleFile(usize),
+    MultipartFieldTypeChanged(usize, MultipartFieldType),
     AddMultipartEntry,
     RemoveMultipartEntry(usize),
     MultipartFilePicked(usize, Option<String>),
@@ -591,10 +610,12 @@ impl HttpRequestView {
                     entry.value = value;
                 }
             }
-            Message::MultipartToggleFile(id) => {
+            Message::MultipartFieldTypeChanged(id, field_type) => {
                 if let Some(entry) = self.multipart_entries.iter_mut().find(|e| e.id == id) {
-                    entry.is_file = !entry.is_file;
-                    entry.value.clear();
+                    entry.is_file = matches!(field_type, MultipartFieldType::File);
+                    if !entry.is_file {
+                        entry.value.clear();
+                    }
                 }
             }
             Message::AddMultipartEntry => {
@@ -684,10 +705,7 @@ impl HttpRequestView {
             .push(
                 TabId::Settings,
                 TabLabel::Text("Settings".to_string()),
-                container(settings_tab_content)
-                    .padding(10)
-                    .width(Length::Fill)
-                    .height(Length::Fill),
+                settings_tab_content,
             )
             .set_active_tab(&self.active_tab)
             .width(Length::Fill);
@@ -1041,7 +1059,11 @@ impl HttpRequestView {
             BodyType::Multipart => {
                 let mut entries_col = column![].spacing(8);
                 for entry in &self.multipart_entries {
-                    let type_label = if entry.is_file { "File" } else { "Text" };
+                    let current_type = if entry.is_file {
+                        MultipartFieldType::File
+                    } else {
+                        MultipartFieldType::Text
+                    };
                     let value_input = if entry.is_file {
                         row![
                             text_input("File path", &entry.value)
@@ -1061,9 +1083,13 @@ impl HttpRequestView {
                         .spacing(8)
                     };
                     let row = row![
-                        button(text(type_label))
-                            .on_press(Message::MultipartToggleFile(entry.id))
-                            .width(Length::Fixed(50.0)),
+                        pick_list(
+                            &MultipartFieldType::ALL[..],
+                            Some(current_type),
+                            move |t| Message::MultipartFieldTypeChanged(entry.id, t),
+                        )
+                        .padding(8)
+                        .width(Length::Fixed(80.0)),
                         text_input("Name", &entry.name)
                             .on_input(move |v| Message::MultipartNameChanged(entry.id, v))
                             .padding(8),
