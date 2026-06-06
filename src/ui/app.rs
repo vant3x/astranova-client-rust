@@ -1,7 +1,8 @@
 use crate::persistence::database::{self, Environment};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
+use crate::ui::views::history_view::{self, HistoryView};
 use iced::{
-    widget::{button, column, pick_list, row, text},
+    widget::{button, column, container, pick_list, row, text},
     Alignment, Element, Length, Task,
 };
 use iced_aw::{TabLabel, Tabs};
@@ -29,7 +30,9 @@ struct AstraNovaApp {
     environments: Vec<Environment>,
     active_environment: Option<Environment>,
     env_manager_view: EnvironmentManagerView,
+    history_view: HistoryView,
     current_view: View,
+    show_history: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +45,11 @@ pub enum Message {
     EnvFileLoaded(Option<Vec<(String, String)>>),
     SelectEnvironment(i32),
     SwitchView(View),
+    HistoryMsg(history_view::Message),
+    ToggleHistory,
+    LoadHistory,
+    HistoryLoaded(Vec<database::RequestHistoryEntry>),
+    ApplyHistoryEntry(database::RequestHistoryEntry),
 }
 
 impl AstraNovaApp {
@@ -53,7 +61,6 @@ impl AstraNovaApp {
             }
             Err(e) => {
                 log::error!("Failed to initialize database: {}", e);
-                // Use in-memory DB as fallback
                 let conn = rusqlite::Connection::open_in_memory().expect("In-memory DB should always work");
                 let _ = conn.execute(
                     "CREATE TABLE IF NOT EXISTS environments (
@@ -70,6 +77,9 @@ impl AstraNovaApp {
                 (conn, Vec::new())
             }
         };
+
+        let history = database::get_request_history(&db_conn, 50).unwrap_or_default();
+
         let app = Self {
             request_tabs: vec![HttpRequestView::default()],
             active_request_tab_index: 0,
@@ -78,7 +88,13 @@ impl AstraNovaApp {
             environments: environments.clone(),
             active_environment: None,
             env_manager_view: EnvironmentManagerView::new(environments),
+            history_view: {
+                let mut hv = HistoryView::new();
+                hv.entries = history;
+                hv
+            },
             current_view: View::Main,
+            show_history: false,
         };
         (app, Task::none())
     }
@@ -99,7 +115,20 @@ impl AstraNovaApp {
 
                             view.update(http_request_view::Message::SetLoading);
 
-                            let http_client = self.http_client.clone(); // Clone the client for the async task
+                            let http_client = if request.config.proxy_url.is_some()
+                                || !request.config.verify_ssl
+                            {
+                                match client::build_client(&request.config) {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        log::error!("Failed to build custom client: {}", e);
+                                        self.http_client.clone()
+                                    }
+                                }
+                            } else {
+                                self.http_client.clone()
+                            };
+
                             return Task::perform(
                                 async move { client::send_request(&http_client, request).await },
                                 move |result| {
@@ -109,6 +138,22 @@ impl AstraNovaApp {
                                     )
                                 },
                             );
+                        }
+                        http_request_view::Message::ResponseReceived(ref result) => {
+                            if let Ok(response) = result {
+                                let _ = database::save_request_history(
+                                    &self.db_conn,
+                                    &response.method,
+                                    &response.url,
+                                    Some(response.status),
+                                    Some(response.duration.as_millis() as u64),
+                                );
+                                let history =
+                                    database::get_request_history(&self.db_conn, 50)
+                                        .unwrap_or_default();
+                                self.history_view.entries = history;
+                            }
+                            view.update(msg);
                         }
                         _ => view.update(msg),
                     }
@@ -247,6 +292,35 @@ impl AstraNovaApp {
             Message::SwitchView(view) => {
                 self.current_view = view;
             }
+            Message::ToggleHistory => {
+                self.show_history = !self.show_history;
+            }
+            Message::LoadHistory => {
+                let history = database::get_request_history(&self.db_conn, 50)
+                    .unwrap_or_default();
+                self.history_view.entries = history;
+            }
+            Message::HistoryLoaded(entries) => {
+                self.history_view.entries = entries;
+            }
+            Message::HistoryMsg(msg) => {
+                if let Some(entry) = self.history_view.update(msg) {
+                    self.request_tabs.push(HttpRequestView::default());
+                    self.active_request_tab_index = self.request_tabs.len() - 1;
+                    if let Some(view) = self.request_tabs.last_mut() {
+                        view.url_input = entry.url;
+                        view.method = Box::leak(entry.method.into_boxed_str());
+                    }
+                }
+            }
+            Message::ApplyHistoryEntry(entry) => {
+                self.request_tabs.push(HttpRequestView::default());
+                self.active_request_tab_index = self.request_tabs.len() - 1;
+                if let Some(view) = self.request_tabs.last_mut() {
+                    view.url_input = entry.url;
+                    view.method = Box::leak(entry.method.into_boxed_str());
+                }
+            }
         }
         Task::none()
     }
@@ -291,6 +365,9 @@ impl AstraNovaApp {
                     button(text("x"))
                 };
 
+                let history_button = button(text("History"))
+                    .on_press(Message::ToggleHistory);
+
                 let env_selector = pick_list(
                     &self.environments[..],
                     self.active_environment.clone(),
@@ -299,6 +376,7 @@ impl AstraNovaApp {
                 .placeholder("No Environment");
 
                 let mut env_controls = row![
+                    history_button,
                     env_selector,
                     button(text("Manage Environments"))
                         .on_press(Message::SwitchView(View::EnvironmentManager))
@@ -326,14 +404,30 @@ impl AstraNovaApp {
                     env_controls = env_controls.push(help_texts);
                 }
 
-                column![
+                let main_content = column![
                     row![add_tab_button, close_tab_button, env_controls,]
                         .spacing(10)
                         .padding(10)
                         .align_y(Alignment::Center),
                     tabs_widget,
-                ]
-                .into()
+                ];
+
+                if self.show_history {
+                    let history_panel = container(
+                        self.history_view.view().map(Message::HistoryMsg)
+                    )
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill);
+
+                    row![
+                        main_content.width(Length::FillPortion(3)),
+                        iced::widget::Rule::vertical(1),
+                        history_panel,
+                    ]
+                    .into()
+                } else {
+                    main_content.into()
+                }
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
         }

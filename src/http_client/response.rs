@@ -9,6 +9,7 @@ pub struct HttpResponse {
     pub body: String,
     pub duration: Duration,
     pub size: u64,
+    pub redirect_chain: Vec<String>,
 }
 
 #[cfg(test)]
@@ -25,6 +26,7 @@ mod tests {
             body: "OK".to_string(),
             duration: Duration::from_millis(150),
             size: 2,
+            redirect_chain: vec![],
         };
         assert_eq!(resp.status, 200);
         assert_eq!(resp.size, 2);
@@ -41,11 +43,13 @@ mod tests {
             body: r#"{"id": 1}"#.to_string(),
             duration: Duration::from_millis(200),
             size: 13,
+            redirect_chain: vec!["https://old.example.com".to_string()],
         };
         let cloned = resp.clone();
         assert_eq!(resp.status, cloned.status);
         assert_eq!(resp.body, cloned.body);
         assert_eq!(resp.headers, cloned.headers);
+        assert_eq!(resp.redirect_chain, cloned.redirect_chain);
     }
 
     #[test]
@@ -60,8 +64,27 @@ mod tests {
                 body: String::new(),
                 duration: Duration::ZERO,
                 size: 0,
+                redirect_chain: vec![],
             };
             assert_eq!(resp.status, status);
         }
+    }
+
+    #[test]
+    fn response_with_redirect_chain() {
+        let resp = HttpResponse {
+            url: "https://final.example.com".to_string(),
+            method: "GET".to_string(),
+            status: 200,
+            headers: vec![],
+            body: String::new(),
+            duration: Duration::ZERO,
+            size: 0,
+            redirect_chain: vec![
+                "https://old.example.com".to_string(),
+                "https://intermediate.example.com".to_string(),
+            ],
+        };
+        assert_eq!(resp.redirect_chain.len(), 2);
     }
 }

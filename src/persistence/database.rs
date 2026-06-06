@@ -12,6 +12,16 @@ pub struct Environment {
     pub default_endpoint: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestHistoryEntry {
+    pub id: i32,
+    pub method: String,
+    pub url: String,
+    pub status: Option<u16>,
+    pub duration_ms: Option<u64>,
+    pub timestamp: String,
+}
+
 impl std::fmt::Display for Environment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
@@ -40,12 +50,22 @@ pub fn init() -> std::result::Result<Connection, AppError> {
         )",
         [],
     )?;
-    // Add the new column, ignoring errors if it already exists
     conn.execute(
         "ALTER TABLE environments ADD COLUMN default_endpoint TEXT",
         [],
     )
     .ok();
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS request_history (
+            id INTEGER PRIMARY KEY,
+            method TEXT NOT NULL,
+            url TEXT NOT NULL,
+            status INTEGER,
+            duration_ms INTEGER,
+            timestamp TEXT NOT NULL
+        )",
+        [],
+    )?;
     Ok(conn)
 }
 
@@ -106,6 +126,57 @@ pub fn update_environment(conn: &Connection, env: &Environment) -> Result<()> {
 pub fn delete_environment(conn: &Connection, id: i32) -> Result<()> {
     conn.execute("DELETE FROM environments WHERE id = ?1", [&id.to_string()])?;
     Ok(())
+}
+
+pub fn save_request_history(
+    conn: &Connection,
+    method: &str,
+    url: &str,
+    status: Option<u16>,
+    duration_ms: Option<u64>,
+) -> Result<()> {
+    let timestamp = chrono_now();
+    conn.execute(
+        "INSERT INTO request_history (method, url, status, duration_ms, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![method, url, status.map(|s| s as i64), duration_ms.map(|d| d as i64), timestamp],
+    )?;
+    Ok(())
+}
+
+pub fn get_request_history(conn: &Connection, limit: usize) -> Result<Vec<RequestHistoryEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, method, url, status, duration_ms, timestamp FROM request_history ORDER BY id DESC LIMIT ?1",
+    )?;
+    let entries = stmt.query_map([limit as i64], |row| {
+        Ok(RequestHistoryEntry {
+            id: row.get(0)?,
+            method: row.get(1)?,
+            url: row.get(2)?,
+            status: row.get::<_, Option<i64>>(3)?.map(|s| s as u16),
+            duration_ms: row.get::<_, Option<i64>>(4)?.map(|d| d as u64),
+            timestamp: row.get(5)?,
+        })
+    })?;
+
+    let mut result = Vec::new();
+    for entry in entries {
+        result.push(entry?);
+    }
+    Ok(result)
+}
+
+pub fn delete_request_history(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM request_history", [])?;
+    Ok(())
+}
+
+fn chrono_now() -> String {
+    use std::time::SystemTime;
+    let duration = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+    format!("{}", secs)
 }
 
 #[cfg(test)]
@@ -234,5 +305,76 @@ mod tests {
         };
         let cloned = env.clone();
         assert_eq!(env, cloned);
+    }
+
+    #[test]
+    fn save_and_get_request_history() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(150)).unwrap();
+        save_request_history(&conn, "POST", "https://api.test.com", Some(201), Some(300)).unwrap();
+
+        let history = get_request_history(&conn, 10).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].method, "POST");
+        assert_eq!(history[1].method, "GET");
+    }
+
+    #[test]
+    fn delete_request_history_clears_all() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(100)).unwrap();
+        delete_request_history(&conn).unwrap();
+        let history = get_request_history(&conn, 10).unwrap();
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn request_history_limit() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        for i in 0..5 {
+            save_request_history(&conn, "GET", &format!("https://example.com/{}", i), Some(200), Some(100)).unwrap();
+        }
+
+        let history = get_request_history(&conn, 3).unwrap();
+        assert_eq!(history.len(), 3);
     }
 }

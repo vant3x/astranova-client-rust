@@ -1,4 +1,6 @@
 use crate::data::auth::{Auth, AuthType};
+use crate::http_client::config::RequestConfig;
+use crate::http_client::response::HttpResponse;
 use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use base64::{engine::general_purpose, Engine as _};
@@ -7,7 +9,7 @@ use iced::widget::image::{Handle, Image};
 use iced::widget::text_editor;
 use iced::{
     widget::{button, column, container, pick_list, row, scrollable, text, text_input, Rule},
-    Alignment, Element, Length, Renderer, Theme,
+    Alignment, Color, Element, Length, Renderer, Theme,
 };
 use iced_aw::{ContextMenu, TabLabel, Tabs};
 use std::time::Duration;
@@ -48,11 +50,40 @@ impl std::fmt::Display for ContentType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BodyType {
+    #[default]
+    Text,
+    Multipart,
+}
+
+impl BodyType {
+    pub const ALL: [BodyType; 2] = [BodyType::Text, BodyType::Multipart];
+}
+
+impl std::fmt::Display for BodyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BodyType::Text => write!(f, "Text"),
+            BodyType::Multipart => write!(f, "Multipart/Form-Data"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MultipartEntry {
+    pub id: usize,
+    pub name: String,
+    pub value: String,
+    pub is_file: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
     MethodSelected(&'static str),
     TabSelected(TabId),
+    ResponseTabSelected(ResponseTab),
     AuthTypeSelected(AuthType),
     AuthInputChanged(AuthInput),
     HeadersEditor(key_value_editor::Message),
@@ -63,8 +94,23 @@ pub enum Message {
     SetLoading,
     ResponseReceived(Result<crate::http_client::response::HttpResponse, String>),
     CopyResponse,
+    CopyHeaders,
+    CopyBody,
     ResponseContentChanged(text_editor::Action),
     CopySelection,
+    TimeoutChanged(String),
+    FollowRedirectsToggled(bool),
+    MaxRedirectsChanged(String),
+    BodyTypeSelected(BodyType),
+    MultipartNameChanged(usize, String),
+    MultipartValueChanged(usize, String),
+    MultipartToggleFile(usize),
+    AddMultipartEntry,
+    RemoveMultipartEntry(usize),
+    RetryCountChanged(String),
+    RetryBackoffChanged(String),
+    ProxyUrlChanged(String),
+    VerifySslToggled(bool),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -74,6 +120,15 @@ pub enum TabId {
     Headers,
     Params,
     Authorization,
+    Settings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ResponseTab {
+    #[default]
+    Body,
+    Headers,
+    Timeline,
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +143,7 @@ pub enum RequestStatus {
     #[default]
     Idle,
     Loading,
-    Success(text_editor::Content),
+    Success,
     Error(String),
 }
 
@@ -97,11 +152,32 @@ impl Clone for RequestStatus {
         match self {
             RequestStatus::Idle => RequestStatus::Idle,
             RequestStatus::Loading => RequestStatus::Loading,
-            RequestStatus::Success(content) => {
-                RequestStatus::Success(text_editor::Content::with_text(&content.text()))
-            }
+            RequestStatus::Success => RequestStatus::Success,
             RequestStatus::Error(s) => RequestStatus::Error(s.clone()),
         }
+    }
+}
+
+pub fn method_color(method: &str) -> Color {
+    match method {
+        "GET" => Color::from_rgb(0.2, 0.7, 0.3),
+        "POST" => Color::from_rgb(0.2, 0.4, 0.8),
+        "PUT" => Color::from_rgb(0.8, 0.5, 0.1),
+        "PATCH" => Color::from_rgb(0.8, 0.7, 0.1),
+        "DELETE" => Color::from_rgb(0.8, 0.2, 0.2),
+        "HEAD" => Color::from_rgb(0.5, 0.5, 0.5),
+        "OPTIONS" => Color::from_rgb(0.6, 0.6, 0.6),
+        _ => Color::from_rgb(0.5, 0.5, 0.5),
+    }
+}
+
+fn status_color(status: u16) -> Color {
+    match status {
+        200..=299 => Color::from_rgb(0.2, 0.7, 0.3),
+        300..=399 => Color::from_rgb(0.2, 0.5, 0.8),
+        400..=499 => Color::from_rgb(0.8, 0.5, 0.1),
+        500..=599 => Color::from_rgb(0.8, 0.2, 0.2),
+        _ => Color::from_rgb(0.5, 0.5, 0.5),
     }
 }
 
@@ -114,12 +190,19 @@ pub struct HttpRequestView {
     pub headers_editor: KeyValueEditor,
     pub params_editor: KeyValueEditor,
     active_tab: TabId,
+    active_response_tab: ResponseTab,
     request_status: RequestStatus,
+    pub last_response: Option<HttpResponse>,
+    pub response_body_editor: text_editor::Content,
     pub status_code: Option<u16>,
     pub content_type: Option<String>,
     pub response_duration: Option<Duration>,
     pub response_size: Option<u64>,
     pub request_content_type: ContentType,
+    pub request_config: RequestConfig,
+    pub body_type: BodyType,
+    pub multipart_entries: Vec<MultipartEntry>,
+    multipart_next_id: usize,
 }
 
 impl Clone for HttpRequestView {
@@ -132,12 +215,19 @@ impl Clone for HttpRequestView {
             headers_editor: self.headers_editor.clone(),
             params_editor: self.params_editor.clone(),
             active_tab: self.active_tab.clone(),
+            active_response_tab: self.active_response_tab.clone(),
             request_status: self.request_status.clone(),
+            last_response: self.last_response.clone(),
+            response_body_editor: text_editor::Content::with_text(&self.response_body_editor.text()),
             status_code: self.status_code,
             content_type: self.content_type.clone(),
             response_duration: self.response_duration,
             response_size: self.response_size,
             request_content_type: self.request_content_type,
+            request_config: self.request_config.clone(),
+            body_type: self.body_type,
+            multipart_entries: self.multipart_entries.clone(),
+            multipart_next_id: self.multipart_next_id,
         }
     }
 }
@@ -152,12 +242,19 @@ impl Default for HttpRequestView {
             headers_editor: KeyValueEditor::new("Add Header".to_string()),
             params_editor: KeyValueEditor::new("Add Param".to_string()),
             active_tab: TabId::Body,
+            active_response_tab: ResponseTab::Body,
             request_status: RequestStatus::Idle,
+            last_response: None,
+            response_body_editor: text_editor::Content::new(),
             status_code: None,
             content_type: None,
             response_duration: None,
             response_size: None,
             request_content_type: ContentType::Json,
+            request_config: RequestConfig::default(),
+            body_type: BodyType::Text,
+            multipart_entries: vec![MultipartEntry { id: 0, name: String::new(), value: String::new(), is_file: false }],
+            multipart_next_id: 1,
         }
     }
 }
@@ -241,7 +338,8 @@ impl HttpRequestView {
             Some(self.body_input.text())
         };
 
-        if body.is_some() {
+        // Only set Content-Type for text body (multipart sets it automatically)
+        if body.is_some() && self.body_type == BodyType::Text {
             let content_type_str = match self.request_content_type {
                 ContentType::Json => "application/json",
                 ContentType::Text => "text/plain",
@@ -251,11 +349,42 @@ impl HttpRequestView {
             headers.push(("Content-Type".to_string(), content_type_str.to_string()));
         }
 
+        // Convert multipart entries to MultipartField
+        let multipart_fields: Vec<crate::http_client::request::MultipartField> =
+            if self.body_type == BodyType::Multipart {
+                self.multipart_entries
+                    .iter()
+                    .filter(|e| !e.name.is_empty())
+                    .map(|e| {
+                        if e.is_file {
+                            crate::http_client::request::MultipartField {
+                                name: e.name.clone(),
+                                value: crate::http_client::request::MultipartValue::File {
+                                    path: e.value.clone(),
+                                    filename: None,
+                                },
+                            }
+                        } else {
+                            crate::http_client::request::MultipartField {
+                                name: e.name.clone(),
+                                value: crate::http_client::request::MultipartValue::Text(
+                                    e.value.clone(),
+                                ),
+                            }
+                        }
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+
         crate::http_client::request::HttpRequest {
             method: self.method.to_string(),
             url: final_url,
             headers,
             body,
+            config: self.request_config.clone(),
+            multipart_fields,
         }
     }
 
@@ -264,6 +393,7 @@ impl HttpRequestView {
             Message::UrlInputChanged(url) => self.url_input = url,
             Message::MethodSelected(method) => self.method = method,
             Message::TabSelected(tab_id) => self.active_tab = tab_id,
+            Message::ResponseTabSelected(tab_id) => self.active_response_tab = tab_id,
             Message::AuthTypeSelected(auth_type) => {
                 self.auth = match auth_type {
                     AuthType::NoAuth => Auth::None,
@@ -295,6 +425,8 @@ impl HttpRequestView {
             Message::SendRequest => {}
             Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
+                self.last_response = None;
+                self.response_body_editor = text_editor::Content::new();
                 self.status_code = None;
                 self.content_type = None;
                 self.response_duration = None;
@@ -323,24 +455,15 @@ impl HttpRequestView {
                         response.body.clone()
                     };
 
-                    let response_text = format!(
-                        r#"Headers: {headers:#?}
-
-Body: {body}
-
---------------------
-URL: {url}
-Method: {method}"#,
-                        headers = response.headers,
-                        body = formatted_body,
-                        url = response.url,
-                        method = response.method,
-                    );
-                    self.request_status =
-                        RequestStatus::Success(text_editor::Content::with_text(&response_text));
+                    self.response_body_editor =
+                        text_editor::Content::with_text(&formatted_body);
+                    self.last_response = Some(response);
+                    self.request_status = RequestStatus::Success;
                 }
                 Err(e) => {
                     self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                    self.last_response = None;
+                    self.response_body_editor = text_editor::Content::new();
                     self.status_code = None;
                     self.content_type = None;
                     self.response_duration = None;
@@ -349,7 +472,7 @@ Method: {method}"#,
             },
             Message::CopyResponse => {
                 let text_to_copy = match &self.request_status {
-                    RequestStatus::Success(content) => Some(content.text()),
+                    RequestStatus::Success => Some(self.response_body_editor.text()),
                     RequestStatus::Error(error_message) => Some(error_message.clone()),
                     _ => None,
                 };
@@ -360,19 +483,106 @@ Method: {method}"#,
                     }
                 }
             }
-            Message::ResponseContentChanged(action) => {
-                if let RequestStatus::Success(content) = &mut self.request_status {
-                    content.perform(action);
-                }
-            }
-            Message::CopySelection => {
-                if let RequestStatus::Success(content) = &self.request_status {
-                    if let Some(selection) = content.selection() {
-                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                            let _ = clipboard.set_text(selection);
-                        }
+            Message::CopyHeaders => {
+                if let Some(response) = &self.last_response {
+                    let headers_text = response
+                        .headers
+                        .iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(headers_text);
                     }
                 }
+            }
+            Message::CopyBody => {
+                let text_to_copy = self.response_body_editor.text();
+                if !text_to_copy.is_empty() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(text_to_copy);
+                    }
+                }
+            }
+            Message::ResponseContentChanged(action) => {
+                self.response_body_editor.perform(action);
+            }
+            Message::CopySelection => {
+                if let Some(selection) = self.response_body_editor.selection() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(selection);
+                    }
+                }
+            }
+            Message::TimeoutChanged(secs) => {
+                if let Ok(s) = secs.parse::<u64>() {
+                    self.request_config.timeout = std::time::Duration::from_secs(s);
+                }
+            }
+            Message::FollowRedirectsToggled(follow) => {
+                use crate::http_client::config::RedirectPolicy;
+                self.request_config.redirect_policy = if follow {
+                    RedirectPolicy::Follow
+                } else {
+                    RedirectPolicy::NoFollow
+                };
+            }
+            Message::MaxRedirectsChanged(max) => {
+                if let Ok(n) = max.parse::<u32>() {
+                    self.request_config.redirect_policy =
+                        crate::http_client::config::RedirectPolicy::Limited(n);
+                }
+            }
+            Message::RetryCountChanged(count) => {
+                if let Ok(n) = count.parse::<u32>() {
+                    self.request_config.retry.max_retries = n;
+                }
+            }
+            Message::RetryBackoffChanged(ms) => {
+                if let Ok(n) = ms.parse::<u64>() {
+                    self.request_config.retry.backoff_ms = n;
+                }
+            }
+            Message::ProxyUrlChanged(url) => {
+                self.request_config.proxy_url = if url.is_empty() {
+                    None
+                } else {
+                    Some(url)
+                };
+            }
+            Message::VerifySslToggled(verify) => {
+                self.request_config.verify_ssl = verify;
+            }
+            Message::BodyTypeSelected(body_type) => {
+                self.body_type = body_type;
+            }
+            Message::MultipartNameChanged(id, name) => {
+                if let Some(entry) = self.multipart_entries.iter_mut().find(|e| e.id == id) {
+                    entry.name = name;
+                }
+            }
+            Message::MultipartValueChanged(id, value) => {
+                if let Some(entry) = self.multipart_entries.iter_mut().find(|e| e.id == id) {
+                    entry.value = value;
+                }
+            }
+            Message::MultipartToggleFile(id) => {
+                if let Some(entry) = self.multipart_entries.iter_mut().find(|e| e.id == id) {
+                    entry.is_file = !entry.is_file;
+                    entry.value.clear();
+                }
+            }
+            Message::AddMultipartEntry => {
+                self.multipart_entries.push(MultipartEntry {
+                    id: self.multipart_next_id,
+                    name: String::new(),
+                    value: String::new(),
+                    is_file: false,
+                });
+                self.multipart_next_id += 1;
+            }
+            Message::RemoveMultipartEntry(id) => {
+                self.multipart_entries.retain(|e| e.id != id);
             }
         }
     }
@@ -380,6 +590,7 @@ Method: {method}"#,
     pub fn view(&self) -> Element<'_, Message, Theme, Renderer> {
         let auth_tab_content = self.create_auth_tab_content();
         let body_tab_content = self.create_body_tab_content();
+        let settings_tab_content = self.create_settings_tab_content();
 
         let tabs = Tabs::new(Message::TabSelected)
             .push(
@@ -411,6 +622,14 @@ Method: {method}"#,
                     .width(Length::Fill)
                     .height(Length::Fill),
             )
+            .push(
+                TabId::Settings,
+                TabLabel::Text("Settings".to_string()),
+                container(settings_tab_content)
+                    .padding(10)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
             .set_active_tab(&self.active_tab)
             .width(Length::Fill);
 
@@ -427,16 +646,41 @@ Method: {method}"#,
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
                 .into(),
-            RequestStatus::Success(content) => {
-                let editor = text_editor(content).on_action(Message::ResponseContentChanged);
+            RequestStatus::Success => {
+                let response_tabs = Tabs::new(Message::ResponseTabSelected)
+                    .push(
+                        ResponseTab::Body,
+                        TabLabel::Text("Body".to_string()),
+                        {
+                            let editor = text_editor(&self.response_body_editor)
+                                .on_action(Message::ResponseContentChanged);
+                            let context_menu = ContextMenu::new(scrollable(editor), || {
+                                column![
+                                    button("Copy Selection")
+                                        .on_press(Message::CopySelection),
+                                    button("Copy Body")
+                                        .on_press(Message::CopyBody),
+                                ]
+                                .into()
+                            });
+                            container(context_menu)
+                        },
+                    )
+                    .push(
+                        ResponseTab::Headers,
+                        TabLabel::Text("Headers".to_string()),
+                        self.create_response_headers_view(),
+                    )
+                    .push(
+                        ResponseTab::Timeline,
+                        TabLabel::Text("Timeline".to_string()),
+                        self.create_response_timeline_view(),
+                    )
+                    .set_active_tab(&self.active_response_tab)
+                    .width(Length::Fill)
+                    .height(Length::Fill);
 
-                let context_menu = ContextMenu::new(scrollable(editor), || {
-                    button("Copy Selection")
-                        .on_press(Message::CopySelection)
-                        .into()
-                });
-
-                container(context_menu)
+                container(response_tabs)
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
@@ -453,39 +697,45 @@ Method: {method}"#,
 
         let copy_button = if matches!(
             self.request_status,
-            RequestStatus::Success(_) | RequestStatus::Error(_)
+            RequestStatus::Success | RequestStatus::Error(_)
         ) {
             Element::from(button("Copy").on_press(Message::CopyResponse))
         } else {
             Element::from(column![])
         };
 
-        let status_code_text = text(format!(
-            "Status: {}",
-            self.status_code
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "N/A".to_string())
-        ))
-        .size(16);
-        let content_type_text = text(format!(
-            "Content-Type: {}",
-            self.content_type.as_deref().unwrap_or("N/A")
-        ))
-        .size(16);
+        let method_colored = text(self.method)
+            .size(16)
+            .color(method_color(self.method));
+
+        let status_text = if let Some(status) = self.status_code {
+            let color = status_color(status);
+            text(format!("  {}  ", status)).size(14).color(color)
+        } else {
+            text("".to_string()).size(14)
+        };
+
         let duration_text = text(format!(
-            "Time: {}ms",
+            "{}ms",
             self.response_duration
                 .map(|d| d.as_millis().to_string())
                 .unwrap_or_else(|| "N/A".to_string())
         ))
-        .size(16);
+        .size(14);
+
         let size_text = text(format!(
-            "Size: {} B",
+            "{}",
             self.response_size
-                .map(|s| s.to_string())
+                .map(|s| {
+                    if s > 1024 {
+                        format!("{:.1} KB", s as f64 / 1024.0)
+                    } else {
+                        format!("{} B", s)
+                    }
+                })
                 .unwrap_or_else(|| "N/A".to_string())
         ))
-        .size(16);
+        .size(14);
 
         let main_column = column![
             Image::new(Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES)))
@@ -509,23 +759,128 @@ Method: {method}"#,
             Rule::horizontal(10),
             column![
                 row![
-                    status_code_text,
-                    content_type_text,
+                    method_colored,
+                    status_text,
                     duration_text,
+                    text(" | ").size(14),
                     size_text,
+                    row![copy_button].align_y(Alignment::Center),
                 ]
-                .spacing(20)
-                .padding(10),
-                row![response_area, copy_button,]
-                    .spacing(10)
-                    .padding(10)
-                    .height(Length::Fill),
+                .spacing(10)
+                .padding(10)
+                .align_y(Alignment::Center),
+                response_area,
             ]
             .height(Length::Fill),
         ]
         .align_x(Alignment::Center);
 
         main_column.into()
+    }
+
+    fn create_response_headers_view(&self) -> Element<'_, Message, Theme, Renderer> {
+        if let Some(response) = &self.last_response {
+            let mut headers_col = column![].spacing(4);
+            for (key, value) in &response.headers {
+                headers_col = headers_col.push(
+                    row![
+                        text(format!("{}:", key)).size(14).color(Color::from_rgb(0.4, 0.6, 0.9)),
+                        text(value).size(14),
+                    ]
+                    .spacing(8),
+                );
+            }
+            container(scrollable(headers_col))
+                .padding(10)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            container(text("No headers available."))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .into()
+        }
+    }
+
+    fn create_response_timeline_view(&self) -> Element<'_, Message, Theme, Renderer> {
+        if let Some(response) = &self.last_response {
+            let mut items = column![].spacing(8);
+
+            items = items.push(
+                row![
+                    text("Status:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(response.status.to_string()).size(14).color(status_color(response.status)),
+                ]
+                .spacing(8),
+            );
+
+            items = items.push(
+                row![
+                    text("Duration:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(format!("{:.2?}", response.duration)).size(14),
+                ]
+                .spacing(8),
+            );
+
+            let size_str = if response.size > 1024 {
+                format!("{:.2} KB", response.size as f64 / 1024.0)
+            } else {
+                format!("{} bytes", response.size)
+            };
+            items = items.push(
+                row![
+                    text("Size:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(size_str).size(14),
+                ]
+                .spacing(8),
+            );
+
+            items = items.push(
+                row![
+                    text("URL:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(&response.url).size(14),
+                ]
+                .spacing(8),
+            );
+
+            items = items.push(
+                row![
+                    text("Method:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(&response.method).size(14).color(method_color(&response.method)),
+                ]
+                .spacing(8),
+            );
+
+            if !response.redirect_chain.is_empty() {
+                items = items.push(Rule::horizontal(5));
+                items = items.push(
+                    text(format!("Redirect Chain ({} hops):", response.redirect_chain.len()))
+                        .size(14)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                );
+                for (i, url) in response.redirect_chain.iter().enumerate() {
+                    items = items.push(
+                        text(format!("  {}. {}", i + 1, url)).size(13),
+                    );
+                }
+            }
+
+            container(scrollable(items))
+                .padding(10)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            container(text("No timeline available."))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .into()
+        }
     }
 
     fn create_auth_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
@@ -574,24 +929,156 @@ Method: {method}"#,
     }
 
     fn create_body_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
-        let content_type_selector = pick_list(
-            &ContentType::ALL[..],
-            Some(self.request_content_type),
-            Message::RequestContentTypeSelected,
+        let body_type_selector = pick_list(
+            &BodyType::ALL[..],
+            Some(self.body_type),
+            Message::BodyTypeSelected,
         )
         .padding(10);
 
-        let body_editor = text_editor(&self.body_input)
-            .on_action(Message::BodyInputChanged)
-            .height(Length::Fill);
+        match self.body_type {
+            BodyType::Text => {
+                let content_type_selector = pick_list(
+                    &ContentType::ALL[..],
+                    Some(self.request_content_type),
+                    Message::RequestContentTypeSelected,
+                )
+                .padding(10);
+
+                let body_editor = text_editor(&self.body_input)
+                    .on_action(Message::BodyInputChanged)
+                    .height(Length::Fill);
+
+                container(
+                    column![
+                        row![text("Body Type:"), body_type_selector].spacing(10),
+                        row![text("Content-Type:").size(16), content_type_selector]
+                            .spacing(10),
+                        body_editor
+                    ]
+                    .spacing(15)
+                    .padding(10),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            }
+            BodyType::Multipart => {
+                let mut entries_col = column![].spacing(8);
+                for entry in &self.multipart_entries {
+                    let type_label = if entry.is_file { "File" } else { "Text" };
+                    let row = row![
+                        button(text(type_label))
+                            .on_press(Message::MultipartToggleFile(entry.id))
+                            .width(Length::Fixed(50.0)),
+                        text_input("Name", &entry.name)
+                            .on_input(move |v| Message::MultipartNameChanged(entry.id, v))
+                            .padding(8),
+                        text_input(if entry.is_file { "File path" } else { "Value" }, &entry.value)
+                            .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
+                            .padding(8),
+                        button(text("X"))
+                            .on_press(Message::RemoveMultipartEntry(entry.id))
+                            .width(Length::Fixed(35.0)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+                    entries_col = entries_col.push(row);
+                }
+
+                let add_button = button(text("+ Add Field"))
+                    .on_press(Message::AddMultipartEntry);
+
+                container(
+                    column![
+                        row![text("Body Type:"), body_type_selector].spacing(10),
+                        text("Multipart/Form-Data Fields").size(16),
+                        scrollable(entries_col).height(Length::Fill),
+                        add_button,
+                    ]
+                    .spacing(15)
+                    .padding(10),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            }
+        }
+    }
+
+    fn create_settings_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
+        use crate::http_client::config::RedirectPolicy;
+
+        let timeout_value = self.request_config.timeout.as_secs().to_string();
+        let timeout_input = text_input("Timeout (secs)", &timeout_value)
+            .on_input(Message::TimeoutChanged)
+            .padding(10)
+            .width(Length::Fixed(200.0));
+
+        let follow_redirects = matches!(
+            self.request_config.redirect_policy,
+            RedirectPolicy::Follow | RedirectPolicy::Limited(_)
+        );
+        let redirect_toggle = button(if follow_redirects {
+            "Follow Redirects: ON"
+        } else {
+            "Follow Redirects: OFF"
+        })
+        .on_press(Message::FollowRedirectsToggled(!follow_redirects));
+
+        let max_redirects = match &self.request_config.redirect_policy {
+            RedirectPolicy::Limited(n) => n.to_string(),
+            _ => "10".to_string(),
+        };
+        let max_redirects_input = text_input("Max Redirects", &max_redirects)
+            .on_input(Message::MaxRedirectsChanged)
+            .padding(10)
+            .width(Length::Fixed(200.0));
+
+        let retry_count = self.request_config.retry.max_retries.to_string();
+        let retry_count_input = text_input("Retries", &retry_count)
+            .on_input(Message::RetryCountChanged)
+            .padding(10)
+            .width(Length::Fixed(200.0));
+
+        let retry_backoff = self.request_config.retry.backoff_ms.to_string();
+        let retry_backoff_input = text_input("Backoff (ms)", &retry_backoff)
+            .on_input(Message::RetryBackoffChanged)
+            .padding(10)
+            .width(Length::Fixed(200.0));
+
+        let proxy_url = self.request_config.proxy_url.as_deref().unwrap_or("");
+        let proxy_input = text_input("Proxy URL (e.g. http://proxy:8080)", proxy_url)
+            .on_input(Message::ProxyUrlChanged)
+            .padding(10);
+
+        let verify_ssl = self.request_config.verify_ssl;
+        let ssl_toggle = button(if verify_ssl {
+            "Verify SSL: ON"
+        } else {
+            "Verify SSL: OFF (insecure)"
+        })
+        .on_press(Message::VerifySslToggled(!verify_ssl));
 
         container(
             column![
-                row![text("Content-Type:").size(16), content_type_selector].spacing(10),
-                body_editor
+                text("Request Settings").size(18),
+                row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
+                row![redirect_toggle].spacing(10),
+                row![text("Max Redirects:"), max_redirects_input]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                Rule::horizontal(10),
+                text("Retry").size(16),
+                row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
+                row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
+                Rule::horizontal(10),
+                text("Network").size(16),
+                proxy_input,
+                ssl_toggle,
             ]
             .spacing(15)
-            .padding(10),
+            .padding(20),
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -895,5 +1382,59 @@ mod tests {
         };
         view.apply_environment(&env);
         assert_eq!(view.url_input, "https://example.com/api");
+    }
+
+    #[test]
+    fn build_request_multipart_text_fields() {
+        let mut view = make_view("https://example.com/upload", "POST");
+        view.body_type = BodyType::Multipart;
+        view.multipart_entries = vec![
+            MultipartEntry { id: 0, name: "username".to_string(), value: "john".to_string(), is_file: false },
+            MultipartEntry { id: 1, name: "bio".to_string(), value: "Hello world".to_string(), is_file: false },
+        ];
+        let req = view.build_request();
+        assert_eq!(req.multipart_fields.len(), 2);
+        assert!(!req.headers.iter().any(|(k, _)| k == "Content-Type"));
+    }
+
+    #[test]
+    fn build_request_multipart_file_field() {
+        let mut view = make_view("https://example.com/upload", "POST");
+        view.body_type = BodyType::Multipart;
+        view.multipart_entries = vec![
+            MultipartEntry { id: 0, name: "document".to_string(), value: "/tmp/test.pdf".to_string(), is_file: true },
+        ];
+        let req = view.build_request();
+        assert_eq!(req.multipart_fields.len(), 1);
+        match &req.multipart_fields[0].value {
+            crate::http_client::request::MultipartValue::File { path, .. } => {
+                assert_eq!(path, "/tmp/test.pdf");
+            }
+            _ => panic!("Expected File variant"),
+        }
+    }
+
+    #[test]
+    fn build_request_multipart_empty_names_filtered() {
+        let mut view = make_view("https://example.com/upload", "POST");
+        view.body_type = BodyType::Multipart;
+        view.multipart_entries = vec![
+            MultipartEntry { id: 0, name: String::new(), value: "val".to_string(), is_file: false },
+            MultipartEntry { id: 1, name: "good".to_string(), value: "yes".to_string(), is_file: false },
+        ];
+        let req = view.build_request();
+        assert_eq!(req.multipart_fields.len(), 1);
+        assert_eq!(req.multipart_fields[0].name, "good");
+    }
+
+    #[test]
+    fn build_request_text_mode_ignores_multipart_entries() {
+        let mut view = make_view("https://example.com/api", "POST");
+        view.body_type = BodyType::Text;
+        view.multipart_entries = vec![
+            MultipartEntry { id: 0, name: "field".to_string(), value: "val".to_string(), is_file: false },
+        ];
+        let req = view.build_request();
+        assert!(req.multipart_fields.is_empty());
     }
 }
