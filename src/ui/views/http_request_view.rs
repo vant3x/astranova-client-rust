@@ -1,6 +1,7 @@
 use crate::data::auth::{Auth, AuthType};
 use crate::http_client::config::RequestConfig;
 use crate::http_client::response::HttpResponse;
+use crate::http_client::snippets::{self, SnippetFormat};
 use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use base64::{engine::general_purpose, Engine as _};
@@ -113,6 +114,11 @@ pub enum Message {
     ProxyUrlChanged(String),
     VerifySslToggled(bool),
     ThemeSelected(highlighter::Theme),
+    ShowSnippets,
+    HideSnippets,
+    SnippetFormatSelected(SnippetFormat),
+    CopySnippet,
+    ResetSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -206,6 +212,8 @@ pub struct HttpRequestView {
     pub multipart_entries: Vec<MultipartEntry>,
     multipart_next_id: usize,
     pub highlighter_theme: highlighter::Theme,
+    pub show_snippets: bool,
+    pub snippet_format: SnippetFormat,
 }
 
 impl Clone for HttpRequestView {
@@ -232,6 +240,8 @@ impl Clone for HttpRequestView {
             multipart_entries: self.multipart_entries.clone(),
             multipart_next_id: self.multipart_next_id,
             highlighter_theme: self.highlighter_theme,
+            show_snippets: self.show_snippets,
+            snippet_format: self.snippet_format,
         }
     }
 }
@@ -260,6 +270,8 @@ impl Default for HttpRequestView {
             multipart_entries: vec![MultipartEntry { id: 0, name: String::new(), value: String::new(), is_file: false }],
             multipart_next_id: 1,
             highlighter_theme: highlighter::Theme::SolarizedDark,
+            show_snippets: false,
+            snippet_format: SnippetFormat::Curl,
         }
     }
 }
@@ -592,6 +604,25 @@ impl HttpRequestView {
             Message::RemoveMultipartEntry(id) => {
                 self.multipart_entries.retain(|e| e.id != id);
             }
+            Message::ShowSnippets => {
+                self.show_snippets = true;
+            }
+            Message::HideSnippets => {
+                self.show_snippets = false;
+            }
+            Message::SnippetFormatSelected(format) => {
+                self.snippet_format = format;
+            }
+            Message::CopySnippet => {
+                let request = self.build_request();
+                let code = snippets::generate(&request, self.snippet_format);
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(code);
+                }
+            }
+            Message::ResetSettings => {
+                self.request_config = RequestConfig::default();
+            }
         }
     }
 
@@ -760,7 +791,8 @@ impl HttpRequestView {
                 text_input("URL", &self.url_input)
                     .on_input(Message::UrlInputChanged)
                     .padding(10),
-                button("Send").on_press(Message::SendRequest)
+                button("Send").on_press(Message::SendRequest),
+                button("Code").on_press(Message::ShowSnippets),
             ]
             .spacing(10)
             .padding(10),
@@ -784,7 +816,19 @@ impl HttpRequestView {
         ]
         .align_x(Alignment::Center);
 
-        main_column.into()
+        if self.show_snippets {
+            let snippets_panel = self.create_snippets_panel();
+            row![
+                main_column.width(Length::FillPortion(3)),
+                rule::vertical(1),
+                container(snippets_panel)
+                    .width(Length::FillPortion(2))
+                    .height(Length::Fill),
+            ]
+            .into()
+        } else {
+            main_column.into()
+        }
     }
 
     fn create_response_headers_view(&self) -> Element<'_, Message, Theme, Renderer> {
@@ -1097,9 +1141,61 @@ impl HttpRequestView {
                 rule::horizontal(10),
                 text("Appearance").size(16),
                 row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
+                rule::horizontal(10),
+                button("Reset to Defaults").on_press(Message::ResetSettings),
             ]
             .spacing(15)
             .padding(20),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn create_snippets_panel(&self) -> Element<'_, Message, Theme, Renderer> {
+        let request = self.build_request();
+        let code = snippets::generate(&request, self.snippet_format);
+
+        let format_selector = pick_list(
+            &SnippetFormat::ALL[..],
+            Some(self.snippet_format),
+            Message::SnippetFormatSelected,
+        )
+        .padding(8);
+
+        let close_button = button(text("X"))
+            .on_press(Message::HideSnippets)
+            .width(Length::Fixed(35.0));
+
+        let header = row![
+            text("Code Snippets").size(16),
+            format_selector,
+            close_button,
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let code_display = text(code.clone())
+            .size(13)
+            .font(iced::Font::MONOSPACE);
+
+        let copy_button = button(text("Copy"))
+            .on_press(Message::CopySnippet);
+
+        container(
+            column![
+                header,
+                rule::horizontal(5),
+                scrollable(
+                    container(code_display)
+                        .padding(10)
+                        .width(Length::Fill)
+                )
+                .height(Length::Fill),
+                copy_button,
+            ]
+            .spacing(10)
+            .padding(10),
         )
         .width(Length::Fill)
         .height(Length::Fill)

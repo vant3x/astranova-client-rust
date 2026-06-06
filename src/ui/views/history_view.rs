@@ -6,10 +6,8 @@ use iced::{
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    LoadHistory(Vec<RequestHistoryEntry>),
     SelectEntry(usize),
     ClearHistory,
-    EntrySelected(RequestHistoryEntry),
 }
 
 #[derive(Debug, Default)]
@@ -34,10 +32,6 @@ impl HistoryView {
 
     pub fn update(&mut self, message: Message) -> Option<RequestHistoryEntry> {
         match message {
-            Message::LoadHistory(entries) => {
-                self.entries = entries;
-                None
-            }
             Message::SelectEntry(index) => {
                 self.selected_index = Some(index);
                 self.entries.get(index).cloned()
@@ -47,7 +41,6 @@ impl HistoryView {
                 self.selected_index = None;
                 None
             }
-            Message::EntrySelected(_) => None,
         }
     }
 

@@ -68,11 +68,38 @@ impl Default for RedirectPolicy {
 }
 
 impl RedirectPolicy {
+    #[allow(dead_code)]
     pub const ALL: [RedirectPolicy; 3] = [
         RedirectPolicy::Follow,
         RedirectPolicy::NoFollow,
         RedirectPolicy::Limited(DEFAULT_MAX_REDIRECTS),
     ];
+}
+
+#[allow(dead_code)]
+pub struct ProxyConfig {
+    pub url: String,
+    pub auth: Option<(String, String)>,
+}
+
+#[allow(dead_code)]
+pub struct TlsConfig {
+    pub ca_cert_path: Option<String>,
+    pub client_cert_path: Option<String>,
+    pub client_key_path: Option<String>,
+    pub verify_ssl: bool,
+}
+
+#[allow(dead_code)]
+impl Default for TlsConfig {
+    fn default() -> Self {
+        Self {
+            ca_cert_path: None,
+            client_cert_path: None,
+            client_key_path: None,
+            verify_ssl: true,
+        }
+    }
 }
 
 impl fmt::Display for RedirectPolicy {
@@ -81,31 +108,6 @@ impl fmt::Display for RedirectPolicy {
             RedirectPolicy::Follow => write!(f, "Follow"),
             RedirectPolicy::NoFollow => write!(f, "No Follow"),
             RedirectPolicy::Limited(n) => write!(f, "Limited ({})", n),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProxyConfig {
-    pub url: String,
-    pub auth: Option<(String, String)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TlsConfig {
-    pub ca_cert_path: Option<String>,
-    pub client_cert_path: Option<String>,
-    pub client_key_path: Option<String>,
-    pub verify_ssl: bool,
-}
-
-impl Default for TlsConfig {
-    fn default() -> Self {
-        Self {
-            ca_cert_path: None,
-            client_cert_path: None,
-            client_key_path: None,
-            verify_ssl: true,
         }
     }
 }

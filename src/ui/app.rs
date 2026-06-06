@@ -48,9 +48,6 @@ pub enum Message {
     SwitchView(View),
     HistoryMsg(history_view::Message),
     ToggleHistory,
-    LoadHistory,
-    HistoryLoaded(Vec<database::RequestHistoryEntry>),
-    ApplyHistoryEntry(database::RequestHistoryEntry),
 }
 
 impl AstraNovaApp {
@@ -296,14 +293,6 @@ impl AstraNovaApp {
             Message::ToggleHistory => {
                 self.show_history = !self.show_history;
             }
-            Message::LoadHistory => {
-                let history = database::get_request_history(&self.db_conn, 50)
-                    .unwrap_or_default();
-                self.history_view.entries = history;
-            }
-            Message::HistoryLoaded(entries) => {
-                self.history_view.entries = entries;
-            }
             Message::HistoryMsg(msg) => {
                 if let Some(entry) = self.history_view.update(msg) {
                     self.request_tabs.push(HttpRequestView::default());
@@ -312,14 +301,6 @@ impl AstraNovaApp {
                         view.url_input = entry.url;
                         view.method = Box::leak(entry.method.into_boxed_str());
                     }
-                }
-            }
-            Message::ApplyHistoryEntry(entry) => {
-                self.request_tabs.push(HttpRequestView::default());
-                self.active_request_tab_index = self.request_tabs.len() - 1;
-                if let Some(view) = self.request_tabs.last_mut() {
-                    view.url_input = entry.url;
-                    view.method = Box::leak(entry.method.into_boxed_str());
                 }
             }
         }

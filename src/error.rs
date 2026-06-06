@@ -8,14 +8,8 @@ pub enum AppError {
     #[error("HTTP error: {0}")]
     Http(String),
 
-    #[error("Clipboard error: {0}")]
-    Clipboard(String),
-
     #[error("IO error: {0}")]
     Io(String),
-
-    #[error("JSON error: {0}")]
-    Json(String),
 }
 
 impl From<rusqlite::Error> for AppError {

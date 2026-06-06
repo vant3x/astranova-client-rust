@@ -165,6 +165,7 @@ pub fn get_request_history(conn: &Connection, limit: usize) -> Result<Vec<Reques
     Ok(result)
 }
 
+#[allow(dead_code)]
 pub fn delete_request_history(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM request_history", [])?;
     Ok(())
