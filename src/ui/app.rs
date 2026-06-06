@@ -153,6 +153,21 @@ impl AstraNovaApp {
                             }
                             view.update(msg);
                         }
+                        http_request_view::Message::MultipartBrowseFile(entry_id) => {
+                            let tab_index = index;
+                            return Task::perform(
+                                async {
+                                    let file = rfd::AsyncFileDialog::new().pick_file().await;
+                                    file.map(|f| f.path().to_string_lossy().to_string())
+                                },
+                                move |path| {
+                                    Message::HttpRequestViewMsg(
+                                        tab_index,
+                                        http_request_view::Message::MultipartFilePicked(entry_id, path),
+                                    )
+                                },
+                            );
+                        }
                         _ => view.update(msg),
                     }
                 }

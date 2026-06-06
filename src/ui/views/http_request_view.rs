@@ -109,6 +109,8 @@ pub enum Message {
     MultipartToggleFile(usize),
     AddMultipartEntry,
     RemoveMultipartEntry(usize),
+    MultipartFilePicked(usize, Option<String>),
+    MultipartBrowseFile(usize),
     RetryCountChanged(String),
     RetryBackoffChanged(String),
     ProxyUrlChanged(String),
@@ -628,6 +630,16 @@ impl HttpRequestView {
                     let _ = clipboard.set_text(text);
                 }
             }
+            Message::MultipartBrowseFile(_) => {
+                // Handled in app.rs
+            }
+            Message::MultipartFilePicked(id, path) => {
+                if let Some(value) = path {
+                    if let Some(entry) = self.multipart_entries.iter_mut().find(|e| e.id == id) {
+                        entry.value = value;
+                    }
+                }
+            }
             Message::ResetSettings => {
                 self.request_config = RequestConfig::default();
             }
@@ -1030,6 +1042,24 @@ impl HttpRequestView {
                 let mut entries_col = column![].spacing(8);
                 for entry in &self.multipart_entries {
                     let type_label = if entry.is_file { "File" } else { "Text" };
+                    let value_input = if entry.is_file {
+                        row![
+                            text_input("File path", &entry.value)
+                                .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
+                                .padding(8),
+                            button(text("Browse"))
+                                .on_press(Message::MultipartBrowseFile(entry.id))
+                                .padding(8),
+                        ]
+                        .spacing(8)
+                    } else {
+                        row![
+                            text_input("Value", &entry.value)
+                                .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
+                                .padding(8),
+                        ]
+                        .spacing(8)
+                    };
                     let row = row![
                         button(text(type_label))
                             .on_press(Message::MultipartToggleFile(entry.id))
@@ -1037,9 +1067,7 @@ impl HttpRequestView {
                         text_input("Name", &entry.name)
                             .on_input(move |v| Message::MultipartNameChanged(entry.id, v))
                             .padding(8),
-                        text_input(if entry.is_file { "File path" } else { "Value" }, &entry.value)
-                            .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
-                            .padding(8),
+                        value_input,
                         button(text("X"))
                             .on_press(Message::RemoveMultipartEntry(entry.id))
                             .width(Length::Fixed(35.0)),
@@ -1130,29 +1158,33 @@ impl HttpRequestView {
         )
         .padding(10);
 
-        column![
-            text("Request Settings").size(18),
-            row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
-            row![redirect_toggle].spacing(10),
-            row![text("Max Redirects:"), max_redirects_input]
-                .spacing(10)
-                .align_y(Alignment::Center),
-            rule::horizontal(10),
-            text("Retry").size(16),
-            row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
-            row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
-            rule::horizontal(10),
-            text("Network").size(16),
-            proxy_input,
-            ssl_toggle,
-            rule::horizontal(10),
-            text("Appearance").size(16),
-            row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
-            rule::horizontal(10),
-            button("Reset to Defaults").on_press(Message::ResetSettings),
-        ]
-        .spacing(15)
-        .padding(20)
+        container(
+            column![
+                text("Request Settings").size(18),
+                row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
+                row![redirect_toggle].spacing(10),
+                row![text("Max Redirects:"), max_redirects_input]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                rule::horizontal(10),
+                text("Retry").size(16),
+                row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
+                row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
+                rule::horizontal(10),
+                text("Network").size(16),
+                proxy_input,
+                ssl_toggle,
+                rule::horizontal(10),
+                text("Appearance").size(16),
+                row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
+                rule::horizontal(10),
+                button("Reset to Defaults").on_press(Message::ResetSettings),
+            ]
+            .spacing(15)
+            .padding(20),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
     }
 
