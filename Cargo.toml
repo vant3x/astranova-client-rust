@@ -7,8 +7,8 @@ authors = ["vant3x"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = { version = "0.13.1", features = ["tokio", "image", "svg", "canvas"] }
-iced_aw = { version = "0.12.2", features = ["tabs", "tab_bar", "context_menu"] }
+iced = { version = "0.14.0", features = ["tokio", "image", "svg", "canvas", "highlighter"] }
+iced_aw = { version = "0.13.1", features = ["tabs", "tab_bar", "context_menu"] }
 
 
 bytes = "1.0.0"

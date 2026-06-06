@@ -2,7 +2,7 @@ use crate::persistence::database::{self, Environment};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use iced::{
-    widget::{button, column, container, pick_list, row, text},
+    widget::{button, column, container, pick_list, row, rule, text},
     Alignment, Element, Length, Task,
 };
 use iced_aw::{TabLabel, Tabs};
@@ -18,8 +18,9 @@ pub enum View {
 }
 
 pub fn main() -> iced::Result {
-    iced::application("AstraNova Client", AstraNovaApp::update, AstraNovaApp::view)
-        .run_with(AstraNovaApp::new)
+    iced::application(AstraNovaApp::new, AstraNovaApp::update, AstraNovaApp::view)
+        .title("AstraNova Client")
+        .run()
 }
 
 struct AstraNovaApp {
@@ -421,7 +422,7 @@ impl AstraNovaApp {
 
                     row![
                         main_content.width(Length::FillPortion(3)),
-                        iced::widget::Rule::vertical(1),
+                        rule::vertical(1),
                         history_panel,
                     ]
                     .into()

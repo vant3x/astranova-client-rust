@@ -5,10 +5,11 @@ use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
+use iced::highlighter;
 use iced::widget::image::{Handle, Image};
 use iced::widget::text_editor;
 use iced::{
-    widget::{button, column, container, pick_list, row, scrollable, text, text_input, Rule},
+    widget::{button, column, container, pick_list, row, rule, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
 };
 use iced_aw::{ContextMenu, TabLabel, Tabs};
@@ -111,6 +112,7 @@ pub enum Message {
     RetryBackoffChanged(String),
     ProxyUrlChanged(String),
     VerifySslToggled(bool),
+    ThemeSelected(highlighter::Theme),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -203,6 +205,7 @@ pub struct HttpRequestView {
     pub body_type: BodyType,
     pub multipart_entries: Vec<MultipartEntry>,
     multipart_next_id: usize,
+    pub highlighter_theme: highlighter::Theme,
 }
 
 impl Clone for HttpRequestView {
@@ -228,6 +231,7 @@ impl Clone for HttpRequestView {
             body_type: self.body_type,
             multipart_entries: self.multipart_entries.clone(),
             multipart_next_id: self.multipart_next_id,
+            highlighter_theme: self.highlighter_theme,
         }
     }
 }
@@ -255,6 +259,7 @@ impl Default for HttpRequestView {
             body_type: BodyType::Text,
             multipart_entries: vec![MultipartEntry { id: 0, name: String::new(), value: String::new(), is_file: false }],
             multipart_next_id: 1,
+            highlighter_theme: highlighter::Theme::SolarizedDark,
         }
     }
 }
@@ -553,6 +558,9 @@ impl HttpRequestView {
             Message::VerifySslToggled(verify) => {
                 self.request_config.verify_ssl = verify;
             }
+            Message::ThemeSelected(theme) => {
+                self.highlighter_theme = theme;
+            }
             Message::BodyTypeSelected(body_type) => {
                 self.body_type = body_type;
             }
@@ -652,8 +660,10 @@ impl HttpRequestView {
                         ResponseTab::Body,
                         TabLabel::Text("Body".to_string()),
                         {
+                            let syntax = self.content_type.as_deref().map(response_content_type_to_syntax).unwrap_or("text");
                             let editor = text_editor(&self.response_body_editor)
-                                .on_action(Message::ResponseContentChanged);
+                                .on_action(Message::ResponseContentChanged)
+                                .highlight(syntax, self.highlighter_theme);
                             let context_menu = ContextMenu::new(scrollable(editor), || {
                                 column![
                                     button("Copy Selection")
@@ -723,8 +733,7 @@ impl HttpRequestView {
         ))
         .size(14);
 
-        let size_text = text(format!(
-            "{}",
+        let size_text = text(
             self.response_size
                 .map(|s| {
                     if s > 1024 {
@@ -734,7 +743,7 @@ impl HttpRequestView {
                     }
                 })
                 .unwrap_or_else(|| "N/A".to_string())
-        ))
+        )
         .size(14);
 
         let main_column = column![
@@ -756,7 +765,7 @@ impl HttpRequestView {
             .spacing(10)
             .padding(10),
             tabs.height(Length::Fixed(250.0)),
-            Rule::horizontal(10),
+            rule::horizontal(10),
             column![
                 row![
                     method_colored,
@@ -855,7 +864,7 @@ impl HttpRequestView {
             );
 
             if !response.redirect_chain.is_empty() {
-                items = items.push(Rule::horizontal(5));
+                items = items.push(rule::horizontal(5));
                 items = items.push(
                     text(format!("Redirect Chain ({} hops):", response.redirect_chain.len()))
                         .size(14)
@@ -945,9 +954,11 @@ impl HttpRequestView {
                 )
                 .padding(10);
 
+                let body_syntax = content_type_to_syntax(self.request_content_type);
                 let body_editor = text_editor(&self.body_input)
                     .on_action(Message::BodyInputChanged)
-                    .height(Length::Fill);
+                    .height(Length::Fill)
+                    .highlight(body_syntax, self.highlighter_theme);
 
                 container(
                     column![
@@ -1060,6 +1071,13 @@ impl HttpRequestView {
         })
         .on_press(Message::VerifySslToggled(!verify_ssl));
 
+        let theme_selector = pick_list(
+            highlighter::Theme::ALL,
+            Some(self.highlighter_theme),
+            Message::ThemeSelected,
+        )
+        .padding(10);
+
         container(
             column![
                 text("Request Settings").size(18),
@@ -1068,14 +1086,17 @@ impl HttpRequestView {
                 row![text("Max Redirects:"), max_redirects_input]
                     .spacing(10)
                     .align_y(Alignment::Center),
-                Rule::horizontal(10),
+                rule::horizontal(10),
                 text("Retry").size(16),
                 row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
                 row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
-                Rule::horizontal(10),
+                rule::horizontal(10),
                 text("Network").size(16),
                 proxy_input,
                 ssl_toggle,
+                rule::horizontal(10),
+                text("Appearance").size(16),
+                row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
             ]
             .spacing(15)
             .padding(20),
@@ -1083,6 +1104,27 @@ impl HttpRequestView {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+    }
+}
+
+fn content_type_to_syntax(ct: ContentType) -> &'static str {
+    match ct {
+        ContentType::Json => "json",
+        ContentType::Html => "html",
+        ContentType::Xml => "xml",
+        ContentType::Text => "text",
+    }
+}
+
+fn response_content_type_to_syntax(ct: &str) -> &str {
+    if ct.contains("json") {
+        "json"
+    } else if ct.contains("html") {
+        "html"
+    } else if ct.contains("xml") {
+        "xml"
+    } else {
+        "text"
     }
 }
 
