@@ -20,6 +20,8 @@ pub struct RequestHistoryEntry {
     pub status: Option<u16>,
     pub duration_ms: Option<u64>,
     pub timestamp: String,
+    pub request_data: Option<String>,
+    pub response_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -107,10 +109,22 @@ pub fn init() -> std::result::Result<Connection, AppError> {
             url TEXT NOT NULL,
             status INTEGER,
             duration_ms INTEGER,
-            timestamp TEXT NOT NULL
+            timestamp TEXT NOT NULL,
+            request_data TEXT,
+            response_data TEXT
         )",
         [],
     )?;
+    conn.execute(
+        "ALTER TABLE request_history ADD COLUMN request_data TEXT",
+        [],
+    )
+    .ok();
+    conn.execute(
+        "ALTER TABLE request_history ADD COLUMN response_data TEXT",
+        [],
+    )
+    .ok();
     conn.execute(
         "CREATE TABLE IF NOT EXISTS collections (
             id INTEGER PRIMARY KEY,
@@ -219,18 +233,20 @@ pub fn save_request_history(
     url: &str,
     status: Option<u16>,
     duration_ms: Option<u64>,
+    request_data: Option<&str>,
+    response_data: Option<&str>,
 ) -> Result<()> {
     let timestamp = chrono_now();
     conn.execute(
-        "INSERT INTO request_history (method, url, status, duration_ms, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![method, url, status.map(|s| s as i64), duration_ms.map(|d| d as i64), timestamp],
+        "INSERT INTO request_history (method, url, status, duration_ms, timestamp, request_data, response_data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![method, url, status.map(|s| s as i64), duration_ms.map(|d| d as i64), timestamp, request_data, response_data],
     )?;
     Ok(())
 }
 
 pub fn get_request_history(conn: &Connection, limit: usize) -> Result<Vec<RequestHistoryEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, method, url, status, duration_ms, timestamp FROM request_history ORDER BY id DESC LIMIT ?1",
+        "SELECT id, method, url, status, duration_ms, timestamp, request_data, response_data FROM request_history ORDER BY id DESC LIMIT ?1",
     )?;
     let entries = stmt.query_map([limit as i64], |row| {
         Ok(RequestHistoryEntry {
@@ -240,6 +256,8 @@ pub fn get_request_history(conn: &Connection, limit: usize) -> Result<Vec<Reques
             status: row.get::<_, Option<i64>>(3)?.map(|s| s as u16),
             duration_ms: row.get::<_, Option<i64>>(4)?.map(|d| d as u64),
             timestamp: row.get(5)?,
+            request_data: row.get(6)?,
+            response_data: row.get(7)?,
         })
     })?;
 
@@ -254,6 +272,28 @@ pub fn get_request_history(conn: &Connection, limit: usize) -> Result<Vec<Reques
 pub fn delete_request_history(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM request_history", [])?;
     Ok(())
+}
+
+pub fn get_request_history_entry_by_id(conn: &Connection, id: i32) -> Result<Option<RequestHistoryEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, method, url, status, duration_ms, timestamp, request_data, response_data FROM request_history WHERE id = ?1",
+    )?;
+    let mut entries = stmt.query_map([id], |row| {
+        Ok(RequestHistoryEntry {
+            id: row.get(0)?,
+            method: row.get(1)?,
+            url: row.get(2)?,
+            status: row.get::<_, Option<i64>>(3)?.map(|s| s as u16),
+            duration_ms: row.get::<_, Option<i64>>(4)?.map(|d| d as u64),
+            timestamp: row.get(5)?,
+            request_data: row.get(6)?,
+            response_data: row.get(7)?,
+        })
+    })?;
+    match entries.next() {
+        Some(entry) => Ok(Some(entry?)),
+        None => Ok(None),
+    }
 }
 
 pub fn create_collection(conn: &Connection, name: &str, description: Option<&str>) -> Result<Collection> {
@@ -643,14 +683,16 @@ mod tests {
                 url TEXT NOT NULL,
                 status INTEGER,
                 duration_ms INTEGER,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
             )",
             [],
         )
         .unwrap();
 
-        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(150)).unwrap();
-        save_request_history(&conn, "POST", "https://api.test.com", Some(201), Some(300)).unwrap();
+        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(150), None, None).unwrap();
+        save_request_history(&conn, "POST", "https://api.test.com", Some(201), Some(300), None, None).unwrap();
 
         let history = get_request_history(&conn, 10).unwrap();
         assert_eq!(history.len(), 2);
@@ -668,13 +710,15 @@ mod tests {
                 url TEXT NOT NULL,
                 status INTEGER,
                 duration_ms INTEGER,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
             )",
             [],
         )
         .unwrap();
 
-        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(100)).unwrap();
+        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(100), None, None).unwrap();
         delete_request_history(&conn).unwrap();
         let history = get_request_history(&conn, 10).unwrap();
         assert!(history.is_empty());
@@ -690,14 +734,16 @@ mod tests {
                 url TEXT NOT NULL,
                 status INTEGER,
                 duration_ms INTEGER,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
             )",
             [],
         )
         .unwrap();
 
         for i in 0..5 {
-            save_request_history(&conn, "GET", &format!("https://example.com/{}", i), Some(200), Some(100)).unwrap();
+            save_request_history(&conn, "GET", &format!("https://example.com/{}", i), Some(200), Some(100), None, None).unwrap();
         }
 
         let history = get_request_history(&conn, 3).unwrap();
@@ -878,5 +924,77 @@ mod tests {
         delete_collection_request(&conn, req.id).unwrap();
         let reqs = get_collection_requests(&conn, col.id, None).unwrap();
         assert!(reqs.is_empty());
+    }
+
+    #[test]
+    fn save_history_with_request_and_response_data() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
+            )",
+            [],
+        )
+        .unwrap();
+
+        let request_json = r#"{"method":"POST","url":"https://api.example.com","headers":[["Content-Type","application/json"]],"body":"{\"name\":\"test\"}"}"#;
+        let response_json = r#"{"url":"https://api.example.com","method":"POST","status":201,"headers":[],"body":"{\"id\":1}","duration":150,"size":13,"redirect_chain":[]}"#;
+
+        save_request_history(
+            &conn, "POST", "https://api.example.com", Some(201), Some(150),
+            Some(request_json), Some(response_json),
+        ).unwrap();
+
+        let history = get_request_history(&conn, 10).unwrap();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].request_data.is_some());
+        assert!(history[0].response_data.is_some());
+        assert!(history[0].request_data.as_ref().unwrap().contains("POST"));
+    }
+
+    #[test]
+    fn get_history_entry_by_id_returns_full_data() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
+            )",
+            [],
+        )
+        .unwrap();
+
+        let request_json = r#"{"method":"GET","url":"https://example.com"}"#;
+        save_request_history(
+            &conn, "GET", "https://example.com", Some(200), Some(100),
+            Some(request_json), None,
+        ).unwrap();
+
+        let entry = get_request_history_entry_by_id(&conn, 1).unwrap();
+        assert!(entry.is_some());
+        let entry = entry.unwrap();
+        assert_eq!(entry.method, "GET");
+        assert!(entry.request_data.is_some());
+        assert!(entry.response_data.is_none());
+    }
+
+    #[test]
+    fn get_nonexistent_history_entry_returns_none() {
+        let conn = setup_test_db();
+        let entry = get_request_history_entry_by_id(&conn, 999).unwrap();
+        assert!(entry.is_none());
     }
 }

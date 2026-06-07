@@ -238,6 +238,7 @@ pub struct HttpRequestView {
     pub snippet_format: SnippetFormat,
     pub snippet_content: text_editor::Content,
     pub word_wrap: bool,
+    pub pending_request_data: Option<String>,
     logo_handle: iced::widget::image::Handle,
 }
 
@@ -269,6 +270,7 @@ impl Clone for HttpRequestView {
             snippet_format: self.snippet_format,
             snippet_content: text_editor::Content::with_text(&self.snippet_content.text()),
             word_wrap: self.word_wrap,
+            pending_request_data: self.pending_request_data.clone(),
             logo_handle: self.logo_handle.clone(),
         }
     }
@@ -302,6 +304,7 @@ impl Default for HttpRequestView {
             snippet_format: SnippetFormat::Curl,
             snippet_content: text_editor::Content::new(),
             word_wrap: false,
+            pending_request_data: None,
             logo_handle: Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES)),
         }
     }

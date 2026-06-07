@@ -1,6 +1,7 @@
 use super::config::RequestConfig;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpRequest {
     pub method: String,
     pub url: String,
@@ -10,13 +11,13 @@ pub struct HttpRequest {
     pub multipart_fields: Vec<MultipartField>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultipartField {
     pub name: String,
     pub value: MultipartValue,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MultipartValue {
     Text(String),
     File {
@@ -167,5 +168,71 @@ mod tests {
             ],
         };
         assert_eq!(req.multipart_fields.len(), 2);
+    }
+
+    #[test]
+    fn serialize_request_to_json() {
+        let req = HttpRequest {
+            method: "POST".to_string(),
+            url: "https://api.example.com/users".to_string(),
+            headers: vec![("Content-Type".to_string(), "application/json".to_string())],
+            body: Some(r#"{"name": "John"}"#.to_string()),
+            config: RequestConfig::default(),
+            multipart_fields: vec![],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"method\":\"POST\""));
+        assert!(json.contains("\"url\":\"https://api.example.com/users\""));
+        assert!(json.contains("Content-Type"));
+    }
+
+    #[test]
+    fn deserialize_request_from_json() {
+        let json = r#"{
+            "method": "GET",
+            "url": "https://api.example.com/data",
+            "headers": [["Accept", "application/json"]],
+            "body": null,
+            "config": {
+                "timeout": {"secs": 30, "nanos": 0},
+                "follow_redirects": true,
+                "max_redirects": 10,
+                "redirect_policy": "Follow",
+                "retry": {"max_retries": 0, "backoff_ms": 1000},
+                "proxy_url": null,
+                "verify_ssl": true
+            },
+            "multipart_fields": []
+        }"#;
+        let req: HttpRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.method, "GET");
+        assert_eq!(req.url, "https://api.example.com/data");
+        assert_eq!(req.headers.len(), 1);
+        assert!(req.body.is_none());
+    }
+
+    #[test]
+    fn roundtrip_request_serialization() {
+        let req = HttpRequest {
+            method: "PUT".to_string(),
+            url: "https://api.example.com/items/1".to_string(),
+            headers: vec![
+                ("Authorization".to_string(), "Bearer token123".to_string()),
+                ("X-Custom".to_string(), "value".to_string()),
+            ],
+            body: Some(r#"{"updated": true}"#.to_string()),
+            config: RequestConfig::default(),
+            multipart_fields: vec![MultipartField {
+                name: "field".to_string(),
+                value: MultipartValue::Text("text value".to_string()),
+            }],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: HttpRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(req.method, deserialized.method);
+        assert_eq!(req.url, deserialized.url);
+        assert_eq!(req.headers, deserialized.headers);
+        assert_eq!(req.body, deserialized.body);
+        assert_eq!(req.multipart_fields.len(), deserialized.multipart_fields.len());
     }
 }

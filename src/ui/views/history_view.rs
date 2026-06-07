@@ -7,6 +7,7 @@ use iced::{
 #[derive(Debug, Clone)]
 pub enum Message {
     SelectEntry(usize),
+    ResendEntry(i32),
     ClearHistory,
 }
 
@@ -30,11 +31,14 @@ impl HistoryView {
         Self::default()
     }
 
-    pub fn update(&mut self, message: Message) -> Option<RequestHistoryEntry> {
+    pub fn update(&mut self, message: Message) -> Option<i32> {
         match message {
             Message::SelectEntry(index) => {
                 self.selected_index = Some(index);
-                self.entries.get(index).cloned()
+                self.entries.get(index).map(|e| e.id)
+            }
+            Message::ResendEntry(entry_id) => {
+                Some(entry_id)
             }
             Message::ClearHistory => {
                 self.entries.clear();
@@ -103,9 +107,25 @@ impl HistoryView {
                 url_display
             };
 
+            let has_body = entry.request_data.as_ref().map(|d| d.contains("\"body\":")).unwrap_or(false);
+            let has_auth = entry.request_data.as_ref().map(|d| d.contains("\"auth_type\":")).unwrap_or(false);
+            let has_multipart = entry.request_data.as_ref().map(|d| d.contains("multipart")).unwrap_or(false);
+
+            let mut indicators = row![].spacing(4);
+            if has_body {
+                indicators = indicators.push(text("B").size(10).color(Color::from_rgb(0.3, 0.7, 0.9)));
+            }
+            if has_auth {
+                indicators = indicators.push(text("A").size(10).color(Color::from_rgb(0.8, 0.5, 0.1)));
+            }
+            if has_multipart {
+                indicators = indicators.push(text("M").size(10).color(Color::from_rgb(0.5, 0.3, 0.8)));
+            }
+
             let entry_row = row![
                 text(&entry.method).size(12).color(method_color),
                 text(url_truncated).size(12),
+                indicators,
                 text(status_text).size(12).color(status_color),
                 text(duration_text).size(12).color(Color::from_rgb(0.5, 0.5, 0.5)),
             ]
@@ -115,7 +135,7 @@ impl HistoryView {
             let entry_button: Element<'_, Message, Theme, Renderer> = if is_selected {
                 button(entry_row).style(button::secondary).into()
             } else {
-                button(entry_row).on_press(Message::SelectEntry(index)).into()
+                button(entry_row).on_press(Message::ResendEntry(entry.id)).into()
             };
 
             list = list.push(entry_button);

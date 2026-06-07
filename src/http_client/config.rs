@@ -1,10 +1,11 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_MAX_REDIRECTS: u32 = 10;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestConfig {
     pub timeout: Duration,
     pub follow_redirects: bool,
@@ -29,7 +30,7 @@ impl Default for RequestConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryConfig {
     pub max_retries: u32,
     pub backoff_ms: u64,
@@ -54,7 +55,7 @@ impl fmt::Display for RetryConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RedirectPolicy {
     Follow,
     NoFollow,

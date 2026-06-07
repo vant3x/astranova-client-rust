@@ -148,6 +148,7 @@ impl AstraNovaApp {
 
                             let request = temp_view.build_request();
 
+                            view.pending_request_data = serde_json::to_string(&request).ok();
                             view.update(http_request_view::Message::SetLoading);
 
                             let http_client = if request.config.proxy_url.is_some()
@@ -176,12 +177,16 @@ impl AstraNovaApp {
                         }
                         http_request_view::Message::ResponseReceived(ref result) => {
                             if let Ok(response) = result {
+                                let request_data = view.pending_request_data.take();
+                                let response_data = serde_json::to_string(response).ok();
                                 let _ = database::save_request_history(
                                     &self.db_conn,
                                     &response.method,
                                     &response.url,
                                     Some(response.status),
                                     Some(response.duration.as_millis() as u64),
+                                    request_data.as_deref(),
+                                    response_data.as_deref(),
                                 );
                                 let history =
                                     database::get_request_history(&self.db_conn, 50)
@@ -452,15 +457,41 @@ impl AstraNovaApp {
                         let _ = database::delete_request_history(&self.db_conn);
                         self.history_view.update(msg);
                     }
-                    _ => {
-                        if let Some(entry) = self.history_view.update(msg) {
-                            self.request_tabs.push(HttpRequestView::default());
-                            self.active_request_tab_index = self.request_tabs.len() - 1;
-                            if let Some(view) = self.request_tabs.last_mut() {
-                                view.url_input = entry.url;
-                                view.method = Box::leak(entry.method.into_boxed_str());
+                    history_view::Message::ResendEntry(entry_id) => {
+                        if let Ok(Some(entry)) = database::get_request_history_entry_by_id(&self.db_conn, *entry_id) {
+                            let mut new_view = HttpRequestView::default();
+                            if let Some(request_data) = &entry.request_data {
+                                if let Ok(request) = serde_json::from_str::<crate::http_client::request::HttpRequest>(request_data) {
+                                    new_view.url_input = request.url;
+                                    new_view.method = Box::leak(request.method.into_boxed_str());
+                                    if let Some(body) = &request.body {
+                                        new_view.body_input = iced::widget::text_editor::Content::with_text(body);
+                                    }
+                                    new_view.headers_editor.entries = request.headers.iter().map(|(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
+                                        id: 0,
+                                        key: k.clone(),
+                                        value: v.clone(),
+                                    }).collect();
+                                    new_view.params_editor.entries = request.config.proxy_url.iter().map(|p| crate::ui::components::key_value_editor::KeyValueEntry {
+                                        id: 0,
+                                        key: "proxy".to_string(),
+                                        value: p.clone(),
+                                    }).collect();
+                                    if !request.multipart_fields.is_empty() {
+                                        new_view.body_type = http_request_view::BodyType::Multipart;
+                                    }
+                                }
+                            } else {
+                                new_view.url_input = entry.url;
+                                new_view.method = Box::leak(entry.method.into_boxed_str());
                             }
+                            self.request_tabs.push(new_view);
+                            self.active_request_tab_index = self.request_tabs.len() - 1;
                         }
+                        self.history_view.update(msg);
+                    }
+                    _ => {
+                        self.history_view.update(msg);
                     }
                 }
             }
