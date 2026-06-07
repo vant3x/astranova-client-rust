@@ -88,7 +88,8 @@ impl AstraNovaApp {
             }
             Err(e) => {
                 log::error!("Failed to initialize database: {}", e);
-                let conn = rusqlite::Connection::open_in_memory().expect("In-memory DB should always work");
+                let conn = rusqlite::Connection::open_in_memory()
+                    .expect("In-memory DB should always work");
                 let _ = conn.execute(
                     "CREATE TABLE IF NOT EXISTS environments (
                         id INTEGER PRIMARY KEY,
@@ -188,9 +189,8 @@ impl AstraNovaApp {
                                     request_data.as_deref(),
                                     response_data.as_deref(),
                                 );
-                                let history =
-                                    database::get_request_history(&self.db_conn, 50)
-                                        .unwrap_or_default();
+                                let history = database::get_request_history(&self.db_conn, 50)
+                                    .unwrap_or_default();
                                 self.history_view.entries = history;
                             }
                             view.update(msg);
@@ -205,7 +205,9 @@ impl AstraNovaApp {
                                 move |path| {
                                     Message::HttpRequestViewMsg(
                                         tab_index,
-                                        http_request_view::Message::MultipartFilePicked(entry_id, path),
+                                        http_request_view::Message::MultipartFilePicked(
+                                            entry_id, path,
+                                        ),
                                     )
                                 },
                             );
@@ -290,7 +292,10 @@ impl AstraNovaApp {
                                             self.environments.clone();
                                     }
                                     Err(e) => {
-                                        log::error!("Error getting environments after delete: {}", e)
+                                        log::error!(
+                                            "Error getting environments after delete: {}",
+                                            e
+                                        )
                                     }
                                 },
                                 Err(e) => log::error!("Error deleting environment: {}", e),
@@ -407,8 +412,7 @@ impl AstraNovaApp {
                         }
                     }
                     collection_view::Message::Close => {
-                        self.collection_view.panel_state =
-                            collection_view::PanelState::Collections;
+                        self.collection_view.panel_state = collection_view::PanelState::Collections;
                     }
                     collection_view::Message::NewFolderNameChanged(_col_id, name) => {
                         self.collection_view.new_folder_name = name;
@@ -451,123 +455,135 @@ impl AstraNovaApp {
                 }
                 self.collection_view.update(msg);
             }
-            Message::HistoryMsg(msg) => {
-                match &msg {
-                    history_view::Message::ClearHistory => {
-                        let _ = database::delete_request_history(&self.db_conn);
-                        self.history_view.update(msg);
-                    }
-                    history_view::Message::ResendEntry(entry_id) => {
-                        if let Ok(Some(entry)) = database::get_request_history_entry_by_id(&self.db_conn, *entry_id) {
-                            let mut new_view = HttpRequestView::default();
-                            if let Some(request_data) = &entry.request_data {
-                                if let Ok(request) = serde_json::from_str::<crate::http_client::request::HttpRequest>(request_data) {
-                                    new_view.url_input = request.url;
-                                    new_view.method = Box::leak(request.method.into_boxed_str());
-                                    if let Some(body) = &request.body {
-                                        new_view.body_input = iced::widget::text_editor::Content::with_text(body);
-                                    }
-                                    new_view.headers_editor.entries = request.headers.iter().map(|(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
-                                        id: 0,
-                                        key: k.clone(),
-                                        value: v.clone(),
-                                    }).collect();
-                                    new_view.params_editor.entries = request.config.proxy_url.iter().map(|p| crate::ui::components::key_value_editor::KeyValueEntry {
-                                        id: 0,
-                                        key: "proxy".to_string(),
-                                        value: p.clone(),
-                                    }).collect();
-                                    if !request.multipart_fields.is_empty() {
-                                        new_view.body_type = http_request_view::BodyType::Multipart;
-                                    }
-                                }
-                            } else {
-                                new_view.url_input = entry.url;
-                                new_view.method = Box::leak(entry.method.into_boxed_str());
-                            }
-                            self.request_tabs.push(new_view);
-                            self.active_request_tab_index = self.request_tabs.len() - 1;
-                        }
-                        self.history_view.update(msg);
-                    }
-                    _ => {
-                        self.history_view.update(msg);
-                    }
+            Message::HistoryMsg(msg) => match &msg {
+                history_view::Message::ClearHistory => {
+                    let _ = database::delete_request_history(&self.db_conn);
+                    self.history_view.update(msg);
                 }
-            }
+                history_view::Message::ResendEntry(entry_id) => {
+                    if let Ok(Some(entry)) =
+                        database::get_request_history_entry_by_id(&self.db_conn, *entry_id)
+                    {
+                        let mut new_view = HttpRequestView::default();
+                        if let Some(request_data) = &entry.request_data {
+                            if let Ok(request) = serde_json::from_str::<
+                                crate::http_client::request::HttpRequest,
+                            >(request_data)
+                            {
+                                new_view.url_input = request.url;
+                                new_view.method = Box::leak(request.method.into_boxed_str());
+                                if let Some(body) = &request.body {
+                                    new_view.body_input =
+                                        iced::widget::text_editor::Content::with_text(body);
+                                }
+                                new_view.headers_editor.entries = request
+                                    .headers
+                                    .iter()
+                                    .map(|(k, v)| {
+                                        crate::ui::components::key_value_editor::KeyValueEntry {
+                                            id: 0,
+                                            key: k.clone(),
+                                            value: v.clone(),
+                                        }
+                                    })
+                                    .collect();
+                                new_view.params_editor.entries = request
+                                    .config
+                                    .proxy_url
+                                    .iter()
+                                    .map(|p| {
+                                        crate::ui::components::key_value_editor::KeyValueEntry {
+                                            id: 0,
+                                            key: "proxy".to_string(),
+                                            value: p.clone(),
+                                        }
+                                    })
+                                    .collect();
+                                if !request.multipart_fields.is_empty() {
+                                    new_view.body_type = http_request_view::BodyType::Multipart;
+                                }
+                            }
+                        } else {
+                            new_view.url_input = entry.url;
+                            new_view.method = Box::leak(entry.method.into_boxed_str());
+                        }
+                        self.request_tabs.push(new_view);
+                        self.active_request_tab_index = self.request_tabs.len() - 1;
+                    }
+                    self.history_view.update(msg);
+                }
+            },
             Message::SelectProtocol(protocol) => {
                 self.active_protocol = protocol;
             }
-            Message::WebSocketMsg(msg) => {
-                match msg.clone() {
-                    websocket_view::Message::Connect => {
-                        let url = self.websocket_view.url.clone();
-                        let headers = self.websocket_view.headers.clone();
-                        self.websocket_view.status = crate::protocols::websocket::WsStatus::Connecting;
+            Message::WebSocketMsg(msg) => match msg.clone() {
+                websocket_view::Message::Connect => {
+                    let url = self.websocket_view.url.clone();
+                    let headers = self.websocket_view.headers.clone();
+                    self.websocket_view.status = crate::protocols::websocket::WsStatus::Connecting;
 
-                        return Task::perform(
-                            async move {
-                                let request = crate::protocols::websocket::WsRequest { url, headers };
-                                crate::protocols::websocket::connect_ws(&request).await
-                            },
-                            |result| match result {
-                                Ok((_sink, _stream)) => {
-                                    Message::WebSocketMsg(websocket_view::Message::Connected)
-                                }
-                                Err(e) => {
-                                    Message::WebSocketMsg(websocket_view::Message::Disconnected(e))
-                                }
-                            },
-                        );
-                    }
-                    websocket_view::Message::Connected => {
-                        self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
-                    }
-                    websocket_view::Message::Disconnected(reason) => {
-                        if reason == "cleared" {
-                            self.websocket_view.messages.clear();
-                        } else {
-                            self.websocket_view.status =
-                                crate::protocols::websocket::WsStatus::Error(reason);
-                        }
-                    }
-                    websocket_view::Message::UrlChanged(url) => {
-                        self.websocket_view.url = url;
-                    }
-                    websocket_view::Message::HeaderKeyChanged(key) => {
-                        self.websocket_view.header_key = key;
-                    }
-                    websocket_view::Message::HeaderValueChanged(val) => {
-                        self.websocket_view.header_value = val;
-                    }
-                    websocket_view::Message::AddHeader => {
-                        let key = self.websocket_view.header_key.clone();
-                        let val = self.websocket_view.header_value.clone();
-                        if !key.is_empty() {
-                            self.websocket_view.headers.push((key, val));
-                            self.websocket_view.header_key.clear();
-                            self.websocket_view.header_value.clear();
-                        }
-                    }
-                    websocket_view::Message::RemoveHeader(idx) => {
-                        if idx < self.websocket_view.headers.len() {
-                            self.websocket_view.headers.remove(idx);
-                        }
-                    }
-                    websocket_view::Message::InputChanged(input) => {
-                        self.websocket_view.input = input;
-                    }
-                    websocket_view::Message::SendMessage(text) => {
-                        if !text.is_empty() {
-                            self.websocket_view
-                                .messages
-                                .push(crate::protocols::websocket::WsMessage::outgoing(text));
-                            self.websocket_view.input.clear();
-                        }
-                    }
-                    _ => {}
+                    return Task::perform(
+                        async move {
+                            let request = crate::protocols::websocket::WsRequest { url, headers };
+                            crate::protocols::websocket::connect_ws(&request).await
+                        },
+                        |result| match result {
+                            Ok((_sink, _stream)) => {
+                                Message::WebSocketMsg(websocket_view::Message::Connected)
+                            }
+                            Err(e) => {
+                                Message::WebSocketMsg(websocket_view::Message::Disconnected(e))
+                            }
+                        },
+                    );
                 }
-            }
+                websocket_view::Message::Connected => {
+                    self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
+                }
+                websocket_view::Message::Disconnected(reason) => {
+                    if reason == "cleared" {
+                        self.websocket_view.messages.clear();
+                    } else {
+                        self.websocket_view.status =
+                            crate::protocols::websocket::WsStatus::Error(reason);
+                    }
+                }
+                websocket_view::Message::UrlChanged(url) => {
+                    self.websocket_view.url = url;
+                }
+                websocket_view::Message::HeaderKeyChanged(key) => {
+                    self.websocket_view.header_key = key;
+                }
+                websocket_view::Message::HeaderValueChanged(val) => {
+                    self.websocket_view.header_value = val;
+                }
+                websocket_view::Message::AddHeader => {
+                    let key = self.websocket_view.header_key.clone();
+                    let val = self.websocket_view.header_value.clone();
+                    if !key.is_empty() {
+                        self.websocket_view.headers.push((key, val));
+                        self.websocket_view.header_key.clear();
+                        self.websocket_view.header_value.clear();
+                    }
+                }
+                websocket_view::Message::RemoveHeader(idx) => {
+                    if idx < self.websocket_view.headers.len() {
+                        self.websocket_view.headers.remove(idx);
+                    }
+                }
+                websocket_view::Message::InputChanged(input) => {
+                    self.websocket_view.input = input;
+                }
+                websocket_view::Message::SendMessage(text) => {
+                    if !text.is_empty() {
+                        self.websocket_view
+                            .messages
+                            .push(crate::protocols::websocket::WsMessage::outgoing(text));
+                        self.websocket_view.input.clear();
+                    }
+                }
+                _ => {}
+            },
         }
         Task::none()
     }
@@ -612,11 +628,10 @@ impl AstraNovaApp {
                     button(text("x"))
                 };
 
-                let history_button = button(text("History"))
-                    .on_press(Message::ToggleHistory);
+                let history_button = button(text("History")).on_press(Message::ToggleHistory);
 
-                let collections_button = button(text("Collections"))
-                    .on_press(Message::ToggleCollections);
+                let collections_button =
+                    button(text("Collections")).on_press(Message::ToggleCollections);
 
                 let protocol_selector = pick_list(
                     &Protocol::ALL[..],
@@ -684,18 +699,16 @@ impl AstraNovaApp {
                 };
 
                 if self.show_history {
-                    let history_panel = container(
-                        self.history_view.view().map(Message::HistoryMsg)
-                    )
-                    .width(Length::FillPortion(1))
-                    .height(Length::Fill);
+                    let history_panel =
+                        container(self.history_view.view().map(Message::HistoryMsg))
+                            .width(Length::FillPortion(1))
+                            .height(Length::Fill);
 
                     if self.show_collections {
-                        let collections_panel = container(
-                            self.collection_view.view().map(Message::CollectionMsg)
-                        )
-                        .width(Length::FillPortion(1))
-                        .height(Length::Fill);
+                        let collections_panel =
+                            container(self.collection_view.view().map(Message::CollectionMsg))
+                                .width(Length::FillPortion(1))
+                                .height(Length::Fill);
 
                         row![
                             main_content.width(Length::FillPortion(2)),
@@ -714,11 +727,10 @@ impl AstraNovaApp {
                         .into()
                     }
                 } else if self.show_collections {
-                    let collections_panel = container(
-                        self.collection_view.view().map(Message::CollectionMsg)
-                    )
-                    .width(Length::FillPortion(1))
-                    .height(Length::Fill);
+                    let collections_panel =
+                        container(self.collection_view.view().map(Message::CollectionMsg))
+                            .width(Length::FillPortion(1))
+                            .height(Length::Fill);
 
                     row![
                         main_content.width(Length::FillPortion(3)),
@@ -782,21 +794,25 @@ impl AstraNovaApp {
         new_view.headers_editor.entries = req
             .headers
             .iter()
-            .map(|(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
-                id: 0,
-                key: k.clone(),
-                value: v.clone(),
-            })
+            .map(
+                |(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
+                    id: 0,
+                    key: k.clone(),
+                    value: v.clone(),
+                },
+            )
             .collect();
 
         new_view.params_editor.entries = req
             .params
             .iter()
-            .map(|(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
-                id: 0,
-                key: k.clone(),
-                value: v.clone(),
-            })
+            .map(
+                |(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
+                    id: 0,
+                    key: k.clone(),
+                    value: v.clone(),
+                },
+            )
             .collect();
 
         match req.auth_type.as_str() {
@@ -840,14 +856,20 @@ impl AstraNovaApp {
             let auth_type = match &view.auth {
                 crate::data::auth::Auth::BearerToken(_) => "bearer",
                 crate::data::auth::Auth::Basic { .. } => "basic",
+                crate::data::auth::Auth::ApiKey { .. } => "api_key",
+                crate::data::auth::Auth::Digest { .. } => "digest",
                 crate::data::auth::Auth::None => "none",
             };
             let auth_data = match &view.auth {
                 crate::data::auth::Auth::BearerToken(token) => Some(token.clone()),
-                crate::data::auth::Auth::Basic { user, pass } => {
+                crate::data::auth::Auth::Basic { user, pass } => Some(format!("{}:{}", user, pass)),
+                crate::data::auth::Auth::ApiKey { key, value, .. } => {
+                    Some(format!("{}:{}", key, value))
+                }
+                crate::data::auth::Auth::Digest { user, pass } => {
                     Some(format!("{}:{}", user, pass))
                 }
-                _ => None,
+                crate::data::auth::Auth::None => None,
             };
 
             let params: Vec<(String, String)> = view

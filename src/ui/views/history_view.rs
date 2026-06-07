@@ -1,4 +1,5 @@
 use crate::persistence::database::RequestHistoryEntry;
+use crate::ui::theme;
 use iced::{
     widget::{button, column, container, row, scrollable, text},
     Alignment, Color, Element, Length, Renderer, Theme,
@@ -6,7 +7,6 @@ use iced::{
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    SelectEntry(usize),
     ResendEntry(i32),
     ClearHistory,
 }
@@ -33,13 +33,7 @@ impl HistoryView {
 
     pub fn update(&mut self, message: Message) -> Option<i32> {
         match message {
-            Message::SelectEntry(index) => {
-                self.selected_index = Some(index);
-                self.entries.get(index).map(|e| e.id)
-            }
-            Message::ResendEntry(entry_id) => {
-                Some(entry_id)
-            }
+            Message::ResendEntry(entry_id) => Some(entry_id),
             Message::ClearHistory => {
                 self.entries.clear();
                 self.selected_index = None;
@@ -55,21 +49,15 @@ impl HistoryView {
             button("Clear").on_press(Message::ClearHistory).into()
         };
 
-        let header = row![
-            text("History").size(16),
-            clear_button,
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        let header = row![text("History").size(16), clear_button,]
+            .spacing(10)
+            .align_y(Alignment::Center);
 
         if self.entries.is_empty() {
             return container(
-                column![
-                    header,
-                    text("No request history yet.").size(14),
-                ]
-                .spacing(10)
-                .padding(10),
+                column![header, text("No request history yet.").size(14),]
+                    .spacing(10)
+                    .padding(10),
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -80,7 +68,7 @@ impl HistoryView {
 
         for (index, entry) in self.entries.iter().enumerate() {
             let is_selected = self.selected_index == Some(index);
-            let method_color = method_color(&entry.method);
+            let method_color = theme::method_color(&entry.method);
 
             let status_text = match entry.status {
                 Some(s) => format!(" {}", s),
@@ -107,19 +95,34 @@ impl HistoryView {
                 url_display
             };
 
-            let has_body = entry.request_data.as_ref().map(|d| d.contains("\"body\":")).unwrap_or(false);
-            let has_auth = entry.request_data.as_ref().map(|d| d.contains("\"auth_type\":")).unwrap_or(false);
-            let has_multipart = entry.request_data.as_ref().map(|d| d.contains("multipart")).unwrap_or(false);
+            let has_body = entry
+                .request_data
+                .as_ref()
+                .map(|d| d.contains("\"body\":"))
+                .unwrap_or(false);
+            let has_auth = entry
+                .request_data
+                .as_ref()
+                .map(|d| d.contains("\"auth_type\":"))
+                .unwrap_or(false);
+            let has_multipart = entry
+                .request_data
+                .as_ref()
+                .map(|d| d.contains("multipart"))
+                .unwrap_or(false);
 
             let mut indicators = row![].spacing(4);
             if has_body {
-                indicators = indicators.push(text("B").size(10).color(Color::from_rgb(0.3, 0.7, 0.9)));
+                indicators =
+                    indicators.push(text("B").size(10).color(Color::from_rgb(0.3, 0.7, 0.9)));
             }
             if has_auth {
-                indicators = indicators.push(text("A").size(10).color(Color::from_rgb(0.8, 0.5, 0.1)));
+                indicators =
+                    indicators.push(text("A").size(10).color(Color::from_rgb(0.8, 0.5, 0.1)));
             }
             if has_multipart {
-                indicators = indicators.push(text("M").size(10).color(Color::from_rgb(0.5, 0.3, 0.8)));
+                indicators =
+                    indicators.push(text("M").size(10).color(Color::from_rgb(0.5, 0.3, 0.8)));
             }
 
             let entry_row = row![
@@ -127,7 +130,9 @@ impl HistoryView {
                 text(url_truncated).size(12),
                 indicators,
                 text(status_text).size(12).color(status_color),
-                text(duration_text).size(12).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                text(duration_text)
+                    .size(12)
+                    .color(Color::from_rgb(0.5, 0.5, 0.5)),
             ]
             .spacing(8)
             .align_y(Alignment::Center);
@@ -135,7 +140,9 @@ impl HistoryView {
             let entry_button: Element<'_, Message, Theme, Renderer> = if is_selected {
                 button(entry_row).style(button::secondary).into()
             } else {
-                button(entry_row).on_press(Message::ResendEntry(entry.id)).into()
+                button(entry_row)
+                    .on_press(Message::ResendEntry(entry.id))
+                    .into()
             };
 
             list = list.push(entry_button);
@@ -145,18 +152,5 @@ impl HistoryView {
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
-    }
-}
-
-fn method_color(method: &str) -> Color {
-    match method {
-        "GET" => Color::from_rgb(0.2, 0.7, 0.3),
-        "POST" => Color::from_rgb(0.2, 0.4, 0.8),
-        "PUT" => Color::from_rgb(0.8, 0.5, 0.1),
-        "PATCH" => Color::from_rgb(0.8, 0.7, 0.1),
-        "DELETE" => Color::from_rgb(0.8, 0.2, 0.2),
-        "HEAD" => Color::from_rgb(0.5, 0.5, 0.5),
-        "OPTIONS" => Color::from_rgb(0.6, 0.6, 0.6),
-        _ => Color::from_rgb(0.5, 0.5, 0.5),
     }
 }

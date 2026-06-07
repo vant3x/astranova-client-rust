@@ -166,6 +166,11 @@ pub enum AuthInput {
     BearerToken(String),
     BasicUser(String),
     BasicPass(String),
+    ApiKeyKey(String),
+    ApiKeyValue(String),
+    ApiKeyLocation(crate::data::auth::ApiKeyLocation),
+    DigestUser(String),
+    DigestPass(String),
 }
 
 #[derive(Debug, Default)]
@@ -188,18 +193,7 @@ impl Clone for RequestStatus {
     }
 }
 
-pub fn method_color(method: &str) -> Color {
-    match method {
-        "GET" => Color::from_rgb(0.2, 0.7, 0.3),
-        "POST" => Color::from_rgb(0.2, 0.4, 0.8),
-        "PUT" => Color::from_rgb(0.8, 0.5, 0.1),
-        "PATCH" => Color::from_rgb(0.8, 0.7, 0.1),
-        "DELETE" => Color::from_rgb(0.8, 0.2, 0.2),
-        "HEAD" => Color::from_rgb(0.5, 0.5, 0.5),
-        "OPTIONS" => Color::from_rgb(0.6, 0.6, 0.6),
-        _ => Color::from_rgb(0.5, 0.5, 0.5),
-    }
-}
+pub use crate::ui::theme::method_color;
 
 fn status_color(status: u16) -> Color {
     match status {
@@ -255,7 +249,9 @@ impl Clone for HttpRequestView {
             active_response_tab: self.active_response_tab.clone(),
             request_status: self.request_status.clone(),
             last_response: self.last_response.clone(),
-            response_body_editor: text_editor::Content::with_text(&self.response_body_editor.text()),
+            response_body_editor: text_editor::Content::with_text(
+                &self.response_body_editor.text(),
+            ),
             status_code: self.status_code,
             content_type: self.content_type.clone(),
             response_duration: self.response_duration,
@@ -297,7 +293,12 @@ impl Default for HttpRequestView {
             request_content_type: ContentType::Json,
             request_config: RequestConfig::default(),
             body_type: BodyType::Text,
-            multipart_entries: vec![MultipartEntry { id: 0, name: String::new(), value: String::new(), is_file: false }],
+            multipart_entries: vec![MultipartEntry {
+                id: 0,
+                name: String::new(),
+                value: String::new(),
+                is_file: false,
+            }],
             multipart_next_id: 1,
             highlighter_theme: highlighter::Theme::SolarizedDark,
             show_snippets: false,
@@ -331,6 +332,16 @@ impl HttpRequestView {
                     *token = token.replace(&placeholder, value);
                 }
                 Auth::Basic { user, pass } => {
+                    *user = user.replace(&placeholder, value);
+                    *pass = pass.replace(&placeholder, value);
+                }
+                Auth::ApiKey {
+                    key, value: val, ..
+                } => {
+                    *key = key.replace(&placeholder, value);
+                    *val = val.replace(&placeholder, value);
+                }
+                Auth::Digest { user, pass } => {
                     *user = user.replace(&placeholder, value);
                     *pass = pass.replace(&placeholder, value);
                 }
@@ -374,9 +385,7 @@ impl HttpRequestView {
             Auth::BearerToken(token) if !token.is_empty() => {
                 headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
             }
-            Auth::Basic { user, pass }
-                if !user.is_empty() || !pass.is_empty() =>
-            {
+            Auth::Basic { user, pass } if !user.is_empty() || !pass.is_empty() => {
                 let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
                 headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
             }
@@ -453,6 +462,15 @@ impl HttpRequestView {
                         user: String::new(),
                         pass: String::new(),
                     },
+                    AuthType::ApiKey => Auth::ApiKey {
+                        key: String::new(),
+                        value: String::new(),
+                        location: crate::data::auth::ApiKeyLocation::Header,
+                    },
+                    AuthType::Digest => Auth::Digest {
+                        user: String::new(),
+                        pass: String::new(),
+                    },
                 };
             }
             Message::AuthInputChanged(input) => match (&mut self.auth, input) {
@@ -463,6 +481,21 @@ impl HttpRequestView {
                     *user = new_user;
                 }
                 (Auth::Basic { pass, .. }, AuthInput::BasicPass(new_pass)) => {
+                    *pass = new_pass;
+                }
+                (Auth::ApiKey { key, .. }, AuthInput::ApiKeyKey(new_key)) => {
+                    *key = new_key;
+                }
+                (Auth::ApiKey { value, .. }, AuthInput::ApiKeyValue(new_value)) => {
+                    *value = new_value;
+                }
+                (Auth::ApiKey { location, .. }, AuthInput::ApiKeyLocation(new_location)) => {
+                    *location = new_location;
+                }
+                (Auth::Digest { user, .. }, AuthInput::DigestUser(new_user)) => {
+                    *user = new_user;
+                }
+                (Auth::Digest { pass, .. }, AuthInput::DigestPass(new_pass)) => {
                     *pass = new_pass;
                 }
                 _ => {}
@@ -506,8 +539,7 @@ impl HttpRequestView {
                         response.body.clone()
                     };
 
-                    self.response_body_editor =
-                        text_editor::Content::with_text(&formatted_body);
+                    self.response_body_editor = text_editor::Content::with_text(&formatted_body);
                     self.last_response = Some(response);
                     self.request_status = RequestStatus::Success;
                 }
@@ -595,11 +627,7 @@ impl HttpRequestView {
                 }
             }
             Message::ProxyUrlChanged(url) => {
-                self.request_config.proxy_url = if url.is_empty() {
-                    None
-                } else {
-                    Some(url)
-                };
+                self.request_config.proxy_url = if url.is_empty() { None } else { Some(url) };
             }
             Message::VerifySslToggled(verify) => {
                 self.request_config.verify_ssl = verify;
@@ -741,41 +769,33 @@ impl HttpRequestView {
                 .into(),
             RequestStatus::Success => {
                 let response_tabs = Tabs::new(Message::ResponseTabSelected)
-                    .push(
-                        ResponseTab::Body,
-                        TabLabel::Text("Body".to_string()),
-                        {
-                            let syntax = self.content_type.as_deref().map(response_content_type_to_syntax).unwrap_or("text");
-                            if self.word_wrap {
-                                let body_text = self.response_body_editor.text();
-                                let wrapped_text = text(body_text)
-                                    .size(13)
-                                    .font(iced::Font::MONOSPACE);
-                                let context_menu = ContextMenu::new(scrollable(wrapped_text), || {
-                                    column![
-                                        button("Copy Body")
-                                            .on_press(Message::CopyBody),
-                                    ]
-                                    .into()
-                                });
-                                container(context_menu)
-                            } else {
-                                let editor = text_editor(&self.response_body_editor)
-                                    .on_action(Message::ResponseContentChanged)
-                                    .highlight(syntax, self.highlighter_theme);
-                                let context_menu = ContextMenu::new(scrollable(editor), || {
-                                    column![
-                                        button("Copy Selection")
-                                            .on_press(Message::CopySelection),
-                                        button("Copy Body")
-                                            .on_press(Message::CopyBody),
-                                    ]
-                                    .into()
-                                });
-                                container(context_menu)
-                            }
-                        },
-                    )
+                    .push(ResponseTab::Body, TabLabel::Text("Body".to_string()), {
+                        let syntax = self
+                            .content_type
+                            .as_deref()
+                            .map(response_content_type_to_syntax)
+                            .unwrap_or("text");
+                        if self.word_wrap {
+                            let body_text = self.response_body_editor.text();
+                            let wrapped_text = text(body_text).size(13).font(iced::Font::MONOSPACE);
+                            let context_menu = ContextMenu::new(scrollable(wrapped_text), || {
+                                column![button("Copy Body").on_press(Message::CopyBody),].into()
+                            });
+                            container(context_menu)
+                        } else {
+                            let editor = text_editor(&self.response_body_editor)
+                                .on_action(Message::ResponseContentChanged)
+                                .highlight(syntax, self.highlighter_theme);
+                            let context_menu = ContextMenu::new(scrollable(editor), || {
+                                column![
+                                    button("Copy Selection").on_press(Message::CopySelection),
+                                    button("Copy Body").on_press(Message::CopyBody),
+                                ]
+                                .into()
+                            });
+                            container(context_menu)
+                        }
+                    })
                     .push(
                         ResponseTab::Headers,
                         TabLabel::Text("Headers".to_string()),
@@ -814,21 +834,24 @@ impl HttpRequestView {
             Element::from(column![])
         };
 
-        let wrap_toggle: Element<'_, Message, Theme, Renderer> = if matches!(
-            self.request_status,
-            RequestStatus::Success
-        ) {
-            Element::from(
-                button(text(if self.word_wrap { "Wrap ON" } else { "Wrap OFF" }).size(11))
-                    .on_press(Message::ToggleWordWrap)
-            )
-        } else {
-            Element::from(column![])
-        };
+        let wrap_toggle: Element<'_, Message, Theme, Renderer> =
+            if matches!(self.request_status, RequestStatus::Success) {
+                Element::from(
+                    button(
+                        text(if self.word_wrap {
+                            "Wrap ON"
+                        } else {
+                            "Wrap OFF"
+                        })
+                        .size(11),
+                    )
+                    .on_press(Message::ToggleWordWrap),
+                )
+            } else {
+                Element::from(column![])
+            };
 
-        let method_colored = text(self.method)
-            .size(16)
-            .color(method_color(self.method));
+        let method_colored = text(self.method).size(16).color(method_color(self.method));
 
         let status_text = if let Some(status) = self.status_code {
             let color = status_color(status);
@@ -854,7 +877,7 @@ impl HttpRequestView {
                         format!("{} B", s)
                     }
                 })
-                .unwrap_or_else(|| "N/A".to_string())
+                .unwrap_or_else(|| "N/A".to_string()),
         )
         .size(14);
 
@@ -918,7 +941,9 @@ impl HttpRequestView {
             for (key, value) in &response.headers {
                 headers_col = headers_col.push(
                     row![
-                        text(format!("{}:", key)).size(14).color(Color::from_rgb(0.4, 0.6, 0.9)),
+                        text(format!("{}:", key))
+                            .size(14)
+                            .color(Color::from_rgb(0.4, 0.6, 0.9)),
                         text(value).size(14),
                     ]
                     .spacing(8),
@@ -945,15 +970,21 @@ impl HttpRequestView {
 
             items = items.push(
                 row![
-                    text("Status:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
-                    text(response.status.to_string()).size(14).color(status_color(response.status)),
+                    text("Status:")
+                        .size(14)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(response.status.to_string())
+                        .size(14)
+                        .color(status_color(response.status)),
                 ]
                 .spacing(8),
             );
 
             items = items.push(
                 row![
-                    text("Duration:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text("Duration:")
+                        .size(14)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
                     text(format!("{:.2?}", response.duration)).size(14),
                 ]
                 .spacing(8),
@@ -982,8 +1013,12 @@ impl HttpRequestView {
 
             items = items.push(
                 row![
-                    text("Method:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
-                    text(&response.method).size(14).color(method_color(&response.method)),
+                    text("Method:")
+                        .size(14)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(&response.method)
+                        .size(14)
+                        .color(method_color(&response.method)),
                 ]
                 .spacing(8),
             );
@@ -991,14 +1026,15 @@ impl HttpRequestView {
             if !response.redirect_chain.is_empty() {
                 items = items.push(rule::horizontal(5));
                 items = items.push(
-                    text(format!("Redirect Chain ({} hops):", response.redirect_chain.len()))
-                        .size(14)
-                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(format!(
+                        "Redirect Chain ({} hops):",
+                        response.redirect_chain.len()
+                    ))
+                    .size(14)
+                    .color(Color::from_rgb(0.5, 0.5, 0.5)),
                 );
                 for (i, url) in response.redirect_chain.iter().enumerate() {
-                    items = items.push(
-                        text(format!("  {}. {}", i + 1, url)).size(13),
-                    );
+                    items = items.push(text(format!("  {}. {}", i + 1, url)).size(13));
                 }
             }
 
@@ -1018,11 +1054,7 @@ impl HttpRequestView {
     }
 
     fn create_auth_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
-        let current_auth_type = match self.auth {
-            Auth::None => AuthType::NoAuth,
-            Auth::BearerToken(_) => AuthType::BearerToken,
-            Auth::Basic { .. } => AuthType::BasicAuth,
-        };
+        let current_auth_type = self.auth.auth_type();
 
         let auth_type_selector = pick_list(
             &AuthType::ALL[..],
@@ -1043,6 +1075,36 @@ impl HttpRequestView {
                     .padding(10),
                 text_input("Password", pass)
                     .on_input(|p| Message::AuthInputChanged(AuthInput::BasicPass(p)))
+                    .padding(10)
+                    .secure(true),
+            ]
+            .spacing(10),
+            Auth::ApiKey {
+                key,
+                value,
+                location,
+            } => column![
+                text_input("Key Name", key)
+                    .on_input(|k| Message::AuthInputChanged(AuthInput::ApiKeyKey(k)))
+                    .padding(10),
+                text_input("Value", value)
+                    .on_input(|v| Message::AuthInputChanged(AuthInput::ApiKeyValue(v)))
+                    .padding(10),
+                pick_list(
+                    &crate::data::auth::ApiKeyLocation::ALL[..],
+                    Some(location.clone()),
+                    |loc| Message::AuthInputChanged(AuthInput::ApiKeyLocation(loc)),
+                )
+                .padding(10),
+            ]
+            .spacing(10),
+            Auth::Digest { user, pass } => column![
+                text("Digest Authentication").size(14),
+                text_input("Username", user)
+                    .on_input(|u| Message::AuthInputChanged(AuthInput::DigestUser(u)))
+                    .padding(10),
+                text_input("Password", pass)
+                    .on_input(|p| Message::AuthInputChanged(AuthInput::DigestPass(p)))
                     .padding(10)
                     .secure(true),
             ]
@@ -1088,8 +1150,7 @@ impl HttpRequestView {
                 container(
                     column![
                         row![text("Body Type:"), body_type_selector].spacing(10),
-                        row![text("Content-Type:").size(16), content_type_selector]
-                            .spacing(10),
+                        row![text("Content-Type:").size(16), content_type_selector].spacing(10),
                         body_editor
                     ]
                     .spacing(15)
@@ -1118,19 +1179,15 @@ impl HttpRequestView {
                         ]
                         .spacing(8)
                     } else {
-                        row![
-                            text_input("Value", &entry.value)
-                                .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
-                                .padding(8),
-                        ]
+                        row![text_input("Value", &entry.value)
+                            .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
+                            .padding(8),]
                         .spacing(8)
                     };
                     let row = row![
-                        pick_list(
-                            &MultipartFieldType::ALL[..],
-                            Some(current_type),
-                            move |t| Message::MultipartFieldTypeChanged(entry.id, t),
-                        )
+                        pick_list(&MultipartFieldType::ALL[..], Some(current_type), move |t| {
+                            Message::MultipartFieldTypeChanged(entry.id, t)
+                        },)
                         .padding(8)
                         .width(Length::Fixed(80.0)),
                         text_input("Name", &entry.name)
@@ -1146,8 +1203,7 @@ impl HttpRequestView {
                     entries_col = entries_col.push(row);
                 }
 
-                let add_button = button(text("+ Add Field"))
-                    .on_press(Message::AddMultipartEntry);
+                let add_button = button(text("+ Add Field")).on_press(Message::AddMultipartEntry);
 
                 container(
                     column![
@@ -1229,24 +1285,31 @@ impl HttpRequestView {
 
         container(
             column![
-                text("hola soy una config").size(14),
                 text("Request Settings").size(18),
-                row![text("Timeout:"), timeout_input].spacing(10).align_y(Alignment::Center),
+                row![text("Timeout:"), timeout_input]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
                 row![redirect_toggle].spacing(10),
                 row![text("Max Redirects:"), max_redirects_input]
                     .spacing(10)
                     .align_y(Alignment::Center),
                 rule::horizontal(10),
                 text("Retry").size(16),
-                row![text("Retries:"), retry_count_input].spacing(10).align_y(Alignment::Center),
-                row![text("Backoff:"), retry_backoff_input, text("ms")].spacing(10).align_y(Alignment::Center),
+                row![text("Retries:"), retry_count_input]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                row![text("Backoff:"), retry_backoff_input, text("ms")]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
                 rule::horizontal(10),
                 text("Network").size(16),
                 proxy_input,
                 ssl_toggle,
                 rule::horizontal(10),
                 text("Appearance").size(16),
-                row![text("Highlight Theme:"), theme_selector].spacing(10).align_y(Alignment::Center),
+                row![text("Highlight Theme:"), theme_selector]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
                 rule::horizontal(10),
                 button("Reset to Defaults").on_press(Message::ResetSettings),
             ]
@@ -1289,15 +1352,13 @@ impl HttpRequestView {
             .highlight(syntax, self.highlighter_theme)
             .height(Length::Fill);
 
-        let copy_button = button(text("Copy"))
-            .on_press(Message::CopySnippet);
+        let copy_button = button(text("Copy")).on_press(Message::CopySnippet);
 
         container(
             column![
                 header,
                 rule::horizontal(5),
-                scrollable(editor)
-                    .height(Length::Fill),
+                scrollable(editor).height(Length::Fill),
                 copy_button,
             ]
             .spacing(10)
@@ -1358,8 +1419,16 @@ mod tests {
     fn build_request_with_params() {
         let mut view = make_view("https://example.com/api", "GET");
         view.params_editor.entries = vec![
-            KeyValueEntry { id: 0, key: "page".to_string(), value: "1".to_string() },
-            KeyValueEntry { id: 1, key: "limit".to_string(), value: "10".to_string() },
+            KeyValueEntry {
+                id: 0,
+                key: "page".to_string(),
+                value: "1".to_string(),
+            },
+            KeyValueEntry {
+                id: 1,
+                key: "limit".to_string(),
+                value: "10".to_string(),
+            },
         ];
         let req = view.build_request();
         assert!(req.url.contains("page=1"));
@@ -1371,9 +1440,11 @@ mod tests {
     #[test]
     fn build_request_params_appended_to_existing_query() {
         let mut view = make_view("https://example.com/api?existing=true", "GET");
-        view.params_editor.entries = vec![
-            KeyValueEntry { id: 0, key: "new".to_string(), value: "val".to_string() },
-        ];
+        view.params_editor.entries = vec![KeyValueEntry {
+            id: 0,
+            key: "new".to_string(),
+            value: "val".to_string(),
+        }];
         let req = view.build_request();
         assert!(req.url.contains("existing=true"));
         assert!(req.url.contains("new=val"));
@@ -1387,8 +1458,16 @@ mod tests {
     fn build_request_empty_params_filtered() {
         let mut view = make_view("https://example.com/api", "GET");
         view.params_editor.entries = vec![
-            KeyValueEntry { id: 0, key: String::new(), value: "val".to_string() },
-            KeyValueEntry { id: 1, key: "good".to_string(), value: "yes".to_string() },
+            KeyValueEntry {
+                id: 0,
+                key: String::new(),
+                value: "val".to_string(),
+            },
+            KeyValueEntry {
+                id: 1,
+                key: "good".to_string(),
+                value: "yes".to_string(),
+            },
         ];
         let req = view.build_request();
         assert!(!req.url.contains("val"));
@@ -1398,19 +1477,26 @@ mod tests {
     #[test]
     fn build_request_with_headers() {
         let mut view = make_view("https://example.com", "GET");
-        view.headers_editor.entries = vec![
-            KeyValueEntry { id: 0, key: "Accept".to_string(), value: "text/html".to_string() },
-        ];
+        view.headers_editor.entries = vec![KeyValueEntry {
+            id: 0,
+            key: "Accept".to_string(),
+            value: "text/html".to_string(),
+        }];
         let req = view.build_request();
-        assert!(req.headers.iter().any(|(k, v)| k == "Accept" && v == "text/html"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Accept" && v == "text/html"));
     }
 
     #[test]
     fn build_request_empty_headers_filtered() {
         let mut view = make_view("https://example.com", "GET");
-        view.headers_editor.entries = vec![
-            KeyValueEntry { id: 0, key: String::new(), value: "val".to_string() },
-        ];
+        view.headers_editor.entries = vec![KeyValueEntry {
+            id: 0,
+            key: String::new(),
+            value: "val".to_string(),
+        }];
         let req = view.build_request();
         // Only auth headers should be present, not the empty one
         assert!(!req.headers.iter().any(|(k, _)| k.is_empty()));
@@ -1421,7 +1507,10 @@ mod tests {
         let mut view = make_view("https://example.com", "GET");
         view.auth = Auth::BearerToken("my-secret-token".to_string());
         let req = view.build_request();
-        assert!(req.headers.iter().any(|(k, v)| k == "Authorization" && v == "Bearer my-secret-token"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Bearer my-secret-token"));
     }
 
     #[test]
@@ -1446,7 +1535,9 @@ mod tests {
         assert!(value.starts_with("Basic "));
         // Decode and verify
         let encoded = value.strip_prefix("Basic ").unwrap();
-        let decoded = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .unwrap();
         assert_eq!(String::from_utf8(decoded).unwrap(), "admin:secret123");
     }
 
@@ -1468,7 +1559,10 @@ mod tests {
         view.request_content_type = ContentType::Json;
         let req = view.build_request();
         assert!(req.body.is_some());
-        assert!(req.headers.iter().any(|(k, v)| k == "Content-Type" && v == "application/json"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Content-Type" && v == "application/json"));
     }
 
     #[test]
@@ -1495,8 +1589,12 @@ mod tests {
             view.request_content_type = ct;
             let req = view.build_request();
             assert!(
-                req.headers.iter().any(|(k, v)| k == "Content-Type" && v == expected),
-                "Failed for {:?}: expected {}", ct, expected
+                req.headers
+                    .iter()
+                    .any(|(k, v)| k == "Content-Type" && v == expected),
+                "Failed for {:?}: expected {}",
+                ct,
+                expected
             );
         }
     }
@@ -1507,7 +1605,10 @@ mod tests {
         let env = Environment {
             id: 1,
             name: "test".to_string(),
-            variables: vec![("BASE_URL".to_string(), "https://api.example.com".to_string())],
+            variables: vec![(
+                "BASE_URL".to_string(),
+                "https://api.example.com".to_string(),
+            )],
             default_endpoint: None,
         };
         view.apply_environment(&env);
@@ -1532,9 +1633,11 @@ mod tests {
     #[test]
     fn apply_environment_replaces_header_variable() {
         let mut view = make_view("https://example.com", "GET");
-        view.headers_editor.entries = vec![
-            KeyValueEntry { id: 0, key: "Authorization".to_string(), value: "Bearer {{TOKEN}}".to_string() },
-        ];
+        view.headers_editor.entries = vec![KeyValueEntry {
+            id: 0,
+            key: "Authorization".to_string(),
+            value: "Bearer {{TOKEN}}".to_string(),
+        }];
         let env = Environment {
             id: 1,
             name: "test".to_string(),
@@ -1548,9 +1651,11 @@ mod tests {
     #[test]
     fn apply_environment_replaces_param_variable() {
         let mut view = make_view("https://example.com", "GET");
-        view.params_editor.entries = vec![
-            KeyValueEntry { id: 0, key: "key".to_string(), value: "{{API_KEY}}".to_string() },
-        ];
+        view.params_editor.entries = vec![KeyValueEntry {
+            id: 0,
+            key: "key".to_string(),
+            value: "{{API_KEY}}".to_string(),
+        }];
         let env = Environment {
             id: 1,
             name: "test".to_string(),
@@ -1572,7 +1677,10 @@ mod tests {
             default_endpoint: None,
         };
         view.apply_environment(&env);
-        assert_eq!(view.auth, Auth::BearerToken("eyJhbGciOiJIUzI1NiJ9".to_string()));
+        assert_eq!(
+            view.auth,
+            Auth::BearerToken("eyJhbGciOiJIUzI1NiJ9".to_string())
+        );
     }
 
     #[test]
@@ -1594,7 +1702,10 @@ mod tests {
         view.apply_environment(&env);
         assert_eq!(
             view.auth,
-            Auth::Basic { user: "admin".to_string(), pass: "secret".to_string() }
+            Auth::Basic {
+                user: "admin".to_string(),
+                pass: "secret".to_string()
+            }
         );
     }
 
@@ -1633,8 +1744,18 @@ mod tests {
         let mut view = make_view("https://example.com/upload", "POST");
         view.body_type = BodyType::Multipart;
         view.multipart_entries = vec![
-            MultipartEntry { id: 0, name: "username".to_string(), value: "john".to_string(), is_file: false },
-            MultipartEntry { id: 1, name: "bio".to_string(), value: "Hello world".to_string(), is_file: false },
+            MultipartEntry {
+                id: 0,
+                name: "username".to_string(),
+                value: "john".to_string(),
+                is_file: false,
+            },
+            MultipartEntry {
+                id: 1,
+                name: "bio".to_string(),
+                value: "Hello world".to_string(),
+                is_file: false,
+            },
         ];
         let req = view.build_request();
         assert_eq!(req.multipart_fields.len(), 2);
@@ -1645,9 +1766,12 @@ mod tests {
     fn build_request_multipart_file_field() {
         let mut view = make_view("https://example.com/upload", "POST");
         view.body_type = BodyType::Multipart;
-        view.multipart_entries = vec![
-            MultipartEntry { id: 0, name: "document".to_string(), value: "/tmp/test.pdf".to_string(), is_file: true },
-        ];
+        view.multipart_entries = vec![MultipartEntry {
+            id: 0,
+            name: "document".to_string(),
+            value: "/tmp/test.pdf".to_string(),
+            is_file: true,
+        }];
         let req = view.build_request();
         assert_eq!(req.multipart_fields.len(), 1);
         match &req.multipart_fields[0].value {
@@ -1663,8 +1787,18 @@ mod tests {
         let mut view = make_view("https://example.com/upload", "POST");
         view.body_type = BodyType::Multipart;
         view.multipart_entries = vec![
-            MultipartEntry { id: 0, name: String::new(), value: "val".to_string(), is_file: false },
-            MultipartEntry { id: 1, name: "good".to_string(), value: "yes".to_string(), is_file: false },
+            MultipartEntry {
+                id: 0,
+                name: String::new(),
+                value: "val".to_string(),
+                is_file: false,
+            },
+            MultipartEntry {
+                id: 1,
+                name: "good".to_string(),
+                value: "yes".to_string(),
+                is_file: false,
+            },
         ];
         let req = view.build_request();
         assert_eq!(req.multipart_fields.len(), 1);
@@ -1675,9 +1809,12 @@ mod tests {
     fn build_request_text_mode_ignores_multipart_entries() {
         let mut view = make_view("https://example.com/api", "POST");
         view.body_type = BodyType::Text;
-        view.multipart_entries = vec![
-            MultipartEntry { id: 0, name: "field".to_string(), value: "val".to_string(), is_file: false },
-        ];
+        view.multipart_entries = vec![MultipartEntry {
+            id: 0,
+            name: "field".to_string(),
+            value: "val".to_string(),
+            is_file: false,
+        }];
         let req = view.build_request();
         assert!(req.multipart_fields.is_empty());
     }

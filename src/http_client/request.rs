@@ -233,6 +233,9 @@ mod tests {
         assert_eq!(req.url, deserialized.url);
         assert_eq!(req.headers, deserialized.headers);
         assert_eq!(req.body, deserialized.body);
-        assert_eq!(req.multipart_fields.len(), deserialized.multipart_fields.len());
+        assert_eq!(
+            req.multipart_fields.len(),
+            deserialized.multipart_fields.len()
+        );
     }
 }

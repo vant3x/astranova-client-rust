@@ -1,6 +1,8 @@
 use super::config::RequestConfig;
 use super::request::{HttpRequest, MultipartValue};
 use super::response::HttpResponse;
+use crate::data::auth::{ApiKeyLocation, Auth};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub fn build_client(config: &RequestConfig) -> Result<reqwest::Client, String> {
@@ -122,8 +124,12 @@ pub async fn send_request(
                         })
                         .collect();
 
-                    let is_redirect =
-                        follow_redirects && (status == 301 || status == 302 || status == 303 || status == 307 || status == 308);
+                    let is_redirect = follow_redirects
+                        && (status == 301
+                            || status == 302
+                            || status == 303
+                            || status == 307
+                            || status == 308);
 
                     if is_redirect && redirect_chain.len() < max_redirects {
                         let location = res
@@ -145,7 +151,8 @@ pub async fn send_request(
                         current_url = if location.starts_with("http") {
                             location.to_string()
                         } else {
-                            let base = reqwest::Url::parse(&current_url).map_err(|e| e.to_string())?;
+                            let base =
+                                reqwest::Url::parse(&current_url).map_err(|e| e.to_string())?;
                             base.join(location).map_err(|e| e.to_string())?.to_string()
                         };
                         continue;
@@ -193,4 +200,183 @@ pub async fn send_request(
     }
 
     Err(last_error)
+}
+
+pub fn apply_auth(
+    mut req_builder: reqwest::RequestBuilder,
+    auth: &Auth,
+) -> reqwest::RequestBuilder {
+    match auth {
+        Auth::None => req_builder,
+        Auth::BearerToken(token) => {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+            req_builder
+        }
+        Auth::Basic { user, pass } => {
+            use base64::Engine;
+            let credentials = format!("{}:{}", user, pass);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
+            req_builder = req_builder.header("Authorization", format!("Basic {}", encoded));
+            req_builder
+        }
+        Auth::ApiKey {
+            key,
+            value,
+            location,
+        } => {
+            match location {
+                ApiKeyLocation::Header => {
+                    req_builder = req_builder.header(key, value);
+                }
+                ApiKeyLocation::Query => {
+                    if let Ok(built) = req_builder.try_clone().map(|b| b.build()).transpose() {
+                        if let Some(req) = built {
+                            let mut url = req.url().clone();
+                            url.query_pairs_mut().append_pair(key, value);
+                            req_builder = reqwest::Client::new().request(req.method().clone(), url);
+                        }
+                    }
+                }
+            }
+            req_builder
+        }
+        Auth::Digest { .. } => req_builder,
+    }
+}
+
+pub async fn apply_digest_auth(
+    client: &reqwest::Client,
+    request: &HttpRequest,
+    auth: &Auth,
+) -> Option<String> {
+    if let Auth::Digest { user, pass } = auth {
+        let mut req_builder = client.request(
+            request.method.parse().unwrap_or(reqwest::Method::GET),
+            &request.url,
+        );
+        for (key, value) in &request.headers {
+            req_builder = req_builder.header(key, value);
+        }
+
+        if let Ok(req) = req_builder.build() {
+            if let Ok(resp) = client.execute(req).await {
+                if let Some(www_auth) = resp.headers().get("www-authenticate") {
+                    if let Ok(www_auth_str) = www_auth.to_str() {
+                        return compute_digest_auth(www_auth_str, user, pass);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn compute_digest_auth(www_authenticate: &str, username: &str, password: &str) -> Option<String> {
+    let params = parse_digest_params(www_authenticate);
+    let realm = params.get("realm")?.clone();
+    let nonce = params.get("nonce")?.clone();
+    let qop = params
+        .get("qop")
+        .cloned()
+        .unwrap_or_else(|| "auth".to_string());
+    let opaque = params.get("opaque").cloned();
+    let uri = "/".to_string();
+    let nc = "00000001";
+    let cnonce = format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+
+    let ha1 = md5_hex(&format!("{}:{}:{}", username, realm, password));
+    let ha2 = md5_hex(&format!("GET:{}", uri));
+    let response_hash = md5_hex(&format!(
+        "{}:{}:{}:{}:{}:{}",
+        ha1, nonce, nc, cnonce, qop, ha2
+    ));
+
+    let mut parts = vec![
+        format!("username=\"{}\"", username),
+        format!("realm=\"{}\"", realm),
+        format!("nonce=\"{}\"", nonce),
+        format!("uri=\"{}\"", uri),
+        format!("response=\"{}\"", response_hash),
+        format!("qop={}", qop),
+        format!("nc={}", nc),
+        format!("cnonce=\"{}\"", cnonce),
+    ];
+
+    if let Some(opaque_val) = &opaque {
+        parts.push(format!("opaque=\"{}\"", opaque_val));
+    }
+
+    Some(format!("Digest {}", parts.join(", ")))
+}
+
+fn parse_digest_params(header: &str) -> HashMap<String, String> {
+    let mut params = HashMap::new();
+    let header = header.strip_prefix("Digest ").unwrap_or(header);
+
+    for part in header.split(',') {
+        let part = part.trim();
+        if let Some((key, value)) = part.split_once('=') {
+            let key = key.trim().to_string();
+            let value = value.trim().trim_matches('"').to_string();
+            params.insert(key, value);
+        }
+    }
+    params
+}
+
+fn md5_hex(input: &str) -> String {
+    let hash = md5::compute(input.as_bytes());
+    format!("{:x}", hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_digest_params_extracts_realm_and_nonce() {
+        let header = r#"Digest realm="test@example.com", nonce="abc123", qop="auth""#;
+        let params = parse_digest_params(header);
+        assert_eq!(params.get("realm").unwrap(), "test@example.com");
+        assert_eq!(params.get("nonce").unwrap(), "abc123");
+        assert_eq!(params.get("qop").unwrap(), "auth");
+    }
+
+    #[test]
+    fn parse_digest_params_extracts_opaque() {
+        let header = r#"Digest realm="test", nonce="abc", opaque="xyz""#;
+        let params = parse_digest_params(header);
+        assert_eq!(params.get("opaque").unwrap(), "xyz");
+    }
+
+    #[test]
+    fn md5_hex_produces_correct_hash() {
+        let hash = md5_hex("hello");
+        assert_eq!(hash, "5d41402abc4b2a76b9719d911017c592");
+    }
+
+    #[test]
+    fn compute_digest_auth_returns_none_without_realm() {
+        let result = compute_digest_auth("Bearer token", "user", "pass");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_digest_auth_returns_header_with_valid_input() {
+        let header = r#"Digest realm="test@example.com", nonce="nonce123", qop="auth""#;
+        let result = compute_digest_auth(header, "admin", "secret");
+        assert!(result.is_some());
+        let auth_header = result.unwrap();
+        assert!(auth_header.starts_with("Digest "));
+        assert!(auth_header.contains("username=\"admin\""));
+        assert!(auth_header.contains("realm=\"test@example.com\""));
+        assert!(auth_header.contains("nonce=\"nonce123\""));
+        assert!(auth_header.contains("qop=auth"));
+    }
 }

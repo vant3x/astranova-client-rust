@@ -120,7 +120,10 @@ pub fn parse_ws_message(msg: Message) -> Option<WsMessage> {
             WsMessageType::Pong,
             format!("{:?}", data),
         )),
-        Message::Close(_) => Some(WsMessage::incoming(WsMessageType::Close, "closed".to_string())),
+        Message::Close(_) => Some(WsMessage::incoming(
+            WsMessageType::Close,
+            "closed".to_string(),
+        )),
         Message::Frame(_) => None,
     }
 }

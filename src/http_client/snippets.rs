@@ -16,10 +16,7 @@ pub fn to_curl(request: &HttpRequest) -> String {
     }
 
     if let Some(body) = &request.body {
-        parts.push(format!(
-            "-d '{}'",
-            body.replace('\'', "'\\''")
-        ));
+        parts.push(format!("-d '{}'", body.replace('\'', "'\\''")));
     }
 
     for field in &request.multipart_fields {
@@ -72,7 +69,10 @@ pub fn to_python(request: &HttpRequest) -> String {
             lines.push(String::new());
             kwargs.push("json=json_data");
         } else {
-            lines.push(format!("data = \"{}\"", body.replace('\\', "\\\\").replace('"', "\\\"")));
+            lines.push(format!(
+                "data = \"{}\"",
+                body.replace('\\', "\\\\").replace('"', "\\\"")
+            ));
             lines.push(String::new());
             kwargs.push("data=data");
         }
@@ -190,7 +190,10 @@ pub fn to_rust(request: &HttpRequest) -> String {
     let mut args = vec![format!("\"{}\"", request.url)];
 
     if request.method != "GET" {
-        args.push(format!(".method(reqwest::Method::{})", method.to_uppercase()));
+        args.push(format!(
+            ".method(reqwest::Method::{})",
+            method.to_uppercase()
+        ));
     }
 
     if !request.headers.is_empty() {
@@ -200,10 +203,7 @@ pub fn to_rust(request: &HttpRequest) -> String {
             method, request.url
         ));
         for (key, value) in &request.headers {
-            lines.push(format!(
-                "        .header(\"{}\", \"{}\")",
-                key, value
-            ));
+            lines.push(format!("        .header(\"{}\", \"{}\")", key, value));
         }
         if let Some(body) = &request.body {
             if is_json(body) {
@@ -382,7 +382,10 @@ mod tests {
         let req = make_request("GET", "https://example.com");
         assert_eq!(generate(&req, SnippetFormat::Curl), to_curl(&req));
         assert_eq!(generate(&req, SnippetFormat::Python), to_python(&req));
-        assert_eq!(generate(&req, SnippetFormat::JavaScript), to_javascript(&req));
+        assert_eq!(
+            generate(&req, SnippetFormat::JavaScript),
+            to_javascript(&req)
+        );
         assert_eq!(generate(&req, SnippetFormat::Rust), to_rust(&req));
     }
 
@@ -409,9 +412,7 @@ mod tests {
         req.multipart_fields
             .push(crate::http_client::request::MultipartField {
                 name: "description".to_string(),
-                value: crate::http_client::request::MultipartValue::Text(
-                    "My file".to_string(),
-                ),
+                value: crate::http_client::request::MultipartValue::Text("My file".to_string()),
             });
         let curl = to_curl(&req);
         assert!(curl.contains("-F 'file=@/tmp/test.pdf'"));

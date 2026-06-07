@@ -57,7 +57,9 @@ impl WebSocketView {
             WsStatus::Disconnected => text("Disconnected").color(Color::from_rgb(0.5, 0.5, 0.5)),
             WsStatus::Connecting => text("Connecting...").color(Color::from_rgb(0.8, 0.7, 0.1)),
             WsStatus::Connected => text("Connected").color(Color::from_rgb(0.2, 0.7, 0.3)),
-            WsStatus::Error(e) => text(format!("Error: {}", e)).color(Color::from_rgb(0.8, 0.2, 0.2)),
+            WsStatus::Error(e) => {
+                text(format!("Error: {}", e)).color(Color::from_rgb(0.8, 0.2, 0.2))
+            }
         };
 
         let connect_button = match &self.status {
@@ -78,8 +80,15 @@ impl WebSocketView {
         .spacing(8)
         .align_y(Alignment::Center);
 
-        let header_toggle = button(text(if self.show_headers { "Hide Headers" } else { "Show Headers" }).size(12))
-            .on_press(Message::Connect);
+        let header_toggle = button(
+            text(if self.show_headers {
+                "Hide Headers"
+            } else {
+                "Show Headers"
+            })
+            .size(12),
+        )
+        .on_press(Message::Connect);
 
         let headers_section = if self.show_headers {
             let mut header_list = column![].spacing(4);
@@ -137,7 +146,9 @@ impl WebSocketView {
             message_list = message_list.push(
                 row![
                     text(&msg.direction).size(13).color(dir_color),
-                    text(type_label).size(11).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    text(type_label)
+                        .size(11)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
                     text(truncated).size(13),
                 ]
                 .spacing(6),
@@ -165,13 +176,9 @@ impl WebSocketView {
             button("Clear").on_press(Message::Disconnected("cleared".to_string()))
         };
 
-        let header = row![
-            text("WebSocket").size(16),
-            header_toggle,
-            clear_button,
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        let header = row![text("WebSocket").size(16), header_toggle, clear_button,]
+            .spacing(10)
+            .align_y(Alignment::Center);
 
         container(
             column![

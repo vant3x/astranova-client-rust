@@ -1,6 +1,5 @@
-use crate::persistence::database::{
-    Collection, CollectionFolder, CollectionRequest,
-};
+use crate::persistence::database::{Collection, CollectionFolder, CollectionRequest};
+use crate::ui::theme;
 use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
@@ -139,8 +138,7 @@ impl CollectionView {
         let old_len = self.expanded_collections.len();
         self.collections = collections.to_vec();
         if self.expanded_collections.len() < collections.len() {
-            self.expanded_collections
-                .resize(collections.len(), false);
+            self.expanded_collections.resize(collections.len(), false);
         } else {
             self.expanded_collections.truncate(collections.len());
         }
@@ -188,13 +186,19 @@ impl CollectionView {
         let save_button: Element<'_, Message, Theme, Renderer> = if self.collections.is_empty() {
             button(text("Save Current Request")).into()
         } else {
-            button(text("Save Current Request")).on_press(Message::SaveCurrentRequest).into()
+            button(text("Save Current Request"))
+                .on_press(Message::SaveCurrentRequest)
+                .into()
         };
 
         let mut list = column![].spacing(4);
 
         for (index, col) in self.collections.iter().enumerate() {
-            let is_expanded = self.expanded_collections.get(index).copied().unwrap_or(false);
+            let is_expanded = self
+                .expanded_collections
+                .get(index)
+                .copied()
+                .unwrap_or(false);
             let expand_icon = if is_expanded { "v " } else { "> " };
 
             let col_row = row![
@@ -222,7 +226,9 @@ impl CollectionView {
 
         if self.collections.is_empty() {
             list = list.push(
-                text("No collections yet.").size(13).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                text("No collections yet.")
+                    .size(13)
+                    .color(Color::from_rgb(0.5, 0.5, 0.5)),
             );
         }
 
@@ -249,20 +255,16 @@ impl CollectionView {
 
         let back_button = button(text("< Back")).on_press(Message::Close);
 
-        let header = row![
-            back_button,
-            text(&col.name).size(16),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        let header = row![back_button, text(&col.name).size(16),]
+            .spacing(10)
+            .align_y(Alignment::Center);
 
         let new_folder_input = text_input("New folder name...", &self.new_folder_name)
             .on_input(|s| Message::NewFolderNameChanged(col.id, s))
             .size(13)
             .padding(5);
 
-        let new_folder_button = button(text("+ Folder"))
-            .on_press(Message::CreateFolder(col.id));
+        let new_folder_button = button(text("+ Folder")).on_press(Message::CreateFolder(col.id));
 
         let folder_controls = row![new_folder_input, new_folder_button].spacing(8);
 
@@ -272,23 +274,21 @@ impl CollectionView {
             let is_expanded = self.expanded_folders.get(f_idx).copied().unwrap_or(false);
             let expand_icon = if is_expanded { "v " } else { "> " };
 
-            let folder_button = button(
-                row![
-                    text(format!("{}{}/", expand_icon, folder.name)).size(13),
-                ]
-                .spacing(4),
-            )
-            .on_press(Message::ToggleExpanded(col_idx));
+            let folder_button =
+                button(row![text(format!("{}{}/", expand_icon, folder.name)).size(13),].spacing(4))
+                    .on_press(Message::ToggleExpanded(col_idx));
 
             list = list.push(folder_button);
 
             if is_expanded {
                 for req in &self.requests {
                     if req.folder_id == Some(folder.id) {
-                        let method_color = method_color(&req.method);
+                        let method_color = theme::method_color(&req.method);
                         let req_button = button(
                             row![
-                                text(format!("    {}", req.method)).size(11).color(method_color),
+                                text(format!("    {}", req.method))
+                                    .size(11)
+                                    .color(method_color),
                                 text(&req.name).size(11),
                             ]
                             .spacing(6),
@@ -298,8 +298,8 @@ impl CollectionView {
                     }
                 }
 
-                let load_folder = button(text("      Open Folder"))
-                    .on_press(Message::SelectFolder(folder.id));
+                let load_folder =
+                    button(text("      Open Folder")).on_press(Message::SelectFolder(folder.id));
                 list = list.push(load_folder);
             }
         }
@@ -319,7 +319,7 @@ impl CollectionView {
         }
 
         for req in &root_requests {
-            let method_color = method_color(&req.method);
+            let method_color = theme::method_color(&req.method);
             let url_short: String = req.url.chars().take(35).collect();
             let req_button = button(
                 row![
@@ -360,24 +360,23 @@ impl CollectionView {
 
         let back_button = button(text("< Back")).on_press(Message::Close);
 
-        let header = row![
-            back_button,
-            text(folder_name).size(16),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        let header = row![back_button, text(folder_name).size(16),]
+            .spacing(10)
+            .align_y(Alignment::Center);
 
         let mut list = column![].spacing(4);
 
         for req in &self.requests {
             if req.folder_id == Some(folder_id) {
-                let method_color = method_color(&req.method);
+                let method_color = theme::method_color(&req.method);
                 let url_short: String = req.url.chars().take(35).collect();
                 let req_button = button(
                     row![
                         text(&req.method).size(12).color(method_color),
                         text(&req.name).size(12),
-                        text(url_short).size(11).color(Color::from_rgb(0.4, 0.4, 0.4)),
+                        text(url_short)
+                            .size(11)
+                            .color(Color::from_rgb(0.4, 0.4, 0.4)),
                     ]
                     .spacing(6),
                 )
@@ -402,18 +401,5 @@ impl CollectionView {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
-    }
-}
-
-fn method_color(method: &str) -> Color {
-    match method {
-        "GET" => Color::from_rgb(0.2, 0.7, 0.3),
-        "POST" => Color::from_rgb(0.2, 0.4, 0.8),
-        "PUT" => Color::from_rgb(0.8, 0.5, 0.1),
-        "PATCH" => Color::from_rgb(0.8, 0.7, 0.1),
-        "DELETE" => Color::from_rgb(0.8, 0.2, 0.2),
-        "HEAD" => Color::from_rgb(0.5, 0.5, 0.5),
-        "OPTIONS" => Color::from_rgb(0.6, 0.6, 0.6),
-        _ => Color::from_rgb(0.5, 0.5, 0.5),
     }
 }

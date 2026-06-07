@@ -76,10 +76,8 @@ impl std::fmt::Display for Environment {
 }
 
 fn get_db_path() -> std::result::Result<PathBuf, AppError> {
-    let proj_dirs =
-        ProjectDirs::from("com", "astranova", "client").ok_or_else(|| {
-            AppError::Database("Failed to determine project directories".to_string())
-        })?;
+    let proj_dirs = ProjectDirs::from("com", "astranova", "client")
+        .ok_or_else(|| AppError::Database("Failed to determine project directories".to_string()))?;
     let data_dir = proj_dirs.data_dir();
     std::fs::create_dir_all(data_dir)
         .map_err(|e| AppError::Io(format!("Failed to create data directory: {}", e)))?;
@@ -170,8 +168,8 @@ pub fn init() -> std::result::Result<Connection, AppError> {
 
 pub fn create_environment(conn: &Connection, name: &str) -> Result<Environment> {
     let variables: Vec<(String, String)> = Vec::new();
-    let variables_json =
-        serde_json::to_value(&variables).map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+    let variables_json = serde_json::to_value(&variables)
+        .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
     conn.execute(
         "INSERT INTO environments (name, variables) VALUES (?1, ?2)",
         [name, &variables_json.to_string()],
@@ -208,8 +206,8 @@ pub fn get_environments(conn: &Connection) -> Result<Vec<Environment>> {
 }
 
 pub fn update_environment(conn: &Connection, env: &Environment) -> Result<()> {
-    let variables_json =
-        serde_json::to_value(&env.variables).map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+    let variables_json = serde_json::to_value(&env.variables)
+        .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
     conn.execute(
         "UPDATE environments SET name = ?1, variables = ?2, default_endpoint = ?3 WHERE id = ?4",
         params![
@@ -274,7 +272,10 @@ pub fn delete_request_history(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-pub fn get_request_history_entry_by_id(conn: &Connection, id: i32) -> Result<Option<RequestHistoryEntry>> {
+pub fn get_request_history_entry_by_id(
+    conn: &Connection,
+    id: i32,
+) -> Result<Option<RequestHistoryEntry>> {
     let mut stmt = conn.prepare(
         "SELECT id, method, url, status, duration_ms, timestamp, request_data, response_data FROM request_history WHERE id = ?1",
     )?;
@@ -296,7 +297,11 @@ pub fn get_request_history_entry_by_id(conn: &Connection, id: i32) -> Result<Opt
     }
 }
 
-pub fn create_collection(conn: &Connection, name: &str, description: Option<&str>) -> Result<Collection> {
+pub fn create_collection(
+    conn: &Connection,
+    name: &str,
+    description: Option<&str>,
+) -> Result<Collection> {
     conn.execute(
         "INSERT INTO collections (name, description) VALUES (?1, ?2)",
         params![name, description],
@@ -335,7 +340,12 @@ pub fn delete_collection(conn: &Connection, id: i32) -> Result<()> {
     Ok(())
 }
 
-pub fn create_folder(conn: &Connection, collection_id: i32, name: &str, parent_folder_id: Option<i32>) -> Result<CollectionFolder> {
+pub fn create_folder(
+    conn: &Connection,
+    collection_id: i32,
+    name: &str,
+    parent_folder_id: Option<i32>,
+) -> Result<CollectionFolder> {
     conn.execute(
         "INSERT INTO collection_folders (collection_id, name, parent_folder_id) VALUES (?1, ?2, ?3)",
         params![collection_id, name, parent_folder_id],
@@ -442,7 +452,11 @@ pub fn save_collection_request(
     })
 }
 
-pub fn get_collection_requests(conn: &Connection, collection_id: i32, folder_id: Option<i32>) -> Result<Vec<CollectionRequest>> {
+pub fn get_collection_requests(
+    conn: &Connection,
+    collection_id: i32,
+    folder_id: Option<i32>,
+) -> Result<Vec<CollectionRequest>> {
     let mut stmt = conn.prepare(
         "SELECT id, collection_id, folder_id, name, method, url, headers, body, body_type, auth_type, auth_data, params, config_json, sort_order FROM collection_requests WHERE collection_id = ?1 AND folder_id IS ?2 ORDER BY sort_order",
     )?;
@@ -483,7 +497,11 @@ pub fn rename_collection_request(conn: &Connection, id: i32, new_name: &str) -> 
 }
 
 #[allow(dead_code)]
-pub fn move_collection_request(conn: &Connection, id: i32, new_folder_id: Option<i32>) -> Result<()> {
+pub fn move_collection_request(
+    conn: &Connection,
+    id: i32,
+    new_folder_id: Option<i32>,
+) -> Result<()> {
     conn.execute(
         "UPDATE collection_requests SET folder_id = ?1 WHERE id = ?2",
         params![new_folder_id, id],
@@ -691,8 +709,26 @@ mod tests {
         )
         .unwrap();
 
-        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(150), None, None).unwrap();
-        save_request_history(&conn, "POST", "https://api.test.com", Some(201), Some(300), None, None).unwrap();
+        save_request_history(
+            &conn,
+            "GET",
+            "https://example.com",
+            Some(200),
+            Some(150),
+            None,
+            None,
+        )
+        .unwrap();
+        save_request_history(
+            &conn,
+            "POST",
+            "https://api.test.com",
+            Some(201),
+            Some(300),
+            None,
+            None,
+        )
+        .unwrap();
 
         let history = get_request_history(&conn, 10).unwrap();
         assert_eq!(history.len(), 2);
@@ -718,7 +754,16 @@ mod tests {
         )
         .unwrap();
 
-        save_request_history(&conn, "GET", "https://example.com", Some(200), Some(100), None, None).unwrap();
+        save_request_history(
+            &conn,
+            "GET",
+            "https://example.com",
+            Some(200),
+            Some(100),
+            None,
+            None,
+        )
+        .unwrap();
         delete_request_history(&conn).unwrap();
         let history = get_request_history(&conn, 10).unwrap();
         assert!(history.is_empty());
@@ -743,7 +788,16 @@ mod tests {
         .unwrap();
 
         for i in 0..5 {
-            save_request_history(&conn, "GET", &format!("https://example.com/{}", i), Some(200), Some(100), None, None).unwrap();
+            save_request_history(
+                &conn,
+                "GET",
+                &format!("https://example.com/{}", i),
+                Some(200),
+                Some(100),
+                None,
+                None,
+            )
+            .unwrap();
         }
 
         let history = get_request_history(&conn, 3).unwrap();
@@ -852,15 +906,37 @@ mod tests {
         let params = vec![("key".to_string(), "value".to_string())];
 
         save_collection_request(
-            &conn, col.id, None, "Get Todos", "GET",
+            &conn,
+            col.id,
+            None,
+            "Get Todos",
+            "GET",
             "https://jsonplaceholder.typicode.com/todos",
-            &headers, None, "text", "none", None, &params, None,
-        ).unwrap();
+            &headers,
+            None,
+            "text",
+            "none",
+            None,
+            &params,
+            None,
+        )
+        .unwrap();
         save_collection_request(
-            &conn, col.id, None, "Create Todo", "POST",
+            &conn,
+            col.id,
+            None,
+            "Create Todo",
+            "POST",
             "https://jsonplaceholder.typicode.com/todos",
-            &headers, Some(r#"{"title":"test"}"#), "text", "bearer", Some("token123"), &[], None,
-        ).unwrap();
+            &headers,
+            Some(r#"{"title":"test"}"#),
+            "text",
+            "bearer",
+            Some("token123"),
+            &[],
+            None,
+        )
+        .unwrap();
 
         let reqs = get_collection_requests(&conn, col.id, None).unwrap();
         assert_eq!(reqs.len(), 2);
@@ -878,10 +954,21 @@ mod tests {
         let folder = create_folder(&conn, col.id, "Auth", None).unwrap();
 
         save_collection_request(
-            &conn, col.id, Some(folder.id), "Login", "POST",
+            &conn,
+            col.id,
+            Some(folder.id),
+            "Login",
+            "POST",
             "https://api.example.com/login",
-            &[], Some(r#"{"user":"admin"}"#), "text", "none", None, &[], None,
-        ).unwrap();
+            &[],
+            Some(r#"{"user":"admin"}"#),
+            "text",
+            "none",
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
 
         let root_reqs = get_collection_requests(&conn, col.id, None).unwrap();
         assert!(root_reqs.is_empty());
@@ -898,9 +985,21 @@ mod tests {
         let folder = create_folder(&conn, col.id, "Folder", None).unwrap();
 
         let req = save_collection_request(
-            &conn, col.id, None, "Old Name", "GET", "https://example.com",
-            &[], None, "text", "none", None, &[], None,
-        ).unwrap();
+            &conn,
+            col.id,
+            None,
+            "Old Name",
+            "GET",
+            "https://example.com",
+            &[],
+            None,
+            "text",
+            "none",
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
 
         rename_collection_request(&conn, req.id, "New Name").unwrap();
         move_collection_request(&conn, req.id, Some(folder.id)).unwrap();
@@ -917,9 +1016,21 @@ mod tests {
         let conn = setup_test_db();
         let col = create_collection(&conn, "API", None).unwrap();
         let req = save_collection_request(
-            &conn, col.id, None, "To Delete", "DELETE", "https://example.com/1",
-            &[], None, "text", "none", None, &[], None,
-        ).unwrap();
+            &conn,
+            col.id,
+            None,
+            "To Delete",
+            "DELETE",
+            "https://example.com/1",
+            &[],
+            None,
+            "text",
+            "none",
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
 
         delete_collection_request(&conn, req.id).unwrap();
         let reqs = get_collection_requests(&conn, col.id, None).unwrap();
@@ -948,9 +1059,15 @@ mod tests {
         let response_json = r#"{"url":"https://api.example.com","method":"POST","status":201,"headers":[],"body":"{\"id\":1}","duration":150,"size":13,"redirect_chain":[]}"#;
 
         save_request_history(
-            &conn, "POST", "https://api.example.com", Some(201), Some(150),
-            Some(request_json), Some(response_json),
-        ).unwrap();
+            &conn,
+            "POST",
+            "https://api.example.com",
+            Some(201),
+            Some(150),
+            Some(request_json),
+            Some(response_json),
+        )
+        .unwrap();
 
         let history = get_request_history(&conn, 10).unwrap();
         assert_eq!(history.len(), 1);
@@ -979,9 +1096,15 @@ mod tests {
 
         let request_json = r#"{"method":"GET","url":"https://example.com"}"#;
         save_request_history(
-            &conn, "GET", "https://example.com", Some(200), Some(100),
-            Some(request_json), None,
-        ).unwrap();
+            &conn,
+            "GET",
+            "https://example.com",
+            Some(200),
+            Some(100),
+            Some(request_json),
+            None,
+        )
+        .unwrap();
 
         let entry = get_request_history_entry_by_id(&conn, 1).unwrap();
         assert!(entry.is_some());
@@ -994,6 +1117,20 @@ mod tests {
     #[test]
     fn get_nonexistent_history_entry_returns_none() {
         let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
+            )",
+            [],
+        )
+        .unwrap();
         let entry = get_request_history_entry_by_id(&conn, 999).unwrap();
         assert!(entry.is_none());
     }

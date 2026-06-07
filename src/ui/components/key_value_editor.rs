@@ -153,7 +153,10 @@ mod tests {
     #[test]
     fn change_entry_value() {
         let mut editor = KeyValueEditor::default();
-        editor.update(Message::EntryValueChanged(0, "application/json".to_string()));
+        editor.update(Message::EntryValueChanged(
+            0,
+            "application/json".to_string(),
+        ));
         assert_eq!(editor.entries[0].value, "application/json");
     }
 
