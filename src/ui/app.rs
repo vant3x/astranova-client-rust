@@ -2,6 +2,7 @@ use crate::persistence::database::{self, Environment};
 use crate::ui::views::collection_view::{self, CollectionView};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
+use crate::ui::views::websocket_view::{self, WebSocketView};
 use iced::{
     widget::{button, column, container, pick_list, row, rule, text},
     Alignment, Element, Length, Task,
@@ -11,6 +12,25 @@ use reqwest;
 
 use super::views::http_request_view::{self, HttpRequestView};
 use crate::http_client::client;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Protocol {
+    Http,
+    WebSocket,
+}
+
+impl std::fmt::Display for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Protocol::Http => write!(f, "HTTP"),
+            Protocol::WebSocket => write!(f, "WebSocket"),
+        }
+    }
+}
+
+impl Protocol {
+    pub const ALL: [Protocol; 2] = [Protocol::Http, Protocol::WebSocket];
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -34,6 +54,8 @@ struct AstraNovaApp {
     env_manager_view: EnvironmentManagerView,
     history_view: HistoryView,
     collection_view: CollectionView,
+    websocket_view: WebSocketView,
+    active_protocol: Protocol,
     current_view: View,
     show_history: bool,
     show_collections: bool,
@@ -53,6 +75,8 @@ pub enum Message {
     ToggleHistory,
     CollectionMsg(collection_view::Message),
     ToggleCollections,
+    WebSocketMsg(websocket_view::Message),
+    SelectProtocol(Protocol),
 }
 
 impl AstraNovaApp {
@@ -101,6 +125,8 @@ impl AstraNovaApp {
                 hv
             },
             collection_view: cv,
+            websocket_view: WebSocketView::new(),
+            active_protocol: Protocol::Http,
             current_view: View::Main,
             show_history: false,
             show_collections: false,
@@ -379,7 +405,7 @@ impl AstraNovaApp {
                         self.collection_view.panel_state =
                             collection_view::PanelState::Collections;
                     }
-                    collection_view::Message::NewFolderNameChanged(col_id, name) => {
+                    collection_view::Message::NewFolderNameChanged(_col_id, name) => {
                         self.collection_view.new_folder_name = name;
                     }
                     collection_view::Message::CreateFolder(col_id) => {
@@ -438,6 +464,79 @@ impl AstraNovaApp {
                     }
                 }
             }
+            Message::SelectProtocol(protocol) => {
+                self.active_protocol = protocol;
+            }
+            Message::WebSocketMsg(msg) => {
+                match msg.clone() {
+                    websocket_view::Message::Connect => {
+                        let url = self.websocket_view.url.clone();
+                        let headers = self.websocket_view.headers.clone();
+                        self.websocket_view.status = crate::protocols::websocket::WsStatus::Connecting;
+
+                        return Task::perform(
+                            async move {
+                                let request = crate::protocols::websocket::WsRequest { url, headers };
+                                crate::protocols::websocket::connect_ws(&request).await
+                            },
+                            |result| match result {
+                                Ok((_sink, _stream)) => {
+                                    Message::WebSocketMsg(websocket_view::Message::Connected)
+                                }
+                                Err(e) => {
+                                    Message::WebSocketMsg(websocket_view::Message::Disconnected(e))
+                                }
+                            },
+                        );
+                    }
+                    websocket_view::Message::Connected => {
+                        self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
+                    }
+                    websocket_view::Message::Disconnected(reason) => {
+                        if reason == "cleared" {
+                            self.websocket_view.messages.clear();
+                        } else {
+                            self.websocket_view.status =
+                                crate::protocols::websocket::WsStatus::Error(reason);
+                        }
+                    }
+                    websocket_view::Message::UrlChanged(url) => {
+                        self.websocket_view.url = url;
+                    }
+                    websocket_view::Message::HeaderKeyChanged(key) => {
+                        self.websocket_view.header_key = key;
+                    }
+                    websocket_view::Message::HeaderValueChanged(val) => {
+                        self.websocket_view.header_value = val;
+                    }
+                    websocket_view::Message::AddHeader => {
+                        let key = self.websocket_view.header_key.clone();
+                        let val = self.websocket_view.header_value.clone();
+                        if !key.is_empty() {
+                            self.websocket_view.headers.push((key, val));
+                            self.websocket_view.header_key.clear();
+                            self.websocket_view.header_value.clear();
+                        }
+                    }
+                    websocket_view::Message::RemoveHeader(idx) => {
+                        if idx < self.websocket_view.headers.len() {
+                            self.websocket_view.headers.remove(idx);
+                        }
+                    }
+                    websocket_view::Message::InputChanged(input) => {
+                        self.websocket_view.input = input;
+                    }
+                    websocket_view::Message::SendMessage(text) => {
+                        if !text.is_empty() {
+                            self.websocket_view
+                                .messages
+                                .push(crate::protocols::websocket::WsMessage::outgoing(text));
+                            self.websocket_view.input.clear();
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
         Task::none()
     }
@@ -488,6 +587,12 @@ impl AstraNovaApp {
                 let collections_button = button(text("Collections"))
                     .on_press(Message::ToggleCollections);
 
+                let protocol_selector = pick_list(
+                    &Protocol::ALL[..],
+                    Some(self.active_protocol),
+                    Message::SelectProtocol,
+                );
+
                 let env_selector = pick_list(
                     &self.environments[..],
                     self.active_environment.clone(),
@@ -498,6 +603,7 @@ impl AstraNovaApp {
                 let mut env_controls = row![
                     history_button,
                     collections_button,
+                    protocol_selector,
                     env_selector,
                     button(text("Manage Environments"))
                         .on_press(Message::SwitchView(View::EnvironmentManager))
@@ -525,13 +631,26 @@ impl AstraNovaApp {
                     env_controls = env_controls.push(help_texts);
                 }
 
-                let main_content = column![
-                    row![add_tab_button, close_tab_button, env_controls,]
-                        .spacing(10)
-                        .padding(10)
-                        .align_y(Alignment::Center),
-                    tabs_widget,
-                ];
+                let main_content = match self.active_protocol {
+                    Protocol::Http => {
+                        column![
+                            row![add_tab_button, close_tab_button, env_controls,]
+                                .spacing(10)
+                                .padding(10)
+                                .align_y(Alignment::Center),
+                            tabs_widget,
+                        ]
+                    }
+                    Protocol::WebSocket => {
+                        column![
+                            row![add_tab_button, close_tab_button, env_controls,]
+                                .spacing(10)
+                                .padding(10)
+                                .align_y(Alignment::Center),
+                            self.websocket_view.view().map(Message::WebSocketMsg),
+                        ]
+                    }
+                };
 
                 if self.show_history {
                     let history_panel = container(

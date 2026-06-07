@@ -760,7 +760,7 @@ mod tests {
         let col = create_collection(&conn, "API", None).unwrap();
         let f1 = create_folder(&conn, col.id, "Auth", None).unwrap();
         let _f2 = create_folder(&conn, col.id, "Users", None).unwrap();
-        let f3 = create_folder(&conn, col.id, "Login", Some(f1.id)).unwrap();
+        let _f3 = create_folder(&conn, col.id, "Login", Some(f1.id)).unwrap();
 
         let folders = get_folders(&conn, col.id).unwrap();
         assert_eq!(folders.len(), 3);

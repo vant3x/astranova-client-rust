@@ -140,6 +140,7 @@ pub enum Message {
     SnippetFormatSelected(SnippetFormat),
     CopySnippet,
     ResetSettings,
+    ToggleWordWrap,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -236,6 +237,7 @@ pub struct HttpRequestView {
     pub show_snippets: bool,
     pub snippet_format: SnippetFormat,
     pub snippet_content: text_editor::Content,
+    pub word_wrap: bool,
     logo_handle: iced::widget::image::Handle,
 }
 
@@ -266,6 +268,7 @@ impl Clone for HttpRequestView {
             show_snippets: self.show_snippets,
             snippet_format: self.snippet_format,
             snippet_content: text_editor::Content::with_text(&self.snippet_content.text()),
+            word_wrap: self.word_wrap,
             logo_handle: self.logo_handle.clone(),
         }
     }
@@ -298,6 +301,7 @@ impl Default for HttpRequestView {
             show_snippets: false,
             snippet_format: SnippetFormat::Curl,
             snippet_content: text_editor::Content::new(),
+            word_wrap: false,
             logo_handle: Handle::from_bytes(Bytes::from_static(LOGO_BG_BYTES)),
         }
     }
@@ -667,6 +671,9 @@ impl HttpRequestView {
             Message::ResetSettings => {
                 self.request_config = RequestConfig::default();
             }
+            Message::ToggleWordWrap => {
+                self.word_wrap = !self.word_wrap;
+            }
         }
     }
 
@@ -736,19 +743,34 @@ impl HttpRequestView {
                         TabLabel::Text("Body".to_string()),
                         {
                             let syntax = self.content_type.as_deref().map(response_content_type_to_syntax).unwrap_or("text");
-                            let editor = text_editor(&self.response_body_editor)
-                                .on_action(Message::ResponseContentChanged)
-                                .highlight(syntax, self.highlighter_theme);
-                            let context_menu = ContextMenu::new(scrollable(editor), || {
-                                column![
-                                    button("Copy Selection")
-                                        .on_press(Message::CopySelection),
-                                    button("Copy Body")
-                                        .on_press(Message::CopyBody),
-                                ]
-                                .into()
-                            });
-                            container(context_menu)
+                            if self.word_wrap {
+                                let body_text = self.response_body_editor.text();
+                                let wrapped_text = text(body_text)
+                                    .size(13)
+                                    .font(iced::Font::MONOSPACE);
+                                let context_menu = ContextMenu::new(scrollable(wrapped_text), || {
+                                    column![
+                                        button("Copy Body")
+                                            .on_press(Message::CopyBody),
+                                    ]
+                                    .into()
+                                });
+                                container(context_menu)
+                            } else {
+                                let editor = text_editor(&self.response_body_editor)
+                                    .on_action(Message::ResponseContentChanged)
+                                    .highlight(syntax, self.highlighter_theme);
+                                let context_menu = ContextMenu::new(scrollable(editor), || {
+                                    column![
+                                        button("Copy Selection")
+                                            .on_press(Message::CopySelection),
+                                        button("Copy Body")
+                                            .on_press(Message::CopyBody),
+                                    ]
+                                    .into()
+                                });
+                                container(context_menu)
+                            }
                         },
                     )
                     .push(
@@ -785,6 +807,18 @@ impl HttpRequestView {
             RequestStatus::Success | RequestStatus::Error(_)
         ) {
             Element::from(button("Copy").on_press(Message::CopyResponse))
+        } else {
+            Element::from(column![])
+        };
+
+        let wrap_toggle: Element<'_, Message, Theme, Renderer> = if matches!(
+            self.request_status,
+            RequestStatus::Success
+        ) {
+            Element::from(
+                button(text(if self.word_wrap { "Wrap ON" } else { "Wrap OFF" }).size(11))
+                    .on_press(Message::ToggleWordWrap)
+            )
         } else {
             Element::from(column![])
         };
@@ -849,7 +883,7 @@ impl HttpRequestView {
                     duration_text,
                     text(" | ").size(14),
                     size_text,
-                    row![copy_button].align_y(Alignment::Center),
+                    row![copy_button, wrap_toggle].align_y(Alignment::Center),
                 ]
                 .spacing(10)
                 .padding(10)
