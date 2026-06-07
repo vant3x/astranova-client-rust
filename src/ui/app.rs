@@ -1,4 +1,5 @@
 use crate::persistence::database::{self, Environment};
+use crate::ui::views::collection_view::{self, CollectionView};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use iced::{
@@ -32,8 +33,10 @@ struct AstraNovaApp {
     active_environment: Option<Environment>,
     env_manager_view: EnvironmentManagerView,
     history_view: HistoryView,
+    collection_view: CollectionView,
     current_view: View,
     show_history: bool,
+    show_collections: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +51,8 @@ pub enum Message {
     SwitchView(View),
     HistoryMsg(history_view::Message),
     ToggleHistory,
+    CollectionMsg(collection_view::Message),
+    ToggleCollections,
 }
 
 impl AstraNovaApp {
@@ -77,6 +82,10 @@ impl AstraNovaApp {
         };
 
         let history = database::get_request_history(&db_conn, 50).unwrap_or_default();
+        let collections = database::get_collections(&db_conn).unwrap_or_default();
+
+        let mut cv = CollectionView::new();
+        cv.sync_collections(&collections);
 
         let app = Self {
             request_tabs: vec![HttpRequestView::default()],
@@ -91,8 +100,10 @@ impl AstraNovaApp {
                 hv.entries = history;
                 hv
             },
+            collection_view: cv,
             current_view: View::Main,
             show_history: false,
+            show_collections: false,
         };
         (app, Task::none())
     }
@@ -308,6 +319,107 @@ impl AstraNovaApp {
             Message::ToggleHistory => {
                 self.show_history = !self.show_history;
             }
+            Message::ToggleCollections => {
+                self.show_collections = !self.show_collections;
+                if self.show_collections {
+                    self.refresh_collections();
+                }
+            }
+            Message::CollectionMsg(msg) => {
+                match msg.clone() {
+                    collection_view::Message::NewCollectionNameChanged(name) => {
+                        self.collection_view.new_collection_name = name;
+                    }
+                    collection_view::Message::CreateCollection => {
+                        let name = self.collection_view.new_collection_name.clone();
+                        if !name.is_empty() {
+                            match database::create_collection(&self.db_conn, &name, None) {
+                                Ok(_col) => {
+                                    self.refresh_collections();
+                                    self.collection_view.new_collection_name.clear();
+                                }
+                                Err(e) => log::error!("Error creating collection: {}", e),
+                            }
+                        }
+                    }
+                    collection_view::Message::SelectCollection(idx) => {
+                        self.collection_view.panel_state =
+                            collection_view::PanelState::CollectionDetail(idx);
+                        if let Some(col) = self.collection_view.collections.get(idx) {
+                            let col_id = col.id;
+                            match database::get_folders(&self.db_conn, col_id) {
+                                Ok(folders) => self.collection_view.sync_folders(&folders),
+                                Err(e) => log::error!("Error getting folders: {}", e),
+                            }
+                            match database::get_collection_requests(&self.db_conn, col_id, None) {
+                                Ok(reqs) => self.collection_view.sync_requests(&reqs),
+                                Err(e) => log::error!("Error getting requests: {}", e),
+                            }
+                        }
+                    }
+                    collection_view::Message::SelectFolder(folder_id) => {
+                        if let collection_view::PanelState::CollectionDetail(col_idx) =
+                            self.collection_view.panel_state
+                        {
+                            self.collection_view.panel_state =
+                                collection_view::PanelState::FolderDetail(col_idx, folder_id);
+                            if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                match database::get_collection_requests(
+                                    &self.db_conn,
+                                    col.id,
+                                    Some(folder_id),
+                                ) {
+                                    Ok(reqs) => self.collection_view.sync_requests(&reqs),
+                                    Err(e) => log::error!("Error getting folder requests: {}", e),
+                                }
+                            }
+                        }
+                    }
+                    collection_view::Message::Close => {
+                        self.collection_view.panel_state =
+                            collection_view::PanelState::Collections;
+                    }
+                    collection_view::Message::NewFolderNameChanged(col_id, name) => {
+                        self.collection_view.new_folder_name = name;
+                    }
+                    collection_view::Message::CreateFolder(col_id) => {
+                        let name = self.collection_view.new_folder_name.clone();
+                        if !name.is_empty() {
+                            match database::create_folder(&self.db_conn, col_id, &name, None) {
+                                Ok(_) => {
+                                    self.refresh_collection_folders(col_id);
+                                    self.collection_view.new_folder_name.clear();
+                                }
+                                Err(e) => log::error!("Error creating folder: {}", e),
+                            }
+                        }
+                    }
+                    collection_view::Message::DeleteCollection(idx) => {
+                        if let Some(col) = self.collection_view.collections.get(idx) {
+                            let _ = database::delete_collection(&self.db_conn, col.id);
+                            self.refresh_collections();
+                        }
+                    }
+                    collection_view::Message::DeleteFolder(folder_id) => {
+                        let _ = database::delete_folder(&self.db_conn, folder_id);
+                        if let collection_view::PanelState::CollectionDetail(col_idx) =
+                            self.collection_view.panel_state
+                        {
+                            if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                self.refresh_collection_folders(col.id);
+                            }
+                        }
+                    }
+                    collection_view::Message::LoadRequest(req_id) => {
+                        self.load_collection_request(req_id);
+                    }
+                    collection_view::Message::SaveCurrentRequest => {
+                        self.save_current_to_collection();
+                    }
+                    _ => {}
+                }
+                self.collection_view.update(msg);
+            }
             Message::HistoryMsg(msg) => {
                 match &msg {
                     history_view::Message::ClearHistory => {
@@ -373,6 +485,9 @@ impl AstraNovaApp {
                 let history_button = button(text("History"))
                     .on_press(Message::ToggleHistory);
 
+                let collections_button = button(text("Collections"))
+                    .on_press(Message::ToggleCollections);
+
                 let env_selector = pick_list(
                     &self.environments[..],
                     self.active_environment.clone(),
@@ -382,6 +497,7 @@ impl AstraNovaApp {
 
                 let mut env_controls = row![
                     history_button,
+                    collections_button,
                     env_selector,
                     button(text("Manage Environments"))
                         .on_press(Message::SwitchView(View::EnvironmentManager))
@@ -424,10 +540,40 @@ impl AstraNovaApp {
                     .width(Length::FillPortion(1))
                     .height(Length::Fill);
 
+                    if self.show_collections {
+                        let collections_panel = container(
+                            self.collection_view.view().map(Message::CollectionMsg)
+                        )
+                        .width(Length::FillPortion(1))
+                        .height(Length::Fill);
+
+                        row![
+                            main_content.width(Length::FillPortion(2)),
+                            rule::vertical(1),
+                            history_panel.width(Length::FillPortion(1)),
+                            rule::vertical(1),
+                            collections_panel.width(Length::FillPortion(1)),
+                        ]
+                        .into()
+                    } else {
+                        row![
+                            main_content.width(Length::FillPortion(3)),
+                            rule::vertical(1),
+                            history_panel,
+                        ]
+                        .into()
+                    }
+                } else if self.show_collections {
+                    let collections_panel = container(
+                        self.collection_view.view().map(Message::CollectionMsg)
+                    )
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill);
+
                     row![
                         main_content.width(Length::FillPortion(3)),
                         rule::vertical(1),
-                        history_panel,
+                        collections_panel,
                     ]
                     .into()
                 } else {
@@ -435,6 +581,155 @@ impl AstraNovaApp {
                 }
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
+        }
+    }
+
+    fn refresh_collections(&mut self) {
+        if let Ok(collections) = database::get_collections(&self.db_conn) {
+            self.collection_view.sync_collections(&collections);
+        }
+    }
+
+    fn refresh_collection_folders(&mut self, col_id: i32) {
+        if let Ok(folders) = database::get_folders(&self.db_conn, col_id) {
+            self.collection_view.sync_folders(&folders);
+        }
+    }
+
+    fn load_collection_request(&mut self, req_id: i32) {
+        let conn = &self.db_conn;
+        let all_reqs = match &self.collection_view.panel_state {
+            collection_view::PanelState::CollectionDetail(idx) => {
+                if let Some(col) = self.collection_view.collections.get(*idx) {
+                    database::get_collection_requests(conn, col.id, None).unwrap_or_default()
+                } else {
+                    return;
+                }
+            }
+            collection_view::PanelState::FolderDetail(_col_idx, _folder_id) => {
+                self.collection_view.requests.clone()
+            }
+            _ => return,
+        };
+
+        let req = match all_reqs.iter().find(|r| r.id == req_id) {
+            Some(r) => r.clone(),
+            None => return,
+        };
+
+        let mut new_view = HttpRequestView::default();
+        new_view.url_input = req.url;
+        new_view.method = Box::leak(req.method.into_boxed_str());
+
+        if let Some(body) = &req.body {
+            new_view.body_input = iced::widget::text_editor::Content::with_text(body);
+        }
+
+        if req.body_type == "multipart" {
+            new_view.body_type = http_request_view::BodyType::Multipart;
+        }
+
+        new_view.headers_editor.entries = req
+            .headers
+            .iter()
+            .map(|(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
+                id: 0,
+                key: k.clone(),
+                value: v.clone(),
+            })
+            .collect();
+
+        new_view.params_editor.entries = req
+            .params
+            .iter()
+            .map(|(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
+                id: 0,
+                key: k.clone(),
+                value: v.clone(),
+            })
+            .collect();
+
+        match req.auth_type.as_str() {
+            "bearer" => {
+                if let Some(token) = &req.auth_data {
+                    new_view.auth = crate::data::auth::Auth::BearerToken(token.clone());
+                }
+            }
+            "basic" => {
+                if let Some(data) = &req.auth_data {
+                    let parts: Vec<&str> = data.splitn(2, ':').collect();
+                    if parts.len() == 2 {
+                        new_view.auth = crate::data::auth::Auth::Basic {
+                            user: parts[0].to_string(),
+                            pass: parts[1].to_string(),
+                        };
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        self.request_tabs.push(new_view);
+        self.active_request_tab_index = self.request_tabs.len() - 1;
+    }
+
+    fn save_current_to_collection(&mut self) {
+        if let Some(view) = self.request_tabs.get(self.active_request_tab_index) {
+            if let Some(col) = self.collection_view.collections.first() {
+                let request = view.build_request();
+                let auth_type = match &view.auth {
+                    crate::data::auth::Auth::BearerToken(_) => "bearer",
+                    crate::data::auth::Auth::Basic { .. } => "basic",
+                    crate::data::auth::Auth::None => "none",
+                };
+                let auth_data = match &view.auth {
+                    crate::data::auth::Auth::BearerToken(token) => Some(token.clone()),
+                    crate::data::auth::Auth::Basic { user, pass } => {
+                        Some(format!("{}:{}", user, pass))
+                    }
+                    _ => None,
+                };
+
+                let params: Vec<(String, String)> = view
+                    .params_editor
+                    .entries
+                    .iter()
+                    .filter(|p| !p.key.is_empty())
+                    .map(|p| (p.key.clone(), p.value.clone()))
+                    .collect();
+
+                let body_type = match view.body_type {
+                    http_request_view::BodyType::Multipart => "multipart",
+                    _ => "text",
+                };
+
+                let name = if request.url.len() > 40 {
+                    format!("{} {}", request.method, &request.url[..40])
+                } else {
+                    format!("{} {}", request.method, request.url)
+                };
+
+                let _ = database::save_collection_request(
+                    &self.db_conn,
+                    col.id,
+                    None,
+                    &name,
+                    &request.method,
+                    &request.url,
+                    &request.headers,
+                    request.body.as_deref(),
+                    body_type,
+                    auth_type,
+                    auth_data.as_deref(),
+                    &params,
+                    None,
+                );
+
+                match database::get_collection_requests(&self.db_conn, col.id, None) {
+                    Ok(reqs) => self.collection_view.sync_requests(&reqs),
+                    Err(e) => log::error!("Error refreshing requests: {}", e),
+                }
+            }
         }
     }
 }

@@ -22,6 +22,51 @@ pub struct RequestHistoryEntry {
     pub timestamp: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Collection {
+    pub id: i32,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CollectionFolder {
+    pub id: i32,
+    pub collection_id: i32,
+    pub name: String,
+    pub parent_folder_id: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CollectionRequest {
+    pub id: i32,
+    pub collection_id: i32,
+    pub folder_id: Option<i32>,
+    pub name: String,
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<String>,
+    pub body_type: String,
+    pub auth_type: String,
+    pub auth_data: Option<String>,
+    pub params: Vec<(String, String)>,
+    pub config_json: Option<String>,
+    pub sort_order: i32,
+}
+
+impl std::fmt::Display for Collection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl std::fmt::Display for CollectionFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 impl std::fmt::Display for Environment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
@@ -63,6 +108,46 @@ pub fn init() -> std::result::Result<Connection, AppError> {
             status INTEGER,
             duration_ms INTEGER,
             timestamp TEXT NOT NULL
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS collections (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS collection_folders (
+            id INTEGER PRIMARY KEY,
+            collection_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            parent_folder_id INTEGER,
+            FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_folder_id) REFERENCES collection_folders(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS collection_requests (
+            id INTEGER PRIMARY KEY,
+            collection_id INTEGER NOT NULL,
+            folder_id INTEGER,
+            name TEXT NOT NULL,
+            method TEXT NOT NULL,
+            url TEXT NOT NULL,
+            headers TEXT NOT NULL DEFAULT '[]',
+            body TEXT,
+            body_type TEXT NOT NULL DEFAULT 'text',
+            auth_type TEXT NOT NULL DEFAULT 'none',
+            auth_data TEXT,
+            params TEXT NOT NULL DEFAULT '[]',
+            config_json TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+            FOREIGN KEY (folder_id) REFERENCES collection_folders(id) ON DELETE CASCADE
         )",
         [],
     )?;
@@ -171,6 +256,207 @@ pub fn delete_request_history(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn create_collection(conn: &Connection, name: &str, description: Option<&str>) -> Result<Collection> {
+    conn.execute(
+        "INSERT INTO collections (name, description) VALUES (?1, ?2)",
+        params![name, description],
+    )?;
+    let id = conn.last_insert_rowid();
+    Ok(Collection {
+        id: id as i32,
+        name: name.to_string(),
+        description: description.map(|s| s.to_string()),
+    })
+}
+
+pub fn get_collections(conn: &Connection) -> Result<Vec<Collection>> {
+    let mut stmt = conn.prepare("SELECT id, name, description FROM collections ORDER BY name")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Collection {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[allow(dead_code)]
+pub fn update_collection(conn: &Connection, collection: &Collection) -> Result<()> {
+    conn.execute(
+        "UPDATE collections SET name = ?1, description = ?2 WHERE id = ?3",
+        params![collection.name, collection.description, collection.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_collection(conn: &Connection, id: i32) -> Result<()> {
+    conn.execute("DELETE FROM collections WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub fn create_folder(conn: &Connection, collection_id: i32, name: &str, parent_folder_id: Option<i32>) -> Result<CollectionFolder> {
+    conn.execute(
+        "INSERT INTO collection_folders (collection_id, name, parent_folder_id) VALUES (?1, ?2, ?3)",
+        params![collection_id, name, parent_folder_id],
+    )?;
+    let id = conn.last_insert_rowid();
+    Ok(CollectionFolder {
+        id: id as i32,
+        collection_id,
+        name: name.to_string(),
+        parent_folder_id,
+    })
+}
+
+pub fn get_folders(conn: &Connection, collection_id: i32) -> Result<Vec<CollectionFolder>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, collection_id, name, parent_folder_id FROM collection_folders WHERE collection_id = ?1 ORDER BY name",
+    )?;
+    let rows = stmt.query_map([collection_id], |row| {
+        Ok(CollectionFolder {
+            id: row.get(0)?,
+            collection_id: row.get(1)?,
+            name: row.get(2)?,
+            parent_folder_id: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn delete_folder(conn: &Connection, id: i32) -> Result<()> {
+    conn.execute("DELETE FROM collection_folders WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn rename_folder(conn: &Connection, id: i32, new_name: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE collection_folders SET name = ?1 WHERE id = ?2",
+        params![new_name, id],
+    )?;
+    Ok(())
+}
+
+pub fn save_collection_request(
+    conn: &Connection,
+    collection_id: i32,
+    folder_id: Option<i32>,
+    name: &str,
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: Option<&str>,
+    body_type: &str,
+    auth_type: &str,
+    auth_data: Option<&str>,
+    params: &[(String, String)],
+    config_json: Option<&str>,
+) -> Result<CollectionRequest> {
+    let headers_json = serde_json::to_string(headers)
+        .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+    let params_json = serde_json::to_string(params)
+        .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+    let max_order: i32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) FROM collection_requests WHERE collection_id = ?1",
+            [collection_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    conn.execute(
+        "INSERT INTO collection_requests (collection_id, folder_id, name, method, url, headers, body, body_type, auth_type, auth_data, params, config_json, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            collection_id,
+            folder_id,
+            name,
+            method,
+            url,
+            headers_json,
+            body,
+            body_type,
+            auth_type,
+            auth_data,
+            params_json,
+            config_json,
+            max_order + 1,
+        ],
+    )?;
+    let id = conn.last_insert_rowid();
+    Ok(CollectionRequest {
+        id: id as i32,
+        collection_id,
+        folder_id,
+        name: name.to_string(),
+        method: method.to_string(),
+        url: url.to_string(),
+        headers: headers.to_vec(),
+        body: body.map(|s| s.to_string()),
+        body_type: body_type.to_string(),
+        auth_type: auth_type.to_string(),
+        auth_data: auth_data.map(|s| s.to_string()),
+        params: params.to_vec(),
+        config_json: config_json.map(|s| s.to_string()),
+        sort_order: max_order + 1,
+    })
+}
+
+pub fn get_collection_requests(conn: &Connection, collection_id: i32, folder_id: Option<i32>) -> Result<Vec<CollectionRequest>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, collection_id, folder_id, name, method, url, headers, body, body_type, auth_type, auth_data, params, config_json, sort_order FROM collection_requests WHERE collection_id = ?1 AND folder_id IS ?2 ORDER BY sort_order",
+    )?;
+    let rows = stmt.query_map(params![collection_id, folder_id], |row| {
+        parse_collection_request(row)
+    })?;
+    rows.collect()
+}
+
+fn parse_collection_request(row: &rusqlite::Row) -> rusqlite::Result<CollectionRequest> {
+    let headers_json: String = row.get(6)?;
+    let params_json: String = row.get(11)?;
+    Ok(CollectionRequest {
+        id: row.get(0)?,
+        collection_id: row.get(1)?,
+        folder_id: row.get(2)?,
+        name: row.get(3)?,
+        method: row.get(4)?,
+        url: row.get(5)?,
+        headers: serde_json::from_str(&headers_json).unwrap_or_default(),
+        body: row.get(7)?,
+        body_type: row.get(8)?,
+        auth_type: row.get(9)?,
+        auth_data: row.get(10)?,
+        params: serde_json::from_str(&params_json).unwrap_or_default(),
+        config_json: row.get(12)?,
+        sort_order: row.get(13)?,
+    })
+}
+
+#[allow(dead_code)]
+pub fn rename_collection_request(conn: &Connection, id: i32, new_name: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE collection_requests SET name = ?1 WHERE id = ?2",
+        params![new_name, id],
+    )?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn move_collection_request(conn: &Connection, id: i32, new_folder_id: Option<i32>) -> Result<()> {
+    conn.execute(
+        "UPDATE collection_requests SET folder_id = ?1 WHERE id = ?2",
+        params![new_folder_id, id],
+    )?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn delete_collection_request(conn: &Connection, id: i32) -> Result<()> {
+    conn.execute("DELETE FROM collection_requests WHERE id = ?1", [id])?;
+    Ok(())
+}
+
 fn chrono_now() -> String {
     use std::time::SystemTime;
     let duration = SystemTime::now()
@@ -200,6 +486,45 @@ mod tests {
             [],
         )
         .ok();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS collection_folders (
+                id INTEGER PRIMARY KEY,
+                collection_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                parent_folder_id INTEGER
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS collection_requests (
+                id INTEGER PRIMARY KEY,
+                collection_id INTEGER NOT NULL,
+                folder_id INTEGER,
+                name TEXT NOT NULL,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                headers TEXT NOT NULL DEFAULT '[]',
+                body TEXT,
+                body_type TEXT NOT NULL DEFAULT 'text',
+                auth_type TEXT NOT NULL DEFAULT 'none',
+                auth_data TEXT,
+                params TEXT NOT NULL DEFAULT '[]',
+                config_json TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -377,5 +702,181 @@ mod tests {
 
         let history = get_request_history(&conn, 3).unwrap();
         assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn create_and_get_collection() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "My API", Some("All endpoints")).unwrap();
+        assert_eq!(col.name, "My API");
+        assert_eq!(col.description, Some("All endpoints".to_string()));
+
+        let cols = get_collections(&conn).unwrap();
+        assert_eq!(cols.len(), 1);
+        assert_eq!(cols[0].name, "My API");
+    }
+
+    #[test]
+    fn create_multiple_collections() {
+        let conn = setup_test_db();
+        create_collection(&conn, "API v1", None).unwrap();
+        create_collection(&conn, "API v2", None).unwrap();
+        create_collection(&conn, "Auth", None).unwrap();
+
+        let cols = get_collections(&conn).unwrap();
+        assert_eq!(cols.len(), 3);
+        let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"API v1"));
+        assert!(names.contains(&"API v2"));
+        assert!(names.contains(&"Auth"));
+    }
+
+    #[test]
+    fn update_collection_test() {
+        let conn = setup_test_db();
+        let mut col = create_collection(&conn, "Old Name", None).unwrap();
+        col.name = "New Name".to_string();
+        col.description = Some("Updated desc".to_string());
+        update_collection(&conn, &col).unwrap();
+
+        let cols = get_collections(&conn).unwrap();
+        assert_eq!(cols[0].name, "New Name");
+        assert_eq!(cols[0].description, Some("Updated desc".to_string()));
+    }
+
+    #[test]
+    fn delete_collection_test() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "To Delete", None).unwrap();
+        delete_collection(&conn, col.id).unwrap();
+
+        let cols = get_collections(&conn).unwrap();
+        assert!(cols.is_empty());
+    }
+
+    #[test]
+    fn create_and_get_folders() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let f1 = create_folder(&conn, col.id, "Auth", None).unwrap();
+        let _f2 = create_folder(&conn, col.id, "Users", None).unwrap();
+        let f3 = create_folder(&conn, col.id, "Login", Some(f1.id)).unwrap();
+
+        let folders = get_folders(&conn, col.id).unwrap();
+        assert_eq!(folders.len(), 3);
+        let names: Vec<&str> = folders.iter().map(|f| f.name.as_str()).collect();
+        assert!(names.contains(&"Auth"));
+        assert!(names.contains(&"Users"));
+        assert!(names.contains(&"Login"));
+
+        let login_folder = folders.iter().find(|f| f.name == "Login").unwrap();
+        assert_eq!(login_folder.parent_folder_id, Some(f1.id));
+
+        let auth_folder = folders.iter().find(|f| f.name == "Auth").unwrap();
+        assert_eq!(auth_folder.parent_folder_id, None);
+    }
+
+    #[test]
+    fn rename_folder_test() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let folder = create_folder(&conn, col.id, "Old", None).unwrap();
+        rename_folder(&conn, folder.id, "New").unwrap();
+
+        let folders = get_folders(&conn, col.id).unwrap();
+        assert_eq!(folders[0].name, "New");
+    }
+
+    #[test]
+    fn delete_folder_cascade() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let folder = create_folder(&conn, col.id, "ToDelete", None).unwrap();
+        delete_folder(&conn, folder.id).unwrap();
+
+        let folders = get_folders(&conn, col.id).unwrap();
+        assert!(folders.is_empty());
+    }
+
+    #[test]
+    fn save_and_get_collection_requests() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
+        let params = vec![("key".to_string(), "value".to_string())];
+
+        save_collection_request(
+            &conn, col.id, None, "Get Todos", "GET",
+            "https://jsonplaceholder.typicode.com/todos",
+            &headers, None, "text", "none", None, &params, None,
+        ).unwrap();
+        save_collection_request(
+            &conn, col.id, None, "Create Todo", "POST",
+            "https://jsonplaceholder.typicode.com/todos",
+            &headers, Some(r#"{"title":"test"}"#), "text", "bearer", Some("token123"), &[], None,
+        ).unwrap();
+
+        let reqs = get_collection_requests(&conn, col.id, None).unwrap();
+        assert_eq!(reqs.len(), 2);
+        assert_eq!(reqs[0].name, "Get Todos");
+        assert_eq!(reqs[1].name, "Create Todo");
+        assert_eq!(reqs[0].headers.len(), 1);
+        assert_eq!(reqs[1].body, Some(r#"{"title":"test"}"#.to_string()));
+        assert_eq!(reqs[1].auth_type, "bearer");
+    }
+
+    #[test]
+    fn save_request_in_folder() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let folder = create_folder(&conn, col.id, "Auth", None).unwrap();
+
+        save_collection_request(
+            &conn, col.id, Some(folder.id), "Login", "POST",
+            "https://api.example.com/login",
+            &[], Some(r#"{"user":"admin"}"#), "text", "none", None, &[], None,
+        ).unwrap();
+
+        let root_reqs = get_collection_requests(&conn, col.id, None).unwrap();
+        assert!(root_reqs.is_empty());
+
+        let folder_reqs = get_collection_requests(&conn, col.id, Some(folder.id)).unwrap();
+        assert_eq!(folder_reqs.len(), 1);
+        assert_eq!(folder_reqs[0].name, "Login");
+    }
+
+    #[test]
+    fn rename_and_move_collection_request() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let folder = create_folder(&conn, col.id, "Folder", None).unwrap();
+
+        let req = save_collection_request(
+            &conn, col.id, None, "Old Name", "GET", "https://example.com",
+            &[], None, "text", "none", None, &[], None,
+        ).unwrap();
+
+        rename_collection_request(&conn, req.id, "New Name").unwrap();
+        move_collection_request(&conn, req.id, Some(folder.id)).unwrap();
+
+        let root_reqs = get_collection_requests(&conn, col.id, None).unwrap();
+        assert!(root_reqs.is_empty());
+
+        let folder_reqs = get_collection_requests(&conn, col.id, Some(folder.id)).unwrap();
+        assert_eq!(folder_reqs[0].name, "New Name");
+    }
+
+    #[test]
+    fn delete_collection_request_test() {
+        let conn = setup_test_db();
+        let col = create_collection(&conn, "API", None).unwrap();
+        let req = save_collection_request(
+            &conn, col.id, None, "To Delete", "DELETE", "https://example.com/1",
+            &[], None, "text", "none", None, &[], None,
+        ).unwrap();
+
+        delete_collection_request(&conn, req.id).unwrap();
+        let reqs = get_collection_requests(&conn, col.id, None).unwrap();
+        assert!(reqs.is_empty());
     }
 }
