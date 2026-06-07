@@ -675,60 +675,69 @@ impl AstraNovaApp {
 
     fn save_current_to_collection(&mut self) {
         if let Some(view) = self.request_tabs.get(self.active_request_tab_index) {
-            if let Some(col) = self.collection_view.collections.first() {
-                let request = view.build_request();
-                let auth_type = match &view.auth {
-                    crate::data::auth::Auth::BearerToken(_) => "bearer",
-                    crate::data::auth::Auth::Basic { .. } => "basic",
-                    crate::data::auth::Auth::None => "none",
-                };
-                let auth_data = match &view.auth {
-                    crate::data::auth::Auth::BearerToken(token) => Some(token.clone()),
-                    crate::data::auth::Auth::Basic { user, pass } => {
-                        Some(format!("{}:{}", user, pass))
+            let col_id = match self.collection_view.selected_collection_id {
+                Some(id) => id,
+                None => {
+                    if let Some(col) = self.collection_view.collections.first() {
+                        col.id
+                    } else {
+                        return;
                     }
-                    _ => None,
-                };
-
-                let params: Vec<(String, String)> = view
-                    .params_editor
-                    .entries
-                    .iter()
-                    .filter(|p| !p.key.is_empty())
-                    .map(|p| (p.key.clone(), p.value.clone()))
-                    .collect();
-
-                let body_type = match view.body_type {
-                    http_request_view::BodyType::Multipart => "multipart",
-                    _ => "text",
-                };
-
-                let name = if request.url.len() > 40 {
-                    format!("{} {}", request.method, &request.url[..40])
-                } else {
-                    format!("{} {}", request.method, request.url)
-                };
-
-                let _ = database::save_collection_request(
-                    &self.db_conn,
-                    col.id,
-                    None,
-                    &name,
-                    &request.method,
-                    &request.url,
-                    &request.headers,
-                    request.body.as_deref(),
-                    body_type,
-                    auth_type,
-                    auth_data.as_deref(),
-                    &params,
-                    None,
-                );
-
-                match database::get_collection_requests(&self.db_conn, col.id, None) {
-                    Ok(reqs) => self.collection_view.sync_requests(&reqs),
-                    Err(e) => log::error!("Error refreshing requests: {}", e),
                 }
+            };
+
+            let request = view.build_request();
+            let auth_type = match &view.auth {
+                crate::data::auth::Auth::BearerToken(_) => "bearer",
+                crate::data::auth::Auth::Basic { .. } => "basic",
+                crate::data::auth::Auth::None => "none",
+            };
+            let auth_data = match &view.auth {
+                crate::data::auth::Auth::BearerToken(token) => Some(token.clone()),
+                crate::data::auth::Auth::Basic { user, pass } => {
+                    Some(format!("{}:{}", user, pass))
+                }
+                _ => None,
+            };
+
+            let params: Vec<(String, String)> = view
+                .params_editor
+                .entries
+                .iter()
+                .filter(|p| !p.key.is_empty())
+                .map(|p| (p.key.clone(), p.value.clone()))
+                .collect();
+
+            let body_type = match view.body_type {
+                http_request_view::BodyType::Multipart => "multipart",
+                _ => "text",
+            };
+
+            let name = if request.url.len() > 40 {
+                format!("{} {}", request.method, &request.url[..40])
+            } else {
+                format!("{} {}", request.method, request.url)
+            };
+
+            let _ = database::save_collection_request(
+                &self.db_conn,
+                col_id,
+                None,
+                &name,
+                &request.method,
+                &request.url,
+                &request.headers,
+                request.body.as_deref(),
+                body_type,
+                auth_type,
+                auth_data.as_deref(),
+                &params,
+                None,
+            );
+
+            match database::get_collection_requests(&self.db_conn, col_id, None) {
+                Ok(reqs) => self.collection_view.sync_requests(&reqs),
+                Err(e) => log::error!("Error refreshing requests: {}", e),
             }
         }
     }

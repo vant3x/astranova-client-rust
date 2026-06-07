@@ -42,6 +42,7 @@ pub struct CollectionView {
     pub folders: Vec<CollectionFolder>,
     pub requests: Vec<CollectionRequest>,
     pub panel_state: PanelState,
+    pub selected_collection_id: Option<i32>,
     pub expanded_collections: Vec<bool>,
     pub expanded_folders: Vec<bool>,
     pub new_collection_name: String,
@@ -63,6 +64,7 @@ impl Clone for CollectionView {
             folders: self.folders.clone(),
             requests: self.requests.clone(),
             panel_state: self.panel_state.clone(),
+            selected_collection_id: self.selected_collection_id,
             expanded_collections: self.expanded_collections.clone(),
             expanded_folders: self.expanded_folders.clone(),
             new_collection_name: self.new_collection_name.clone(),
@@ -94,6 +96,7 @@ impl CollectionView {
             }
             Message::SelectCollection(idx) => {
                 self.panel_state = PanelState::CollectionDetail(idx);
+                self.selected_collection_id = self.collections.get(idx).map(|c| c.id);
                 None
             }
             Message::SelectFolder(folder_id) => {
@@ -182,6 +185,12 @@ impl CollectionView {
             .size(13)
             .padding(5);
 
+        let save_button: Element<'_, Message, Theme, Renderer> = if self.collections.is_empty() {
+            button(text("Save Current Request")).into()
+        } else {
+            button(text("Save Current Request")).on_press(Message::SaveCurrentRequest).into()
+        };
+
         let mut list = column![].spacing(4);
 
         for (index, col) in self.collections.iter().enumerate() {
@@ -221,6 +230,7 @@ impl CollectionView {
             column![
                 header,
                 new_collection_input,
+                save_button,
                 scrollable(list).height(Length::Fill),
             ]
             .spacing(8)
