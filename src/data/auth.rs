@@ -5,15 +5,17 @@ pub enum AuthType {
     BasicAuth,
     ApiKey,
     Digest,
+    OAuth2,
 }
 
 impl AuthType {
-    pub const ALL: [AuthType; 5] = [
+    pub const ALL: [AuthType; 6] = [
         AuthType::NoAuth,
         AuthType::BearerToken,
         AuthType::BasicAuth,
         AuthType::ApiKey,
         AuthType::Digest,
+        AuthType::OAuth2,
     ];
 }
 
@@ -28,6 +30,7 @@ impl std::fmt::Display for AuthType {
                 AuthType::BasicAuth => "Basic Auth",
                 AuthType::ApiKey => "API Key",
                 AuthType::Digest => "Digest Auth",
+                AuthType::OAuth2 => "OAuth 2.0",
             }
         )
     }
@@ -73,6 +76,48 @@ pub enum Auth {
         user: String,
         pass: String,
     },
+    OAuth2(OAuth2Config),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OAuth2Config {
+    pub grant_type: OAuth2GrantType,
+    pub auth_url: String,
+    pub token_url: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub scopes: String,
+    pub redirect_uri: String,
+    pub pkce_enabled: bool,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_expiry: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum OAuth2GrantType {
+    #[default]
+    AuthorizationCode,
+    ClientCredentials,
+    Implicit,
+}
+
+impl OAuth2GrantType {
+    pub const ALL: [OAuth2GrantType; 3] = [
+        OAuth2GrantType::AuthorizationCode,
+        OAuth2GrantType::ClientCredentials,
+        OAuth2GrantType::Implicit,
+    ];
+}
+
+impl std::fmt::Display for OAuth2GrantType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OAuth2GrantType::AuthorizationCode => write!(f, "Authorization Code"),
+            OAuth2GrantType::ClientCredentials => write!(f, "Client Credentials"),
+            OAuth2GrantType::Implicit => write!(f, "Implicit"),
+        }
+    }
 }
 
 impl Auth {
@@ -83,6 +128,7 @@ impl Auth {
             Auth::Basic { .. } => AuthType::BasicAuth,
             Auth::ApiKey { .. } => AuthType::ApiKey,
             Auth::Digest { .. } => AuthType::Digest,
+            Auth::OAuth2(_) => AuthType::OAuth2,
         }
     }
 }
@@ -117,8 +163,13 @@ mod tests {
     }
 
     #[test]
-    fn auth_type_all_has_5_variants() {
-        assert_eq!(AuthType::ALL.len(), 5);
+    fn auth_type_display_oauth2() {
+        assert_eq!(AuthType::OAuth2.to_string(), "OAuth 2.0");
+    }
+
+    #[test]
+    fn auth_type_all_has_6_variants() {
+        assert_eq!(AuthType::ALL.len(), 6);
     }
 
     #[test]
@@ -234,6 +285,10 @@ mod tests {
             }
             .auth_type(),
             AuthType::Digest
+        );
+        assert_eq!(
+            Auth::OAuth2(OAuth2Config::default()).auth_type(),
+            AuthType::OAuth2
         );
     }
 }

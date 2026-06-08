@@ -4,6 +4,7 @@ use crate::ui::views::collection_view::{self, CollectionView};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use crate::ui::views::websocket_view::{self, WebSocketView};
+use crate::data::auth::Auth;
 use iced::{
     widget::{button, column, container, pick_list, row, rule, text},
     Alignment, Element, Length, Subscription, Task,
@@ -123,6 +124,10 @@ pub enum Message {
     WsEvent(crate::protocols::websocket::WsEvent),
     WsConnected(WsSender, Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>),
     SelectProtocol(Protocol),
+    OAuth2StartAuth(usize),
+    OAuth2AuthComplete(usize, Result<String, String>),
+    OAuth2TokenReceived(usize, Result<crate::data::oauth2::OAuth2TokenResponse, String>),
+    OAuth2RefreshToken(usize),
 }
 
 impl AstraNovaApp {
@@ -258,6 +263,16 @@ impl AstraNovaApp {
                                     )
                                 },
                             );
+                        }
+                        http_request_view::Message::OAuth2StartAuth => {
+                            return Task::perform(async {}, move |_| {
+                                Message::OAuth2StartAuth(index)
+                            });
+                        }
+                        http_request_view::Message::OAuth2RefreshToken => {
+                            return Task::perform(async {}, move |_| {
+                                Message::OAuth2RefreshToken(index)
+                            });
                         }
                         _ => view.update(msg),
                     }
@@ -901,6 +916,119 @@ impl AstraNovaApp {
                 self.ws_receiver = Some(receiver_arc);
                 self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
             }
+            Message::OAuth2AuthComplete(index, result) => {
+                if let Some(view) = self.request_tabs.get_mut(index) {
+                    if let Auth::OAuth2(config) = &mut view.auth {
+                        match result {
+                            Ok(code) => {
+                                let token_url = config.token_url.clone();
+                                let client_id = config.client_id.clone();
+                                let client_secret = config.client_secret.clone();
+                                let redirect_uri = config.redirect_uri.clone();
+                                let pkce_verifier = config.access_token.clone();
+                                let tab_index = index;
+
+                                return Task::perform(
+                                    async move {
+                                        crate::data::oauth2::exchange_code(
+                                            &token_url,
+                                            &code,
+                                            &client_id,
+                                            &client_secret,
+                                            &redirect_uri,
+                                            Some(&pkce_verifier),
+                                        )
+                                        .await
+                                    },
+                                    move |result| {
+                                        Message::OAuth2TokenReceived(tab_index, result)
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                log::error!("OAuth2 authorization failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Message::OAuth2TokenReceived(index, result) => {
+                if let Some(view) = self.request_tabs.get_mut(index) {
+                    if let Auth::OAuth2(config) = &mut view.auth {
+                        match result {
+                            Ok(token_response) => {
+                                config.access_token = token_response.access_token;
+                                if let Some(refresh) = token_response.refresh_token {
+                                    config.refresh_token = refresh;
+                                }
+                                log::info!("OAuth2 token received successfully");
+                            }
+                            Err(e) => {
+                                log::error!("OAuth2 token exchange failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Message::OAuth2StartAuth(index) => {
+                if let Some(view) = self.request_tabs.get(index) {
+                    if let Auth::OAuth2(config) = &view.auth {
+                        let pkce = if config.pkce_enabled {
+                            Some(crate::data::oauth2::PKCEChallenge::generate())
+                        } else {
+                            None
+                        };
+
+                        let state = crate::data::oauth2::generate_state();
+                        let auth_url = crate::data::oauth2::build_authorization_url(
+                            &config.auth_url,
+                            &config.client_id,
+                            &config.redirect_uri,
+                            &config.scopes,
+                            pkce.as_ref(),
+                            &state,
+                        );
+
+                        let verifier = pkce.map(|p| p.verifier);
+
+                        return Task::perform(
+                            async move {
+                                let _ = open::that(&auth_url);
+                                verifier.ok_or_else(|| "No PKCE verifier".to_string())
+                            },
+                            move |result| Message::OAuth2AuthComplete(index, result),
+                        );
+                    }
+                }
+            }
+            Message::OAuth2RefreshToken(index) => {
+                if let Some(view) = self.request_tabs.get(index) {
+                    if let Auth::OAuth2(config) = &view.auth {
+                        if config.refresh_token.is_empty() {
+                            log::warn!("No refresh token available");
+                        } else {
+                            let token_url = config.token_url.clone();
+                            let refresh_token = config.refresh_token.clone();
+                            let client_id = config.client_id.clone();
+                            let client_secret = config.client_secret.clone();
+                            let tab_index = index;
+
+                            return Task::perform(
+                                async move {
+                                    crate::data::oauth2::refresh_token(
+                                        &token_url,
+                                        &refresh_token,
+                                        &client_id,
+                                        &client_secret,
+                                    )
+                                    .await
+                                },
+                                move |result| Message::OAuth2TokenReceived(tab_index, result),
+                            );
+                        }
+                    }
+                }
+            }
         }
         Task::none()
     }
@@ -1119,6 +1247,7 @@ impl AstraNovaApp {
                 crate::data::auth::Auth::Basic { .. } => "basic",
                 crate::data::auth::Auth::ApiKey { .. } => "api_key",
                 crate::data::auth::Auth::Digest { .. } => "digest",
+                crate::data::auth::Auth::OAuth2(_) => "oauth2",
                 crate::data::auth::Auth::None => "none",
             };
             let auth_data = match &view.auth {
@@ -1130,6 +1259,7 @@ impl AstraNovaApp {
                 crate::data::auth::Auth::Digest { user, pass } => {
                     Some(format!("{}:{}", user, pass))
                 }
+                crate::data::auth::Auth::OAuth2(config) => Some(config.access_token.clone()),
                 crate::data::auth::Auth::None => None,
             };
 

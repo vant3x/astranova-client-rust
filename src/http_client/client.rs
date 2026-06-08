@@ -241,6 +241,13 @@ pub fn apply_auth(
             req_builder
         }
         Auth::Digest { .. } => req_builder,
+        Auth::OAuth2(config) => {
+            if !config.access_token.is_empty() {
+                req_builder = req_builder
+                    .header("Authorization", format!("Bearer {}", config.access_token));
+            }
+            req_builder
+        }
     }
 }
 

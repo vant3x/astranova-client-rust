@@ -35,6 +35,9 @@ futures-util = "0.3"
 futures = { version = "0.3", features = ["alloc"] }
 chrono = "0.4"
 iced_futures = "0.14.0"
+sha2 = "0.10"
+rand = "0.8"
+open = "5"
 
 [package.metadata.bundle]
 name = "AstraNova"

@@ -141,6 +141,8 @@ pub enum Message {
     CopySnippet,
     ResetSettings,
     ToggleWordWrap,
+    OAuth2StartAuth,
+    OAuth2RefreshToken,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -171,6 +173,16 @@ pub enum AuthInput {
     ApiKeyLocation(crate::data::auth::ApiKeyLocation),
     DigestUser(String),
     DigestPass(String),
+    OAuth2GrantType(crate::data::auth::OAuth2GrantType),
+    OAuth2AuthUrl(String),
+    OAuth2TokenUrl(String),
+    OAuth2ClientId(String),
+    OAuth2ClientSecret(String),
+    OAuth2Scopes(String),
+    OAuth2RedirectUri(String),
+    OAuth2PkceEnabled(bool),
+    OAuth2AccessToken(String),
+    OAuth2RefreshToken(String),
 }
 
 #[derive(Debug, Default)]
@@ -345,6 +357,16 @@ impl HttpRequestView {
                     *user = user.replace(&placeholder, value);
                     *pass = pass.replace(&placeholder, value);
                 }
+                Auth::OAuth2(config) => {
+                    config.auth_url = config.auth_url.replace(&placeholder, value);
+                    config.token_url = config.token_url.replace(&placeholder, value);
+                    config.client_id = config.client_id.replace(&placeholder, value);
+                    config.client_secret = config.client_secret.replace(&placeholder, value);
+                    config.scopes = config.scopes.replace(&placeholder, value);
+                    config.redirect_uri = config.redirect_uri.replace(&placeholder, value);
+                    config.access_token = config.access_token.replace(&placeholder, value);
+                    config.refresh_token = config.refresh_token.replace(&placeholder, value);
+                }
                 Auth::None => {}
             }
         }
@@ -388,6 +410,12 @@ impl HttpRequestView {
             Auth::Basic { user, pass } if !user.is_empty() || !pass.is_empty() => {
                 let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
                 headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
+            }
+            Auth::OAuth2(config) if !config.access_token.is_empty() => {
+                headers.push((
+                    "Authorization".to_string(),
+                    format!("Bearer {}", config.access_token),
+                ));
             }
             _ => {}
         }
@@ -471,6 +499,7 @@ impl HttpRequestView {
                         user: String::new(),
                         pass: String::new(),
                     },
+                    AuthType::OAuth2 => Auth::OAuth2(crate::data::auth::OAuth2Config::default()),
                 };
             }
             Message::AuthInputChanged(input) => match (&mut self.auth, input) {
@@ -497,6 +526,36 @@ impl HttpRequestView {
                 }
                 (Auth::Digest { pass, .. }, AuthInput::DigestPass(new_pass)) => {
                     *pass = new_pass;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2GrantType(grant_type)) => {
+                    config.grant_type = grant_type;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2AuthUrl(url)) => {
+                    config.auth_url = url;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2TokenUrl(url)) => {
+                    config.token_url = url;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2ClientId(id)) => {
+                    config.client_id = id;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2ClientSecret(secret)) => {
+                    config.client_secret = secret;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2Scopes(scopes)) => {
+                    config.scopes = scopes;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2RedirectUri(uri)) => {
+                    config.redirect_uri = uri;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2PkceEnabled(enabled)) => {
+                    config.pkce_enabled = enabled;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2AccessToken(token)) => {
+                    config.access_token = token;
+                }
+                (Auth::OAuth2(config), AuthInput::OAuth2RefreshToken(token)) => {
+                    config.refresh_token = token;
                 }
                 _ => {}
             },
@@ -704,6 +763,12 @@ impl HttpRequestView {
             }
             Message::ToggleWordWrap => {
                 self.word_wrap = !self.word_wrap;
+            }
+            Message::OAuth2StartAuth => {
+                // Handled in app.rs
+            }
+            Message::OAuth2RefreshToken => {
+                // Handled in app.rs
             }
         }
     }
@@ -1107,6 +1172,54 @@ impl HttpRequestView {
                     .on_input(|p| Message::AuthInputChanged(AuthInput::DigestPass(p)))
                     .padding(10)
                     .secure(true),
+            ]
+            .spacing(10),
+            Auth::OAuth2(config) => column![
+                text("OAuth 2.0 Configuration").size(16),
+                pick_list(
+                    &crate::data::auth::OAuth2GrantType::ALL[..],
+                    Some(config.grant_type.clone()),
+                    |gt| Message::AuthInputChanged(AuthInput::OAuth2GrantType(gt)),
+                )
+                .padding(10),
+                text_input("Authorization URL", &config.auth_url)
+                    .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2AuthUrl(u)))
+                    .padding(10),
+                text_input("Token URL", &config.token_url)
+                    .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2TokenUrl(u)))
+                    .padding(10),
+                text_input("Client ID", &config.client_id)
+                    .on_input(|id| Message::AuthInputChanged(AuthInput::OAuth2ClientId(id)))
+                    .padding(10),
+                text_input("Client Secret", &config.client_secret)
+                    .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2ClientSecret(s)))
+                    .padding(10)
+                    .secure(true),
+                text_input("Scopes (space-separated)", &config.scopes)
+                    .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2Scopes(s)))
+                    .padding(10),
+                text_input("Redirect URI", &config.redirect_uri)
+                    .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(u)))
+                    .padding(10),
+                row![
+                    text("PKCE:"),
+                    button(if config.pkce_enabled { "ON" } else { "OFF" })
+                        .on_press(Message::AuthInputChanged(AuthInput::OAuth2PkceEnabled(!config.pkce_enabled))),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+                button("Get Authorization").on_press(Message::OAuth2StartAuth),
+                rule::horizontal(10),
+                text("Token Status").size(14),
+                text_input("Access Token", &config.access_token)
+                    .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2AccessToken(t)))
+                    .padding(10)
+                    .secure(true),
+                text_input("Refresh Token", &config.refresh_token)
+                    .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(t)))
+                    .padding(10)
+                    .secure(true),
+                button("Refresh Token").on_press(Message::OAuth2RefreshToken),
             ]
             .spacing(10),
             Auth::None => column![text("No authentication required.").size(14),].spacing(10),
