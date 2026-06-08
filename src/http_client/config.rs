@@ -56,17 +56,14 @@ impl fmt::Display for RetryConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum RedirectPolicy {
+    #[default]
     Follow,
     NoFollow,
     Limited(u32),
 }
 
-impl Default for RedirectPolicy {
-    fn default() -> Self {
-        RedirectPolicy::Follow
-    }
-}
 
 impl RedirectPolicy {
     #[allow(dead_code)]

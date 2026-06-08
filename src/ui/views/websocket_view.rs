@@ -1,4 +1,5 @@
-use crate::protocols::websocket::{WsMessage, WsMessageType, WsStatus};
+use crate::protocols::websocket::{WsMessage, WsMessageType, WsSender, WsStatus};
+
 use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
@@ -12,15 +13,16 @@ pub enum Message {
     AddHeader,
     RemoveHeader(usize),
     Connect,
+    ConnectedWithSender(WsSender),
     Disconnect,
-    Connected,
     Disconnected(String),
-    MessageReceived(WsMessage),
     SendMessage(String),
     InputChanged(String),
+    ToggleHeaders,
+    ToggleAutoReconnect,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WebSocketView {
     pub url: String,
     pub headers: Vec<(String, String)>,
@@ -30,6 +32,8 @@ pub struct WebSocketView {
     pub messages: Vec<WsMessage>,
     pub input: String,
     pub show_headers: bool,
+    pub auto_reconnect: bool,
+    pub ws_sender: Option<WsSender>,
 }
 
 impl Clone for WebSocketView {
@@ -43,6 +47,25 @@ impl Clone for WebSocketView {
             messages: self.messages.clone(),
             input: self.input.clone(),
             show_headers: self.show_headers,
+            auto_reconnect: self.auto_reconnect,
+            ws_sender: self.ws_sender.clone(),
+        }
+    }
+}
+
+impl Default for WebSocketView {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            headers: Vec::new(),
+            header_key: String::new(),
+            header_value: String::new(),
+            status: WsStatus::Disconnected,
+            messages: Vec::new(),
+            input: String::new(),
+            show_headers: false,
+            auto_reconnect: false,
+            ws_sender: None,
         }
     }
 }
@@ -80,6 +103,14 @@ impl WebSocketView {
         .spacing(8)
         .align_y(Alignment::Center);
 
+        let auto_reconnect_label = if self.auto_reconnect {
+            "[x] Auto-reconnect"
+        } else {
+            "[ ] Auto-reconnect"
+        };
+        let auto_reconnect_toggle =
+            button(text(auto_reconnect_label).size(12)).on_press(Message::ToggleAutoReconnect);
+
         let header_toggle = button(
             text(if self.show_headers {
                 "Hide Headers"
@@ -88,7 +119,7 @@ impl WebSocketView {
             })
             .size(12),
         )
-        .on_press(Message::Connect);
+        .on_press(Message::ToggleHeaders);
 
         let headers_section = if self.show_headers {
             let mut header_list = column![].spacing(4);
@@ -176,9 +207,14 @@ impl WebSocketView {
             button("Clear").on_press(Message::Disconnected("cleared".to_string()))
         };
 
-        let header = row![text("WebSocket").size(16), header_toggle, clear_button,]
-            .spacing(10)
-            .align_y(Alignment::Center);
+        let header = row![
+            text("WebSocket").size(16),
+            auto_reconnect_toggle,
+            header_toggle,
+            clear_button,
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
 
         container(
             column![

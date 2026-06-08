@@ -5,7 +5,6 @@ use iced::{
     Alignment, Color, Element, Length, Renderer, Theme,
 };
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Message {
     ToggleExpanded(usize),
@@ -14,15 +13,27 @@ pub enum Message {
     LoadRequest(i32),
     NewCollectionNameChanged(String),
     CreateCollection,
-    RenameCollection(usize, String),
+    StartRenameCollection(usize),
+    RenameCollectionValueChanged(String),
+    ConfirmRenameCollection,
+    CancelRenameCollection,
     DeleteCollection(usize),
+    ImportCollection,
+    ImportCollectionData(Option<String>),
+    ExportCollection(usize),
+    ExportCollectionData(String),
     NewFolderNameChanged(i32, String),
     CreateFolder(i32),
-    RenameFolder(i32, String),
+    StartRenameFolder(i32),
+    RenameFolderValueChanged(String),
+    ConfirmRenameFolder,
+    CancelRenameFolder,
     DeleteFolder(i32),
-    NewCollectionRequestName(String),
     SaveCurrentRequest,
-    RenameRequest(i32, String),
+    StartRenameRequest(i32),
+    RenameRequestValueChanged(String),
+    ConfirmRenameRequest,
+    CancelRenameRequest,
     DeleteRequest(i32),
     Close,
 }
@@ -48,11 +59,11 @@ pub struct CollectionView {
     pub new_folder_name: String,
     pub new_request_name: String,
     pub new_folder_target: Option<i32>,
-    pub rename_collection_index: Option<usize>,
+    pub renaming_collection: Option<usize>,
     pub rename_collection_value: String,
-    pub rename_folder_id: Option<i32>,
+    pub renaming_folder: Option<i32>,
     pub rename_folder_value: String,
-    pub rename_request_id: Option<i32>,
+    pub renaming_request: Option<i32>,
     pub rename_request_value: String,
 }
 
@@ -70,11 +81,11 @@ impl Clone for CollectionView {
             new_folder_name: self.new_folder_name.clone(),
             new_request_name: self.new_request_name.clone(),
             new_folder_target: self.new_folder_target,
-            rename_collection_index: self.rename_collection_index,
+            renaming_collection: self.renaming_collection,
             rename_collection_value: self.rename_collection_value.clone(),
-            rename_folder_id: self.rename_folder_id,
+            renaming_folder: self.renaming_folder,
             rename_folder_value: self.rename_folder_value.clone(),
-            rename_request_id: self.rename_request_id,
+            renaming_request: self.renaming_request,
             rename_request_value: self.rename_request_value.clone(),
         }
     }
@@ -106,6 +117,9 @@ impl CollectionView {
             }
             Message::Close => {
                 self.panel_state = PanelState::Collections;
+                self.renaming_collection = None;
+                self.renaming_folder = None;
+                self.renaming_request = None;
                 None
             }
             Message::NewCollectionNameChanged(name) => {
@@ -121,6 +135,7 @@ impl CollectionView {
             Message::DeleteCollection(idx) => {
                 if idx < self.collections.len() {
                     self.collections.remove(idx);
+                    self.expanded_collections.remove(idx);
                 }
                 None
             }
@@ -128,9 +143,70 @@ impl CollectionView {
                 self.folders.retain(|f| f.id != folder_id);
                 None
             }
+            Message::ImportCollection => None,
+            Message::ImportCollectionData(_) => None,
+            Message::ExportCollection(_) => None,
+            Message::ExportCollectionData(_) => None,
             Message::LoadRequest(req_id) => Some(req_id),
             Message::SaveCurrentRequest => None,
-            _ => None,
+            Message::StartRenameCollection(idx) => {
+                if let Some(col) = self.collections.get(idx) {
+                    self.renaming_collection = Some(idx);
+                    self.rename_collection_value = col.name.clone();
+                }
+                None
+            }
+            Message::RenameCollectionValueChanged(value) => {
+                self.rename_collection_value = value;
+                None
+            }
+            Message::ConfirmRenameCollection => {
+                self.renaming_collection = None;
+                None
+            }
+            Message::CancelRenameCollection => {
+                self.renaming_collection = None;
+                None
+            }
+            Message::StartRenameFolder(folder_id) => {
+                if let Some(folder) = self.folders.iter().find(|f| f.id == folder_id) {
+                    self.renaming_folder = Some(folder_id);
+                    self.rename_folder_value = folder.name.clone();
+                }
+                None
+            }
+            Message::RenameFolderValueChanged(value) => {
+                self.rename_folder_value = value;
+                None
+            }
+            Message::ConfirmRenameFolder => {
+                self.renaming_folder = None;
+                None
+            }
+            Message::CancelRenameFolder => {
+                self.renaming_folder = None;
+                None
+            }
+            Message::StartRenameRequest(req_id) => {
+                if let Some(req) = self.requests.iter().find(|r| r.id == req_id) {
+                    self.renaming_request = Some(req_id);
+                    self.rename_request_value = req.name.clone();
+                }
+                None
+            }
+            Message::RenameRequestValueChanged(value) => {
+                self.rename_request_value = value;
+                None
+            }
+            Message::ConfirmRenameRequest => {
+                self.renaming_request = None;
+                None
+            }
+            Message::CancelRenameRequest => {
+                self.renaming_request = None;
+                None
+            }
+            Message::DeleteRequest(_req_id) => None,
         }
     }
 
@@ -174,6 +250,7 @@ impl CollectionView {
         let header = row![
             text("Collections").size(16),
             button("+").on_press(Message::CreateCollection),
+            button("Import").on_press(Message::ImportCollection),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
@@ -201,16 +278,36 @@ impl CollectionView {
                 .unwrap_or(false);
             let expand_icon = if is_expanded { "v " } else { "> " };
 
-            let col_row = row![
-                button(text(format!("{}{}", expand_icon, col.name)).size(13))
-                    .on_press(Message::ToggleExpanded(index)),
-                button(text("x").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                    .on_press(Message::DeleteCollection(index)),
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center);
+            let is_renaming = self.renaming_collection == Some(index);
 
-            list = list.push(col_row);
+            if is_renaming {
+                let rename_row = row![
+                    text_input("New name...", &self.rename_collection_value)
+                        .on_input(Message::RenameCollectionValueChanged)
+                        .size(13)
+                        .padding(5),
+                    button(text("OK").size(11)).on_press(Message::ConfirmRenameCollection),
+                    button(text("X").size(11)).on_press(Message::CancelRenameCollection),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center);
+                list = list.push(rename_row);
+            } else {
+                let col_row = row![
+                    button(text(format!("{}{}", expand_icon, col.name)).size(13))
+                        .on_press(Message::ToggleExpanded(index)),
+                    button(text("R").size(10))
+                        .on_press(Message::StartRenameCollection(index)),
+                    button(text("E").size(10))
+                        .on_press(Message::ExportCollection(index)),
+                    button(text("x").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                        .on_press(Message::DeleteCollection(index)),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center);
+
+                list = list.push(col_row);
+            }
 
             if is_expanded {
                 let detail_button = button(
@@ -274,27 +371,76 @@ impl CollectionView {
             let is_expanded = self.expanded_folders.get(f_idx).copied().unwrap_or(false);
             let expand_icon = if is_expanded { "v " } else { "> " };
 
-            let folder_button =
-                button(row![text(format!("{}{}/", expand_icon, folder.name)).size(13),].spacing(4))
-                    .on_press(Message::ToggleExpanded(col_idx));
+            let is_renaming = self.renaming_folder == Some(folder.id);
 
-            list = list.push(folder_button);
+            if is_renaming {
+                let rename_row = row![
+                    text_input("New name...", &self.rename_folder_value)
+                        .on_input(Message::RenameFolderValueChanged)
+                        .size(13)
+                        .padding(5),
+                    button(text("OK").size(11)).on_press(Message::ConfirmRenameFolder),
+                    button(text("X").size(11)).on_press(Message::CancelRenameFolder),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center);
+                list = list.push(rename_row);
+            } else {
+                let folder_row = row![
+                    button(
+                        row![text(format!("{}{}/", expand_icon, folder.name)).size(13)]
+                            .spacing(4)
+                    )
+                    .on_press(Message::ToggleExpanded(col_idx)),
+                    button(text("R").size(10))
+                        .on_press(Message::StartRenameFolder(folder.id)),
+                    button(text("x").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                        .on_press(Message::DeleteFolder(folder.id)),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center);
+
+                list = list.push(folder_row);
+            }
 
             if is_expanded {
                 for req in &self.requests {
                     if req.folder_id == Some(folder.id) {
                         let method_color = theme::method_color(&req.method);
-                        let req_button = button(
-                            row![
+                        let is_req_renaming = self.renaming_request == Some(req.id);
+
+                        if is_req_renaming {
+                            let rename_row = row![
+                                text_input("New name...", &self.rename_request_value)
+                                    .on_input(Message::RenameRequestValueChanged)
+                                    .size(11)
+                                    .padding(3),
+                                button(text("OK").size(10))
+                                    .on_press(Message::ConfirmRenameRequest),
+                                button(text("X").size(10))
+                                    .on_press(Message::CancelRenameRequest),
+                            ]
+                            .spacing(4)
+                            .align_y(Alignment::Center);
+                            list = list.push(rename_row);
+                        } else {
+                            let req_row = row![
                                 text(format!("    {}", req.method))
                                     .size(11)
                                     .color(method_color),
                                 text(&req.name).size(11),
+                                button(text("R").size(9))
+                                    .on_press(Message::StartRenameRequest(req.id)),
+                                button(text("x").size(9).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                                    .on_press(Message::DeleteRequest(req.id)),
                             ]
-                            .spacing(6),
-                        )
-                        .on_press(Message::LoadRequest(req.id));
-                        list = list.push(req_button);
+                            .spacing(4)
+                            .align_y(Alignment::Center);
+
+                            let req_button =
+                                button(req_row).on_press(Message::LoadRequest(req.id));
+                            list = list.push(req_button);
+                        }
                     }
                 }
 
@@ -320,16 +466,35 @@ impl CollectionView {
 
         for req in &root_requests {
             let method_color = theme::method_color(&req.method);
-            let url_short: String = req.url.chars().take(35).collect();
-            let req_button = button(
-                row![
+            let is_req_renaming = self.renaming_request == Some(req.id);
+
+            if is_req_renaming {
+                let rename_row = row![
+                    text_input("New name...", &self.rename_request_value)
+                        .on_input(Message::RenameRequestValueChanged)
+                        .size(12)
+                        .padding(3),
+                    button(text("OK").size(11)).on_press(Message::ConfirmRenameRequest),
+                    button(text("X").size(11)).on_press(Message::CancelRenameRequest),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center);
+                list = list.push(rename_row);
+            } else {
+                let url_short: String = req.url.chars().take(35).collect();
+                let req_row = row![
                     text(&req.method).size(12).color(method_color),
                     text(url_short).size(12),
+                    button(text("R").size(10)).on_press(Message::StartRenameRequest(req.id)),
+                    button(text("x").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                        .on_press(Message::DeleteRequest(req.id)),
                 ]
-                .spacing(6),
-            )
-            .on_press(Message::LoadRequest(req.id));
-            list = list.push(req_button);
+                .spacing(6)
+                .align_y(Alignment::Center);
+
+                let req_button = button(req_row).on_press(Message::LoadRequest(req.id));
+                list = list.push(req_button);
+            }
         }
 
         container(
@@ -369,19 +534,38 @@ impl CollectionView {
         for req in &self.requests {
             if req.folder_id == Some(folder_id) {
                 let method_color = theme::method_color(&req.method);
-                let url_short: String = req.url.chars().take(35).collect();
-                let req_button = button(
-                    row![
+                let is_req_renaming = self.renaming_request == Some(req.id);
+
+                if is_req_renaming {
+                    let rename_row = row![
+                        text_input("New name...", &self.rename_request_value)
+                            .on_input(Message::RenameRequestValueChanged)
+                            .size(12)
+                            .padding(3),
+                        button(text("OK").size(11)).on_press(Message::ConfirmRenameRequest),
+                        button(text("X").size(11)).on_press(Message::CancelRenameRequest),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center);
+                    list = list.push(rename_row);
+                } else {
+                    let url_short: String = req.url.chars().take(35).collect();
+                    let req_row = row![
                         text(&req.method).size(12).color(method_color),
                         text(&req.name).size(12),
                         text(url_short)
                             .size(11)
                             .color(Color::from_rgb(0.4, 0.4, 0.4)),
+                        button(text("R").size(10)).on_press(Message::StartRenameRequest(req.id)),
+                        button(text("x").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                            .on_press(Message::DeleteRequest(req.id)),
                     ]
-                    .spacing(6),
-                )
-                .on_press(Message::LoadRequest(req.id));
-                list = list.push(req_button);
+                    .spacing(6)
+                    .align_y(Alignment::Center);
+
+                    let req_button = button(req_row).on_press(Message::LoadRequest(req.id));
+                    list = list.push(req_button);
+                }
             }
         }
 

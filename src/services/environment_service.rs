@@ -17,6 +17,21 @@ pub fn delete(conn: &Connection, id: i32) -> Result<(), String> {
     database::delete_environment(conn, id).map_err(|e| e.to_string())
 }
 
+pub fn create_and_refresh(conn: &Connection, name: &str) -> Result<Vec<Environment>, String> {
+    create(conn, name)?;
+    Ok(get_all(conn))
+}
+
+pub fn save_and_refresh(conn: &Connection, env: &Environment) -> Result<Vec<Environment>, String> {
+    update(conn, env)?;
+    Ok(get_all(conn))
+}
+
+pub fn delete_and_refresh(conn: &Connection, id: i32) -> Result<Vec<Environment>, String> {
+    delete(conn, id)?;
+    Ok(get_all(conn))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,5 +84,35 @@ mod tests {
 
         let envs = get_all(&conn);
         assert!(envs.is_empty());
+    }
+
+    #[test]
+    fn create_and_refresh_returns_full_list() {
+        let conn = setup_test_db();
+        let envs = create_and_refresh(&conn, "dev").unwrap();
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].name, "dev");
+
+        let envs = create_and_refresh(&conn, "prod").unwrap();
+        assert_eq!(envs.len(), 2);
+    }
+
+    #[test]
+    fn save_and_refresh_reflects_changes() {
+        let conn = setup_test_db();
+        let mut env = create(&conn, "dev").unwrap();
+        env.name = "development".to_string();
+        let envs = save_and_refresh(&conn, &env).unwrap();
+        assert_eq!(envs[0].name, "development");
+    }
+
+    #[test]
+    fn delete_and_refresh_removes_entry() {
+        let conn = setup_test_db();
+        let env = create(&conn, "dev").unwrap();
+        create(&conn, "prod").unwrap();
+        let envs = delete_and_refresh(&conn, env.id).unwrap();
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].name, "prod");
     }
 }

@@ -1,17 +1,58 @@
 use crate::persistence::database::{self, Environment};
+use crate::protocols::websocket::{WsEvent, WsSender};
 use crate::ui::views::collection_view::{self, CollectionView};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use crate::ui::views::websocket_view::{self, WebSocketView};
 use iced::{
     widget::{button, column, container, pick_list, row, rule, text},
-    Alignment, Element, Length, Task,
+    Alignment, Element, Length, Subscription, Task,
 };
 use iced_aw::{TabLabel, Tabs};
 use reqwest;
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 use super::views::http_request_view::{self, HttpRequestView};
 use crate::http_client::client;
+
+use iced::futures::stream::BoxStream;
+use iced::futures::{self, StreamExt as _};
+use iced_futures::subscription::{from_recipe, EventStream, Recipe};
+
+struct WsRecipe {
+    receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>,
+}
+
+impl Recipe for WsRecipe {
+    type Output = Message;
+
+    fn hash(&self, state: &mut iced_futures::subscription::Hasher) {
+        use std::hash::Hash;
+        std::any::TypeId::of::<WsRecipe>().hash(state);
+    }
+
+    fn stream(self: Box<Self>, _input: EventStream) -> BoxStream<'static, Message> {
+        let receiver_arc = self.receiver;
+        futures::stream::unfold(receiver_arc, |arc| async move {
+            // Take the receiver out of the Option temporarily
+            let mut receiver = {
+                let mut guard = arc.lock().ok()?;
+                guard.take()?
+            };
+            // Await outside the lock so we don't hold MutexGuard across await
+            let event = receiver.recv().await?;
+            // Put the receiver back
+            if let Ok(mut guard) = arc.lock() {
+                *guard = Some(receiver);
+            }
+            Some((Message::WsEvent(event), arc))
+        })
+        .boxed()
+    }
+}
+
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
@@ -41,6 +82,7 @@ pub enum View {
 pub fn main() -> iced::Result {
     iced::application(AstraNovaApp::new, AstraNovaApp::update, AstraNovaApp::view)
         .title("AstraNova Client")
+        .subscription(AstraNovaApp::subscription)
         .run()
 }
 
@@ -59,6 +101,8 @@ struct AstraNovaApp {
     current_view: View,
     show_history: bool,
     show_collections: bool,
+    ws_sender: Option<WsSender>,
+    ws_receiver: Option<Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +120,8 @@ pub enum Message {
     CollectionMsg(collection_view::Message),
     ToggleCollections,
     WebSocketMsg(websocket_view::Message),
+    WsEvent(crate::protocols::websocket::WsEvent),
+    WsConnected(WsSender, Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>),
     SelectProtocol(Protocol),
 }
 
@@ -106,8 +152,8 @@ impl AstraNovaApp {
             }
         };
 
-        let history = database::get_request_history(&db_conn, 50).unwrap_or_default();
-        let collections = database::get_collections(&db_conn).unwrap_or_default();
+        let history = crate::services::history_service::get_all(&db_conn, 50);
+        let collections = crate::services::collection_service::get_all(&db_conn);
 
         let mut cv = CollectionView::new();
         cv.sync_collections(&collections);
@@ -131,6 +177,8 @@ impl AstraNovaApp {
             current_view: View::Main,
             show_history: false,
             show_collections: false,
+            ws_sender: None,
+            ws_receiver: None,
         };
         (app, Task::none())
     }
@@ -180,7 +228,7 @@ impl AstraNovaApp {
                             if let Ok(response) = result {
                                 let request_data = view.pending_request_data.take();
                                 let response_data = serde_json::to_string(response).ok();
-                                let _ = database::save_request_history(
+                                let _ = crate::services::history_service::save_raw(
                                     &self.db_conn,
                                     &response.method,
                                     &response.url,
@@ -189,9 +237,8 @@ impl AstraNovaApp {
                                     request_data.as_deref(),
                                     response_data.as_deref(),
                                 );
-                                let history = database::get_request_history(&self.db_conn, 50)
-                                    .unwrap_or_default();
-                                self.history_view.entries = history;
+                                self.history_view.entries =
+                                    crate::services::history_service::get_all(&self.db_conn, 50);
                             }
                             view.update(msg);
                         }
@@ -243,61 +290,58 @@ impl AstraNovaApp {
                 self.env_manager_view.update(msg.clone());
                 match msg {
                     environment_manager::Message::CreateEnvironment => {
-                        match database::create_environment(
+                        let name = self.env_manager_view.new_environment_name.clone();
+                        match crate::services::environment_service::create_and_refresh(
                             &self.db_conn,
-                            &self.env_manager_view.new_environment_name,
+                            &name,
                         ) {
-                            Ok(new_env) => {
-                                self.environments.push(new_env.clone());
+                            Ok(environments) => {
+                                let new_env = environments.last().cloned();
+                                self.environments = environments;
                                 self.env_manager_view.environments = self.environments.clone();
                                 self.env_manager_view.new_environment_name = String::new();
-                                self.env_manager_view.selected_environment = Some(new_env);
+                                if let Some(env) = new_env {
+                                    self.env_manager_view.selected_environment = Some(env);
+                                }
                             }
                             Err(e) => log::error!("Error creating environment: {}", e),
                         }
                     }
                     environment_manager::Message::SaveEnvironment => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
-                            match database::update_environment(&self.db_conn, env) {
-                                Ok(_) => match database::get_environments(&self.db_conn) {
-                                    Ok(environments) => {
-                                        self.environments = environments;
-                                        self.env_manager_view.environments =
-                                            self.environments.clone();
-                                        if let Some(selected_env) =
-                                            &self.env_manager_view.selected_environment
-                                        {
-                                            self.env_manager_view.selected_environment = self
-                                                .environments
-                                                .iter()
-                                                .find(|e| e.id == selected_env.id)
-                                                .cloned();
-                                        }
+                            match crate::services::environment_service::save_and_refresh(
+                                &self.db_conn,
+                                env,
+                            ) {
+                                Ok(environments) => {
+                                    self.environments = environments;
+                                    self.env_manager_view.environments =
+                                        self.environments.clone();
+                                    if let Some(selected_env) =
+                                        &self.env_manager_view.selected_environment
+                                    {
+                                        self.env_manager_view.selected_environment = self
+                                            .environments
+                                            .iter()
+                                            .find(|e| e.id == selected_env.id)
+                                            .cloned();
                                     }
-                                    Err(e) => {
-                                        log::error!("Error getting environments after save: {}", e)
-                                    }
-                                },
+                                }
                                 Err(e) => log::error!("Error saving environment: {}", e),
                             }
                         }
                     }
                     environment_manager::Message::DeleteEnvironment => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
-                            match database::delete_environment(&self.db_conn, env.id) {
-                                Ok(_) => match database::get_environments(&self.db_conn) {
-                                    Ok(environments) => {
-                                        self.environments = environments;
-                                        self.env_manager_view.environments =
-                                            self.environments.clone();
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "Error getting environments after delete: {}",
-                                            e
-                                        )
-                                    }
-                                },
+                            match crate::services::environment_service::delete_and_refresh(
+                                &self.db_conn,
+                                env.id,
+                            ) {
+                                Ok(environments) => {
+                                    self.environments = environments;
+                                    self.env_manager_view.environments =
+                                        self.environments.clone();
+                                }
                                 Err(e) => log::error!("Error deleting environment: {}", e),
                             }
                         }
@@ -358,7 +402,8 @@ impl AstraNovaApp {
             Message::ToggleCollections => {
                 self.show_collections = !self.show_collections;
                 if self.show_collections {
-                    self.refresh_collections();
+                    let cols = crate::services::collection_service::get_all(&self.db_conn);
+                    self.collection_view.sync_collections(&cols);
                 }
             }
             Message::CollectionMsg(msg) => {
@@ -369,9 +414,12 @@ impl AstraNovaApp {
                     collection_view::Message::CreateCollection => {
                         let name = self.collection_view.new_collection_name.clone();
                         if !name.is_empty() {
-                            match database::create_collection(&self.db_conn, &name, None) {
-                                Ok(_col) => {
-                                    self.refresh_collections();
+                            match crate::services::collection_service::create_and_refresh(
+                                &self.db_conn,
+                                &name,
+                            ) {
+                                Ok(cols) => {
+                                    self.collection_view.sync_collections(&cols);
                                     self.collection_view.new_collection_name.clear();
                                 }
                                 Err(e) => log::error!("Error creating collection: {}", e),
@@ -383,14 +431,17 @@ impl AstraNovaApp {
                             collection_view::PanelState::CollectionDetail(idx);
                         if let Some(col) = self.collection_view.collections.get(idx) {
                             let col_id = col.id;
-                            match database::get_folders(&self.db_conn, col_id) {
-                                Ok(folders) => self.collection_view.sync_folders(&folders),
-                                Err(e) => log::error!("Error getting folders: {}", e),
-                            }
-                            match database::get_collection_requests(&self.db_conn, col_id, None) {
-                                Ok(reqs) => self.collection_view.sync_requests(&reqs),
-                                Err(e) => log::error!("Error getting requests: {}", e),
-                            }
+                            let folders = crate::services::collection_service::get_folders(
+                                &self.db_conn,
+                                col_id,
+                            );
+                            self.collection_view.sync_folders(&folders);
+                            let reqs = crate::services::collection_service::get_requests(
+                                &self.db_conn,
+                                col_id,
+                                None,
+                            );
+                            self.collection_view.sync_requests(&reqs);
                         }
                     }
                     collection_view::Message::SelectFolder(folder_id) => {
@@ -400,14 +451,12 @@ impl AstraNovaApp {
                             self.collection_view.panel_state =
                                 collection_view::PanelState::FolderDetail(col_idx, folder_id);
                             if let Some(col) = self.collection_view.collections.get(col_idx) {
-                                match database::get_collection_requests(
+                                let reqs = crate::services::collection_service::get_requests(
                                     &self.db_conn,
                                     col.id,
                                     Some(folder_id),
-                                ) {
-                                    Ok(reqs) => self.collection_view.sync_requests(&reqs),
-                                    Err(e) => log::error!("Error getting folder requests: {}", e),
-                                }
+                                );
+                                self.collection_view.sync_requests(&reqs);
                             }
                         }
                     }
@@ -420,9 +469,13 @@ impl AstraNovaApp {
                     collection_view::Message::CreateFolder(col_id) => {
                         let name = self.collection_view.new_folder_name.clone();
                         if !name.is_empty() {
-                            match database::create_folder(&self.db_conn, col_id, &name, None) {
-                                Ok(_) => {
-                                    self.refresh_collection_folders(col_id);
+                            match crate::services::collection_service::create_folder_and_refresh(
+                                &self.db_conn,
+                                col_id,
+                                &name,
+                            ) {
+                                Ok(folders) => {
+                                    self.collection_view.sync_folders(&folders);
                                     self.collection_view.new_folder_name.clear();
                                 }
                                 Err(e) => log::error!("Error creating folder: {}", e),
@@ -431,17 +484,269 @@ impl AstraNovaApp {
                     }
                     collection_view::Message::DeleteCollection(idx) => {
                         if let Some(col) = self.collection_view.collections.get(idx) {
-                            let _ = database::delete_collection(&self.db_conn, col.id);
-                            self.refresh_collections();
+                            match crate::services::collection_service::delete_and_refresh(
+                                &self.db_conn,
+                                col.id,
+                            ) {
+                                Ok(cols) => self.collection_view.sync_collections(&cols),
+                                Err(e) => log::error!("Error deleting collection: {}", e),
+                            }
                         }
                     }
                     collection_view::Message::DeleteFolder(folder_id) => {
-                        let _ = database::delete_folder(&self.db_conn, folder_id);
                         if let collection_view::PanelState::CollectionDetail(col_idx) =
                             self.collection_view.panel_state
                         {
                             if let Some(col) = self.collection_view.collections.get(col_idx) {
-                                self.refresh_collection_folders(col.id);
+                                match crate::services::collection_service::delete_folder_and_refresh(
+                                    &self.db_conn,
+                                    col.id,
+                                    folder_id,
+                                ) {
+                                    Ok(folders) => self.collection_view.sync_folders(&folders),
+                                    Err(e) => log::error!("Error deleting folder: {}", e),
+                                }
+                            }
+                        }
+                    }
+                    collection_view::Message::ImportCollection => {
+                        return Task::perform(
+                            async move {
+                                let file = rfd::AsyncFileDialog::new()
+                                    .add_filter("Postman Collection", &["json"])
+                                    .pick_file()
+                                    .await;
+                                if let Some(file_handle) = file {
+                                    let data = file_handle.read().await;
+                                    if let Ok(content) = std::str::from_utf8(&data) {
+                                        return Some(content.to_string());
+                                    }
+                                }
+                                None
+                            },
+                            |result| {
+                                Message::CollectionMsg(
+                                    collection_view::Message::ImportCollectionData(result),
+                                )
+                            },
+                        );
+                    }
+                    collection_view::Message::ImportCollectionData(Some(json)) => {
+                        match crate::import::postman::parse_postman_collection(&json) {
+                            Ok(imported) => {
+                                match crate::services::collection_service::create_and_refresh(
+                                    &self.db_conn,
+                                    &imported.name,
+                                ) {
+                                    Ok(cols) => {
+                                        if let Some(new_col) = cols.last() {
+                                            for folder in &imported.folders {
+                                                match crate::services::collection_service::create_folder(
+                                                    &self.db_conn,
+                                                    new_col.id,
+                                                    &folder.name,
+                                                ) {
+                                                    Ok(created_folder) => {
+                                                        for req in &folder.requests {
+                                                            let _ = crate::services::collection_service::save_request(
+                                                                &self.db_conn,
+                                                                new_col.id,
+                                                                Some(created_folder.id),
+                                                                &req.name,
+                                                                &req.method,
+                                                                &req.url,
+                                                                &req.headers,
+                                                                req.body.as_deref(),
+                                                                "text",
+                                                                "none",
+                                                                None,
+                                                                &req.params,
+                                                                None,
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => log::error!("Error creating folder: {}", e),
+                                                }
+                                            }
+                                            for req in &imported.requests {
+                                                let _ = crate::services::collection_service::save_request(
+                                                    &self.db_conn,
+                                                    new_col.id,
+                                                    None,
+                                                    &req.name,
+                                                    &req.method,
+                                                    &req.url,
+                                                    &req.headers,
+                                                    req.body.as_deref(),
+                                                    "text",
+                                                    "none",
+                                                    None,
+                                                    &req.params,
+                                                    None,
+                                                );
+                                            }
+                                            let cols = crate::services::collection_service::get_all(&self.db_conn);
+                                            self.collection_view.sync_collections(&cols);
+                                        }
+                                    }
+                                    Err(e) => log::error!("Error creating collection: {}", e),
+                                }
+                            }
+                            Err(e) => log::error!("Error parsing Postman collection: {}", e),
+                        }
+                    }
+                    collection_view::Message::ImportCollectionData(None) => {}
+                    collection_view::Message::ExportCollection(idx) => {
+                        if let Some(col) = self.collection_view.collections.get(idx) {
+                            let folders = crate::services::collection_service::get_folders(
+                                &self.db_conn,
+                                col.id,
+                            );
+                            let requests = crate::services::collection_service::get_requests(
+                                &self.db_conn,
+                                col.id,
+                                None,
+                            );
+                            match crate::export::postman::export_collection(col, &folders, &requests) {
+                                Ok(json) => {
+                                    let col_name = col.name.clone();
+                                    return Task::perform(
+                                        async move {
+                                            let file = rfd::AsyncFileDialog::new()
+                                                .add_filter("Postman Collection", &["json"])
+                                                .set_file_name(&format!("{}.json", col_name))
+                                                .save_file()
+                                                .await;
+                                            if let Some(file_handle) = file {
+                                                let path = file_handle.path().to_path_buf();
+                                                let _ = tokio::fs::write(&path, json.as_bytes()).await;
+                                            }
+                                            None::<()>
+                                        },
+                                        |_: Option<_>| Message::CollectionMsg(
+                                            collection_view::Message::ExportCollectionData(
+                                                String::new(),
+                                            ),
+                                        ),
+                                    );
+                                }
+                                Err(e) => log::error!("Error exporting collection: {}", e),
+                            }
+                        }
+                    }
+                    collection_view::Message::ExportCollectionData(_) => {}
+                    collection_view::Message::ConfirmRenameCollection => {
+                        if let Some(idx) = self.collection_view.renaming_collection {
+                            let new_name = self.collection_view.rename_collection_value.clone();
+                            if let Some(col) = self.collection_view.collections.get(idx) {
+                                match crate::services::collection_service::rename(
+                                    &self.db_conn,
+                                    col,
+                                    &new_name,
+                                ) {
+                                    Ok(()) => {
+                                        let cols = crate::services::collection_service::get_all(&self.db_conn);
+                                        self.collection_view.sync_collections(&cols);
+                                    }
+                                    Err(e) => log::error!("Error renaming collection: {}", e),
+                                }
+                            }
+                        }
+                    }
+                    collection_view::Message::ConfirmRenameFolder => {
+                        if let Some(folder_id) = self.collection_view.renaming_folder {
+                            let new_name = self.collection_view.rename_folder_value.clone();
+                            match crate::services::collection_service::rename_folder(
+                                &self.db_conn,
+                                folder_id,
+                                &new_name,
+                            ) {
+                                Ok(()) => {
+                                    if let collection_view::PanelState::CollectionDetail(col_idx) =
+                                        self.collection_view.panel_state
+                                    {
+                                        if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                            let folders = crate::services::collection_service::get_folders(
+                                                &self.db_conn,
+                                                col.id,
+                                            );
+                                            self.collection_view.sync_folders(&folders);
+                                        }
+                                    }
+                                }
+                                Err(e) => log::error!("Error renaming folder: {}", e),
+                            }
+                        }
+                    }
+                    collection_view::Message::ConfirmRenameRequest => {
+                        if let Some(req_id) = self.collection_view.renaming_request {
+                            let new_name = self.collection_view.rename_request_value.clone();
+                            match crate::services::collection_service::rename_request(
+                                &self.db_conn,
+                                req_id,
+                                &new_name,
+                            ) {
+                                Ok(()) => {
+                                    if let collection_view::PanelState::CollectionDetail(col_idx) =
+                                        self.collection_view.panel_state
+                                    {
+                                        if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                            let reqs = crate::services::collection_service::get_requests(
+                                                &self.db_conn,
+                                                col.id,
+                                                None,
+                                            );
+                                            self.collection_view.sync_requests(&reqs);
+                                        }
+                                    } else if let collection_view::PanelState::FolderDetail(
+                                        col_idx,
+                                        folder_id,
+                                    ) = self.collection_view.panel_state
+                                    {
+                                        if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                            let reqs = crate::services::collection_service::get_requests(
+                                                &self.db_conn,
+                                                col.id,
+                                                Some(folder_id),
+                                            );
+                                            self.collection_view.sync_requests(&reqs);
+                                        }
+                                    }
+                                }
+                                Err(e) => log::error!("Error renaming request: {}", e),
+                            }
+                        }
+                    }
+                    collection_view::Message::DeleteRequest(req_id) => {
+                        if let collection_view::PanelState::CollectionDetail(col_idx) =
+                            self.collection_view.panel_state
+                        {
+                            if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                match crate::services::collection_service::delete_request_and_refresh(
+                                    &self.db_conn,
+                                    col.id,
+                                    None,
+                                    req_id,
+                                ) {
+                                    Ok(reqs) => self.collection_view.sync_requests(&reqs),
+                                    Err(e) => log::error!("Error deleting request: {}", e),
+                                }
+                            }
+                        } else if let collection_view::PanelState::FolderDetail(
+                            col_idx,
+                            folder_id,
+                        ) = self.collection_view.panel_state
+                        {
+                            if let Some(col) = self.collection_view.collections.get(col_idx) {
+                                match crate::services::collection_service::delete_request_and_refresh(
+                                    &self.db_conn,
+                                    col.id,
+                                    Some(folder_id),
+                                    req_id,
+                                ) {
+                                    Ok(reqs) => self.collection_view.sync_requests(&reqs),
+                                    Err(e) => log::error!("Error deleting request: {}", e),
+                                }
                             }
                         }
                     }
@@ -455,68 +760,58 @@ impl AstraNovaApp {
                 }
                 self.collection_view.update(msg);
             }
-            Message::HistoryMsg(msg) => match &msg {
+            Message::HistoryMsg(msg) => match msg.clone() {
                 history_view::Message::ClearHistory => {
-                    let _ = database::delete_request_history(&self.db_conn);
+                    crate::services::history_service::clear(&self.db_conn);
                     self.history_view.update(msg);
                 }
                 history_view::Message::ResendEntry(entry_id) => {
-                    if let Ok(Some(entry)) =
-                        database::get_request_history_entry_by_id(&self.db_conn, *entry_id)
+                    if let Some(entry) =
+                        crate::services::history_service::get_by_id(&self.db_conn, entry_id)
                     {
-                        let mut new_view = HttpRequestView::default();
-                        if let Some(request_data) = &entry.request_data {
-                            if let Ok(request) = serde_json::from_str::<
-                                crate::http_client::request::HttpRequest,
-                            >(request_data)
-                            {
-                                new_view.url_input = request.url;
-                                new_view.method = Box::leak(request.method.into_boxed_str());
-                                if let Some(body) = &request.body {
-                                    new_view.body_input =
-                                        iced::widget::text_editor::Content::with_text(body);
-                                }
-                                new_view.headers_editor.entries = request
-                                    .headers
-                                    .iter()
-                                    .map(|(k, v)| {
-                                        crate::ui::components::key_value_editor::KeyValueEntry {
-                                            id: 0,
-                                            key: k.clone(),
-                                            value: v.clone(),
-                                        }
-                                    })
-                                    .collect();
-                                new_view.params_editor.entries = request
-                                    .config
-                                    .proxy_url
-                                    .iter()
-                                    .map(|p| {
-                                        crate::ui::components::key_value_editor::KeyValueEntry {
-                                            id: 0,
-                                            key: "proxy".to_string(),
-                                            value: p.clone(),
-                                        }
-                                    })
-                                    .collect();
-                                if !request.multipart_fields.is_empty() {
-                                    new_view.body_type = http_request_view::BodyType::Multipart;
-                                }
-                            }
-                        } else {
-                            new_view.url_input = entry.url;
-                            new_view.method = Box::leak(entry.method.into_boxed_str());
+                        if let Some(new_view) =
+                            crate::services::request_restoration::build_view_from_history(&entry)
+                        {
+                            self.request_tabs.push(new_view);
+                            self.active_request_tab_index = self.request_tabs.len() - 1;
                         }
-                        self.request_tabs.push(new_view);
-                        self.active_request_tab_index = self.request_tabs.len() - 1;
                     }
+                    self.history_view.update(msg);
+                }
+                history_view::Message::SearchChanged(_) => {
+                    self.history_view.update(msg);
+                }
+                history_view::Message::FilterMethod(_) => {
+                    self.history_view.update(msg);
+                }
+                history_view::Message::ExportHistory => {
                     self.history_view.update(msg);
                 }
             },
             Message::SelectProtocol(protocol) => {
                 self.active_protocol = protocol;
             }
-            Message::WebSocketMsg(msg) => match msg.clone() {
+            Message::WsEvent(event) => match event {
+                crate::protocols::websocket::WsEvent::Connected => {
+                    self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
+                }
+                crate::protocols::websocket::WsEvent::Message(msg) => {
+                    self.websocket_view.messages.push(msg);
+                }
+                crate::protocols::websocket::WsEvent::Disconnected(reason) => {
+                    self.websocket_view.status =
+                        crate::protocols::websocket::WsStatus::Disconnected;
+                    self.ws_sender = None;
+                    log::info!("WebSocket disconnected: {}", reason);
+                }
+                crate::protocols::websocket::WsEvent::Error(e) => {
+                    self.websocket_view.status =
+                        crate::protocols::websocket::WsStatus::Error(e.clone());
+                    self.ws_sender = None;
+                    log::error!("WebSocket error: {}", e);
+                }
+            },
+            Message::WebSocketMsg(msg) => match msg {
                 websocket_view::Message::Connect => {
                     let url = self.websocket_view.url.clone();
                     let headers = self.websocket_view.headers.clone();
@@ -528,8 +823,11 @@ impl AstraNovaApp {
                             crate::protocols::websocket::connect_ws(&request).await
                         },
                         |result| match result {
-                            Ok((_sink, _stream)) => {
-                                Message::WebSocketMsg(websocket_view::Message::Connected)
+                            Ok(conn) => {
+                                Message::WsConnected(
+                                    conn.sender,
+                                    Arc::new(Mutex::new(Some(conn.receiver))),
+                                )
                             }
                             Err(e) => {
                                 Message::WebSocketMsg(websocket_view::Message::Disconnected(e))
@@ -537,16 +835,27 @@ impl AstraNovaApp {
                         },
                     );
                 }
-                websocket_view::Message::Connected => {
-                    self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
+                websocket_view::Message::Disconnect => {
+                    self.ws_sender = None;
+                    self.ws_receiver = None;
+                    self.websocket_view.status =
+                        crate::protocols::websocket::WsStatus::Disconnected;
                 }
                 websocket_view::Message::Disconnected(reason) => {
                     if reason == "cleared" {
                         self.websocket_view.messages.clear();
                     } else {
                         self.websocket_view.status =
-                            crate::protocols::websocket::WsStatus::Error(reason);
+                            crate::protocols::websocket::WsStatus::Disconnected;
+                        self.ws_sender = None;
+                        self.ws_receiver = None;
                     }
+                }
+                websocket_view::Message::ToggleHeaders => {
+                    self.websocket_view.show_headers = !self.websocket_view.show_headers;
+                }
+                websocket_view::Message::ToggleAutoReconnect => {
+                    self.websocket_view.auto_reconnect = !self.websocket_view.auto_reconnect;
                 }
                 websocket_view::Message::UrlChanged(url) => {
                     self.websocket_view.url = url;
@@ -574,18 +883,36 @@ impl AstraNovaApp {
                 websocket_view::Message::InputChanged(input) => {
                     self.websocket_view.input = input;
                 }
-                websocket_view::Message::SendMessage(text) => {
-                    if !text.is_empty() {
-                        self.websocket_view
-                            .messages
-                            .push(crate::protocols::websocket::WsMessage::outgoing(text));
-                        self.websocket_view.input.clear();
+                websocket_view::Message::SendMessage(text)
+                    if !text.is_empty() => {
+                        if let Some(sender) = &self.ws_sender {
+                            if sender.send(&text).is_ok() {
+                                self.websocket_view.messages.push(
+                                    crate::protocols::websocket::WsMessage::outgoing(text.clone()),
+                                );
+                                self.websocket_view.input.clear();
+                            }
+                        }
                     }
-                }
                 _ => {}
             },
+            Message::WsConnected(sender, receiver_arc) => {
+                self.ws_sender = Some(sender);
+                self.ws_receiver = Some(receiver_arc);
+                self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
+            }
         }
         Task::none()
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        if let Some(receiver_arc) = &self.ws_receiver {
+            from_recipe(WsRecipe {
+                receiver: receiver_arc.clone(),
+            })
+        } else {
+            Subscription::none()
+        }
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -746,24 +1073,12 @@ impl AstraNovaApp {
         }
     }
 
-    fn refresh_collections(&mut self) {
-        if let Ok(collections) = database::get_collections(&self.db_conn) {
-            self.collection_view.sync_collections(&collections);
-        }
-    }
-
-    fn refresh_collection_folders(&mut self, col_id: i32) {
-        if let Ok(folders) = database::get_folders(&self.db_conn, col_id) {
-            self.collection_view.sync_folders(&folders);
-        }
-    }
-
     fn load_collection_request(&mut self, req_id: i32) {
         let conn = &self.db_conn;
         let all_reqs = match &self.collection_view.panel_state {
             collection_view::PanelState::CollectionDetail(idx) => {
                 if let Some(col) = self.collection_view.collections.get(*idx) {
-                    database::get_collection_requests(conn, col.id, None).unwrap_or_default()
+                    crate::services::collection_service::get_requests(conn, col.id, None)
                 } else {
                     return;
                 }
@@ -779,62 +1094,8 @@ impl AstraNovaApp {
             None => return,
         };
 
-        let mut new_view = HttpRequestView::default();
-        new_view.url_input = req.url;
-        new_view.method = Box::leak(req.method.into_boxed_str());
-
-        if let Some(body) = &req.body {
-            new_view.body_input = iced::widget::text_editor::Content::with_text(body);
-        }
-
-        if req.body_type == "multipart" {
-            new_view.body_type = http_request_view::BodyType::Multipart;
-        }
-
-        new_view.headers_editor.entries = req
-            .headers
-            .iter()
-            .map(
-                |(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
-                    id: 0,
-                    key: k.clone(),
-                    value: v.clone(),
-                },
-            )
-            .collect();
-
-        new_view.params_editor.entries = req
-            .params
-            .iter()
-            .map(
-                |(k, v)| crate::ui::components::key_value_editor::KeyValueEntry {
-                    id: 0,
-                    key: k.clone(),
-                    value: v.clone(),
-                },
-            )
-            .collect();
-
-        match req.auth_type.as_str() {
-            "bearer" => {
-                if let Some(token) = &req.auth_data {
-                    new_view.auth = crate::data::auth::Auth::BearerToken(token.clone());
-                }
-            }
-            "basic" => {
-                if let Some(data) = &req.auth_data {
-                    let parts: Vec<&str> = data.splitn(2, ':').collect();
-                    if parts.len() == 2 {
-                        new_view.auth = crate::data::auth::Auth::Basic {
-                            user: parts[0].to_string(),
-                            pass: parts[1].to_string(),
-                        };
-                    }
-                }
-            }
-            _ => {}
-        }
-
+        let new_view =
+            crate::services::request_restoration::build_view_from_collection_request(&req);
         self.request_tabs.push(new_view);
         self.active_request_tab_index = self.request_tabs.len() - 1;
     }
@@ -891,7 +1152,7 @@ impl AstraNovaApp {
                 format!("{} {}", request.method, request.url)
             };
 
-            let _ = database::save_collection_request(
+            let _ = crate::services::collection_service::save_request(
                 &self.db_conn,
                 col_id,
                 None,
@@ -907,10 +1168,12 @@ impl AstraNovaApp {
                 None,
             );
 
-            match database::get_collection_requests(&self.db_conn, col_id, None) {
-                Ok(reqs) => self.collection_view.sync_requests(&reqs),
-                Err(e) => log::error!("Error refreshing requests: {}", e),
-            }
+            let reqs = crate::services::collection_service::get_requests(
+                &self.db_conn,
+                col_id,
+                None,
+            );
+            self.collection_view.sync_requests(&reqs);
         }
     }
 }

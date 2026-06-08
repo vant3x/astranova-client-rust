@@ -1,5 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -66,43 +67,96 @@ pub struct WsRequest {
     pub headers: Vec<(String, String)>,
 }
 
-pub async fn connect_ws(
-    request: &WsRequest,
-) -> Result<
-    (
-        futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-            Message,
-        >,
-        futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-        >,
-    ),
-    String,
-> {
+pub struct WsSender {
+    tx: mpsc::UnboundedSender<String>,
+}
+
+impl Clone for WsSender {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for WsSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WsSender")
+    }
+}
+
+impl WsSender {
+    pub fn send(&self, text: &str) -> Result<(), String> {
+        self.tx
+            .send(text.to_string())
+            .map_err(|e| format!("Send error: {}", e))
+    }
+}
+
+pub struct WsConnection {
+    pub receiver: mpsc::UnboundedReceiver<WsEvent>,
+    pub sender: WsSender,
+}
+
+#[derive(Debug, Clone)]
+pub enum WsEvent {
+    Message(WsMessage),
+    Connected,
+    Disconnected(String),
+    Error(String),
+}
+
+pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, String> {
     let (ws_stream, _response) = connect_async(&request.url)
         .await
         .map_err(|e| format!("WebSocket connection failed: {}", e))?;
 
-    Ok(ws_stream.split())
-}
+    let (mut write, mut read) = ws_stream.split();
 
-pub async fn send_text(
-    sink: &mut futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-        Message,
-    >,
-    text: &str,
-) -> Result<(), String> {
-    sink.send(Message::Text(text.to_string()))
-        .await
-        .map_err(|e| format!("Send failed: {}", e))
+    for (key, value) in &request.headers {
+        write
+            .send(Message::Text(format!("{}: {}", key, value)))
+            .await
+            .map_err(|e| format!("Failed to send header: {}", e))?;
+    }
+
+    let (tx_out, mut rx_out) = mpsc::unbounded_channel::<String>();
+    let (tx_event, rx_event) = mpsc::unbounded_channel::<WsEvent>();
+
+    let tx_event_clone = tx_event.clone();
+
+    tokio::spawn(async move {
+        while let Some(msg) = rx_out.recv().await {
+            if let Err(e) = write.send(Message::Text(msg)).await {
+                let _ = tx_event_clone.send(WsEvent::Error(format!("Send error: {}", e)));
+                break;
+            }
+        }
+    });
+
+    tokio::spawn(async move {
+        while let Some(result) = read.next().await {
+            match result {
+                Ok(msg) => {
+                    if let Some(ws_msg) = parse_ws_message(msg) {
+                        if tx_event.send(WsEvent::Message(ws_msg)).is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx_event.send(WsEvent::Error(format!("Read error: {}", e)));
+                    break;
+                }
+            }
+        }
+        let _ = tx_event.send(WsEvent::Disconnected("Connection closed".to_string()));
+    });
+
+    Ok(WsConnection {
+        receiver: rx_event,
+        sender: WsSender { tx: tx_out },
+    })
 }
 
 pub fn parse_ws_message(msg: Message) -> Option<WsMessage> {
@@ -186,5 +240,17 @@ mod tests {
         let cloned = req.clone();
         assert_eq!(req.url, cloned.url);
         assert_eq!(req.headers, cloned.headers);
+    }
+
+    #[test]
+    fn ws_event_clone() {
+        let msg = WsMessage::incoming(WsMessageType::Text, "test".to_string());
+        let event = WsEvent::Message(msg.clone());
+        match event {
+            WsEvent::Message(m) => {
+                assert_eq!(m.data, "test");
+            }
+            _ => panic!("Expected Message"),
+        }
     }
 }

@@ -22,6 +22,19 @@ pub fn save(
     .map_err(|e| e.to_string())
 }
 
+pub fn save_raw(
+    conn: &Connection,
+    method: &str,
+    url: &str,
+    status: Option<u16>,
+    duration_ms: Option<u64>,
+    request_data: Option<&str>,
+    response_data: Option<&str>,
+) -> Result<(), String> {
+    database::save_request_history(conn, method, url, status, duration_ms, request_data, response_data)
+        .map_err(|e| e.to_string())
+}
+
 pub fn get_all(conn: &Connection, limit: usize) -> Vec<RequestHistoryEntry> {
     database::get_request_history(conn, limit).unwrap_or_default()
 }
