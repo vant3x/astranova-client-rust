@@ -11,11 +11,11 @@ pub fn build_view_from_history(entry: &RequestHistoryEntry) -> Option<HttpReques
             apply_request_to_view(&mut view, &request);
         } else {
             view.url_input = entry.url.clone();
-            view.method = Box::leak(entry.method.clone().into_boxed_str());
+            view.method = entry.method.clone();
         }
     } else {
         view.url_input = entry.url.clone();
-        view.method = Box::leak(entry.method.clone().into_boxed_str());
+        view.method = entry.method.clone();
     }
 
     Some(view)
@@ -24,7 +24,7 @@ pub fn build_view_from_history(entry: &RequestHistoryEntry) -> Option<HttpReques
 pub fn build_view_from_collection_request(req: &CollectionRequest) -> HttpRequestView {
     let mut view = HttpRequestView::default();
     view.url_input = req.url.clone();
-    view.method = Box::leak(req.method.clone().into_boxed_str());
+    view.method = req.method.clone();
 
     if let Some(body) = &req.body {
         view.body_input = iced::widget::text_editor::Content::with_text(body);
@@ -81,7 +81,7 @@ pub fn build_view_from_collection_request(req: &CollectionRequest) -> HttpReques
 
 fn apply_request_to_view(view: &mut HttpRequestView, request: &HttpRequest) {
     view.url_input = request.url.clone();
-    view.method = Box::leak(request.method.clone().into_boxed_str());
+    view.method = request.method.clone();
 
     if let Some(body) = &request.body {
         view.body_input = iced::widget::text_editor::Content::with_text(body);

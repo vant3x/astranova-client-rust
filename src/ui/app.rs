@@ -4,6 +4,7 @@ use crate::ui::views::collection_view::{self, CollectionView};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use crate::ui::views::websocket_view::{self, WebSocketView};
+use crate::ui::toast::ToastManager;
 use crate::data::auth::Auth;
 use iced::{
     widget::{button, column, container, pick_list, row, rule, text},
@@ -104,13 +105,19 @@ struct AstraNovaApp {
     show_collections: bool,
     ws_sender: Option<WsSender>,
     ws_receiver: Option<Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>>,
+    ws_shutdown: Option<mpsc::UnboundedSender<()>>,
+    ws_write_handle: Option<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>>,
+    ws_read_handle: Option<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>>,
+    toast_manager: ToastManager,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Message {
     HttpRequestViewMsg(usize, http_request_view::Message),
     AddRequestTab,
     CloseRequestTab(usize),
+    CloseActiveRequestTab,
+    NoOp,
     SelectRequestTab(usize),
     EnvManagerMsg(environment_manager::Message),
     EnvFileLoaded(Option<Vec<(String, String)>>),
@@ -122,12 +129,55 @@ pub enum Message {
     ToggleCollections,
     WebSocketMsg(websocket_view::Message),
     WsEvent(crate::protocols::websocket::WsEvent),
-    WsConnected(WsSender, Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>),
+    WsConnected(
+        WsSender,
+        Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>,
+        Option<mpsc::UnboundedSender<()>>,
+        Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+        Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    ),
     SelectProtocol(Protocol),
     OAuth2StartAuth(usize),
     OAuth2AuthComplete(usize, Result<String, String>),
     OAuth2TokenReceived(usize, Result<crate::data::oauth2::OAuth2TokenResponse, String>),
     OAuth2RefreshToken(usize),
+    OAuth2StartDeviceAuth(usize),
+    OAuth2DeviceAuthReceived(usize, Result<crate::data::oauth2::DeviceAuthorizationResponse, String>),
+    OAuth2DeviceTokenPoll(usize, Result<crate::data::oauth2::DeviceTokenResponse, String>),
+}
+
+impl Clone for Message {
+    fn clone(&self) -> Self {
+        match self {
+            Self::HttpRequestViewMsg(i, m) => Self::HttpRequestViewMsg(*i, m.clone()),
+            Self::AddRequestTab => Self::AddRequestTab,
+            Self::CloseRequestTab(i) => Self::CloseRequestTab(*i),
+            Self::CloseActiveRequestTab => Self::CloseActiveRequestTab,
+            Self::NoOp => Self::NoOp,
+            Self::SelectRequestTab(i) => Self::SelectRequestTab(*i),
+            Self::EnvManagerMsg(m) => Self::EnvManagerMsg(m.clone()),
+            Self::EnvFileLoaded(v) => Self::EnvFileLoaded(v.clone()),
+            Self::SelectEnvironment(i) => Self::SelectEnvironment(*i),
+            Self::SwitchView(v) => Self::SwitchView(*v),
+            Self::HistoryMsg(m) => Self::HistoryMsg(m.clone()),
+            Self::ToggleHistory => Self::ToggleHistory,
+            Self::CollectionMsg(m) => Self::CollectionMsg(m.clone()),
+            Self::ToggleCollections => Self::ToggleCollections,
+            Self::WebSocketMsg(m) => Self::WebSocketMsg(m.clone()),
+            Self::WsEvent(e) => Self::WsEvent(e.clone()),
+            Self::WsConnected(s, r, st, wh, rh) => {
+                Self::WsConnected(s.clone(), r.clone(), st.clone(), Arc::clone(wh), Arc::clone(rh))
+            }
+            Self::SelectProtocol(p) => Self::SelectProtocol(p.clone()),
+            Self::OAuth2StartAuth(i) => Self::OAuth2StartAuth(*i),
+            Self::OAuth2AuthComplete(i, r) => Self::OAuth2AuthComplete(*i, r.clone()),
+            Self::OAuth2TokenReceived(i, r) => Self::OAuth2TokenReceived(*i, r.clone()),
+            Self::OAuth2RefreshToken(i) => Self::OAuth2RefreshToken(*i),
+            Self::OAuth2StartDeviceAuth(i) => Self::OAuth2StartDeviceAuth(*i),
+            Self::OAuth2DeviceAuthReceived(i, r) => Self::OAuth2DeviceAuthReceived(*i, r.clone()),
+            Self::OAuth2DeviceTokenPoll(i, r) => Self::OAuth2DeviceTokenPoll(*i, r.clone()),
+        }
+    }
 }
 
 impl AstraNovaApp {
@@ -184,6 +234,10 @@ impl AstraNovaApp {
             show_collections: false,
             ws_sender: None,
             ws_receiver: None,
+            ws_shutdown: None,
+            ws_write_handle: None,
+            ws_read_handle: None,
+            toast_manager: ToastManager::new(),
         };
         (app, Task::none())
     }
@@ -230,20 +284,31 @@ impl AstraNovaApp {
                             );
                         }
                         http_request_view::Message::ResponseReceived(ref result) => {
-                            if let Ok(response) = result {
-                                let request_data = view.pending_request_data.take();
-                                let response_data = serde_json::to_string(response).ok();
-                                let _ = crate::services::history_service::save_raw(
-                                    &self.db_conn,
-                                    &response.method,
-                                    &response.url,
-                                    Some(response.status),
-                                    Some(response.duration.as_millis() as u64),
-                                    request_data.as_deref(),
-                                    response_data.as_deref(),
-                                );
-                                self.history_view.entries =
-                                    crate::services::history_service::get_all(&self.db_conn, 50);
+                            match result {
+                                Ok(response) => {
+                                    let request_data = view.pending_request_data.take();
+                                    let response_data = serde_json::to_string(response).ok();
+                                    let _ = crate::services::history_service::save_raw(
+                                        &self.db_conn,
+                                        &response.method,
+                                        &response.url,
+                                        Some(response.status),
+                                        Some(response.duration.as_millis() as u64),
+                                        request_data.as_deref(),
+                                        response_data.as_deref(),
+                                    );
+                                    self.history_view.entries =
+                                        crate::services::history_service::get_all(&self.db_conn, 50);
+
+                                    if response.status >= 400 {
+                                        self.toast_manager.warning(format!("{} {}", response.status, response.url));
+                                    } else {
+                                        self.toast_manager.success(format!("{} {} - {}ms", response.status, response.url, response.duration.as_millis()));
+                                    }
+                                }
+                                Err(e) => {
+                                    self.toast_manager.error(format!("Request failed: {}", e));
+                                }
                             }
                             view.update(msg);
                         }
@@ -274,6 +339,11 @@ impl AstraNovaApp {
                                 Message::OAuth2RefreshToken(index)
                             });
                         }
+                        http_request_view::Message::OAuth2StartDeviceAuth => {
+                            return Task::perform(async {}, move |_| {
+                                Message::OAuth2StartDeviceAuth(index)
+                            });
+                        }
                         _ => view.update(msg),
                     }
                 }
@@ -298,6 +368,16 @@ impl AstraNovaApp {
                     }
                 }
             }
+            Message::CloseActiveRequestTab => {
+                if self.request_tabs.len() > 1 {
+                    let index = self.active_request_tab_index;
+                    self.request_tabs.remove(index);
+                    if self.active_request_tab_index >= self.request_tabs.len() {
+                        self.active_request_tab_index = self.request_tabs.len() - 1;
+                    }
+                }
+            }
+            Message::NoOp => {}
             Message::SelectRequestTab(index) => {
                 self.active_request_tab_index = index;
             }
@@ -842,6 +922,9 @@ impl AstraNovaApp {
                                 Message::WsConnected(
                                     conn.sender,
                                     Arc::new(Mutex::new(Some(conn.receiver))),
+                                    conn.shutdown_tx,
+                                    Arc::new(Mutex::new(Some(conn.write_handle))),
+                                    Arc::new(Mutex::new(Some(conn.read_handle))),
                                 )
                             }
                             Err(e) => {
@@ -851,6 +934,23 @@ impl AstraNovaApp {
                     );
                 }
                 websocket_view::Message::Disconnect => {
+                    if let Some(shutdown_tx) = self.ws_shutdown.take() {
+                        let _ = shutdown_tx.send(());
+                    }
+                    if let Some(handle_arc) = self.ws_write_handle.take() {
+                        if let Ok(mut guard) = handle_arc.lock() {
+                            if let Some(handle) = guard.take() {
+                                handle.abort();
+                            }
+                        }
+                    }
+                    if let Some(handle_arc) = self.ws_read_handle.take() {
+                        if let Ok(mut guard) = handle_arc.lock() {
+                            if let Some(handle) = guard.take() {
+                                handle.abort();
+                            }
+                        }
+                    }
                     self.ws_sender = None;
                     self.ws_receiver = None;
                     self.websocket_view.status =
@@ -860,10 +960,56 @@ impl AstraNovaApp {
                     if reason == "cleared" {
                         self.websocket_view.messages.clear();
                     } else {
-                        self.websocket_view.status =
-                            crate::protocols::websocket::WsStatus::Disconnected;
                         self.ws_sender = None;
                         self.ws_receiver = None;
+
+                        if self.websocket_view.auto_reconnect
+                            && self.websocket_view.current_retries
+                                < self.websocket_view.max_retries
+                        {
+                            self.websocket_view.current_retries += 1;
+                            self.websocket_view.status =
+                                crate::protocols::websocket::WsStatus::Connecting;
+
+                            let url = self.websocket_view.url.clone();
+                            let headers = self.websocket_view.headers.clone();
+                            let delay = self.websocket_view.reconnect_delay_ms;
+
+                            log::info!(
+                                "Auto-reconnect attempt {}/{} after {}ms",
+                                self.websocket_view.current_retries,
+                                self.websocket_view.max_retries,
+                                delay
+                            );
+
+                            return Task::perform(
+                                async move {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(delay))
+                                        .await;
+                                    let request =
+                                        crate::protocols::websocket::WsRequest { url, headers };
+                                    crate::protocols::websocket::connect_ws(&request).await
+                                },
+                                |result| match result {
+                                    Ok(conn) => {
+                                        Message::WsConnected(
+                                            conn.sender,
+                                            Arc::new(Mutex::new(Some(conn.receiver))),
+                                            conn.shutdown_tx,
+                                            Arc::new(Mutex::new(Some(conn.write_handle))),
+                                            Arc::new(Mutex::new(Some(conn.read_handle))),
+                                        )
+                                    }
+                                    Err(e) => Message::WebSocketMsg(
+                                        websocket_view::Message::Disconnected(e),
+                                    ),
+                                },
+                            );
+                        } else {
+                            self.websocket_view.status =
+                                crate::protocols::websocket::WsStatus::Disconnected;
+                            self.websocket_view.current_retries = 0;
+                        }
                     }
                 }
                 websocket_view::Message::ToggleHeaders => {
@@ -871,6 +1017,19 @@ impl AstraNovaApp {
                 }
                 websocket_view::Message::ToggleAutoReconnect => {
                     self.websocket_view.auto_reconnect = !self.websocket_view.auto_reconnect;
+                    if !self.websocket_view.auto_reconnect {
+                        self.websocket_view.current_retries = 0;
+                    }
+                }
+                websocket_view::Message::ReconnectDelayChanged(delay) => {
+                    if let Ok(ms) = delay.parse::<u64>() {
+                        self.websocket_view.reconnect_delay_ms = ms;
+                    }
+                }
+                websocket_view::Message::MaxRetriesChanged(retries) => {
+                    if let Ok(n) = retries.parse::<u32>() {
+                        self.websocket_view.max_retries = n;
+                    }
                 }
                 websocket_view::Message::UrlChanged(url) => {
                     self.websocket_view.url = url;
@@ -911,10 +1070,14 @@ impl AstraNovaApp {
                     }
                 _ => {}
             },
-            Message::WsConnected(sender, receiver_arc) => {
+            Message::WsConnected(sender, receiver_arc, shutdown_tx, write_handle, read_handle) => {
                 self.ws_sender = Some(sender);
                 self.ws_receiver = Some(receiver_arc);
+                self.ws_shutdown = shutdown_tx;
+                self.ws_write_handle = Some(write_handle);
+                self.ws_read_handle = Some(read_handle);
                 self.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
+                self.websocket_view.current_retries = 0;
             }
             Message::OAuth2AuthComplete(index, result) => {
                 if let Some(view) = self.request_tabs.get_mut(index) {
@@ -1004,7 +1167,28 @@ impl AstraNovaApp {
             Message::OAuth2RefreshToken(index) => {
                 if let Some(view) = self.request_tabs.get(index) {
                     if let Auth::OAuth2(config) = &view.auth {
-                        if config.refresh_token.is_empty() {
+                        if !config.device_code.is_empty() {
+                            let token_url = config.token_url.clone();
+                            let device_code = config.device_code.clone();
+                            let client_id = config.client_id.clone();
+                            let client_secret = config.client_secret.clone();
+                            let tab_index = index;
+
+                            return Task::perform(
+                                async move {
+                                    crate::data::oauth2::poll_device_token(
+                                        &token_url,
+                                        &device_code,
+                                        &client_id,
+                                        &client_secret,
+                                    )
+                                    .await
+                                },
+                                move |result| {
+                                    Message::OAuth2DeviceTokenPoll(tab_index, result)
+                                },
+                            );
+                        } else if config.refresh_token.is_empty() {
                             log::warn!("No refresh token available");
                         } else {
                             let token_url = config.token_url.clone();
@@ -1029,18 +1213,132 @@ impl AstraNovaApp {
                     }
                 }
             }
+            Message::OAuth2StartDeviceAuth(index) => {
+                if let Some(view) = self.request_tabs.get(index) {
+                    if let Auth::OAuth2(config) = &view.auth {
+                        if config.device_auth_url.is_empty() {
+                            log::warn!("No device authorization URL configured");
+                        } else {
+                            let device_auth_url = config.device_auth_url.clone();
+                            let client_id = config.client_id.clone();
+                            let scopes = config.scopes.clone();
+                            let tab_index = index;
+
+                            return Task::perform(
+                                async move {
+                                    crate::data::oauth2::device_authorization(
+                                        &device_auth_url,
+                                        &client_id,
+                                        &scopes,
+                                    )
+                                    .await
+                                },
+                                move |result| {
+                                    Message::OAuth2DeviceAuthReceived(tab_index, result)
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+            Message::OAuth2DeviceAuthReceived(index, result) => {
+                if let Some(view) = self.request_tabs.get_mut(index) {
+                    if let Auth::OAuth2(config) = &mut view.auth {
+                        match result {
+                            Ok(device_auth) => {
+                                config.device_code = device_auth.device_code;
+                                config.user_code = device_auth.user_code;
+                                config.verification_uri = device_auth.verification_uri;
+                                config.device_code_expires_in = Some(device_auth.expires_in);
+                                config.device_code_interval = device_auth.interval;
+
+                                let verification_url = config.verification_uri.clone();
+                                let user_code = config.user_code.clone();
+
+                                log::info!(
+                                    "Device authorization received. User code: {}",
+                                    user_code
+                                );
+
+                                let _ = open::that(&verification_url);
+                            }
+                            Err(e) => {
+                                log::error!("Device authorization failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Message::OAuth2DeviceTokenPoll(index, result) => {
+                if let Some(view) = self.request_tabs.get_mut(index) {
+                    if let Auth::OAuth2(config) = &mut view.auth {
+                        match result {
+                            Ok(device_token) => {
+                                if let Some(access_token) = device_token.access_token {
+                                    config.access_token = access_token;
+                                    if let Some(refresh) = device_token.refresh_token {
+                                        config.refresh_token = refresh;
+                                    }
+                                    config.device_code.clear();
+                                    config.user_code.clear();
+                                    config.verification_uri.clear();
+                                    log::info!("Device token received successfully");
+                                } else if let Some(error) = device_token.error {
+                                    if error == "authorization_pending" {
+                                        log::info!("Authorization pending, polling again...");
+                                    } else if error == "slow_down" {
+                                        log::warn!("Slow down detected, increasing interval");
+                                    } else {
+                                        log::error!("Device token error: {}", error);
+                                        config.device_code.clear();
+                                        config.user_code.clear();
+                                        config.verification_uri.clear();
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Device token poll failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
         }
         Task::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        if let Some(receiver_arc) = &self.ws_receiver {
+        let ws_subscription = if let Some(receiver_arc) = &self.ws_receiver {
             from_recipe(WsRecipe {
                 receiver: receiver_arc.clone(),
             })
         } else {
             Subscription::none()
-        }
+        };
+
+        let keyboard_subscription = iced::keyboard::listen().map(|event| {
+            match event {
+                iced::keyboard::Event::KeyPressed { key, modifiers, .. } => {
+                    if modifiers.control() {
+                        match key {
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "n" => Message::AddRequestTab,
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "w" => Message::CloseActiveRequestTab,
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "1" => Message::SelectRequestTab(0),
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "2" => Message::SelectRequestTab(1),
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "3" => Message::SelectRequestTab(2),
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "4" => Message::SelectRequestTab(3),
+                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "5" => Message::SelectRequestTab(4),
+                            _ => Message::NoOp,
+                        }
+                    } else {
+                        Message::NoOp
+                    }
+                }
+                _ => Message::NoOp,
+            }
+        });
+
+        Subscription::batch(vec![ws_subscription, keyboard_subscription])
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -1165,21 +1463,29 @@ impl AstraNovaApp {
                                 .width(Length::FillPortion(1))
                                 .height(Length::Fill);
 
-                        row![
+                        let content = row![
                             main_content.width(Length::FillPortion(2)),
                             rule::vertical(1),
                             history_panel.width(Length::FillPortion(1)),
                             rule::vertical(1),
                             collections_panel.width(Length::FillPortion(1)),
-                        ]
-                        .into()
+                        ];
+
+                        container(content)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .into()
                     } else {
-                        row![
+                        let content = row![
                             main_content.width(Length::FillPortion(3)),
                             rule::vertical(1),
                             history_panel,
-                        ]
-                        .into()
+                        ];
+
+                        container(content)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .into()
                     }
                 } else if self.show_collections {
                     let collections_panel =
@@ -1187,14 +1493,21 @@ impl AstraNovaApp {
                             .width(Length::FillPortion(1))
                             .height(Length::Fill);
 
-                    row![
+                    let content = row![
                         main_content.width(Length::FillPortion(3)),
                         rule::vertical(1),
                         collections_panel,
-                    ]
-                    .into()
+                    ];
+
+                    container(content)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
                 } else {
-                    main_content.into()
+                    container(main_content)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
                 }
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),

@@ -1,6 +1,7 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -38,7 +39,7 @@ impl WsMessage {
             direction: "<".to_string(),
             message_type: msg_type,
             data,
-            timestamp: chrono_now(),
+            timestamp: crate::utils::timestamp_seconds(),
         }
     }
 
@@ -47,7 +48,7 @@ impl WsMessage {
             direction: ">".to_string(),
             message_type: WsMessageType::Text,
             data,
-            timestamp: chrono_now(),
+            timestamp: crate::utils::timestamp_seconds(),
         }
     }
 }
@@ -96,6 +97,19 @@ impl WsSender {
 pub struct WsConnection {
     pub receiver: mpsc::UnboundedReceiver<WsEvent>,
     pub sender: WsSender,
+    pub shutdown_tx: Option<mpsc::UnboundedSender<()>>,
+    pub write_handle: JoinHandle<()>,
+    pub read_handle: JoinHandle<()>,
+}
+
+impl WsConnection {
+    pub fn shutdown(&mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        self.write_handle.abort();
+        self.read_handle.abort();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -107,34 +121,47 @@ pub enum WsEvent {
 }
 
 pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, String> {
-    let (ws_stream, _response) = connect_async(&request.url)
+    let mut request_builder = http::Request::builder();
+
+    for (key, value) in &request.headers {
+        request_builder = request_builder.header(key, value);
+    }
+
+    let (ws_stream, _response) = connect_async(request_builder.uri(&request.url).body(()).unwrap())
         .await
         .map_err(|e| format!("WebSocket connection failed: {}", e))?;
 
     let (mut write, mut read) = ws_stream.split();
 
-    for (key, value) in &request.headers {
-        write
-            .send(Message::Text(format!("{}: {}", key, value)))
-            .await
-            .map_err(|e| format!("Failed to send header: {}", e))?;
-    }
-
     let (tx_out, mut rx_out) = mpsc::unbounded_channel::<String>();
     let (tx_event, rx_event) = mpsc::unbounded_channel::<WsEvent>();
+    let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel::<()>();
 
     let tx_event_clone = tx_event.clone();
 
-    tokio::spawn(async move {
-        while let Some(msg) = rx_out.recv().await {
-            if let Err(e) = write.send(Message::Text(msg)).await {
-                let _ = tx_event_clone.send(WsEvent::Error(format!("Send error: {}", e)));
-                break;
+    let write_handle: JoinHandle<()> = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                msg = rx_out.recv() => {
+                    match msg {
+                        Some(msg) => {
+                            if let Err(e) = write.send(Message::Text(msg)).await {
+                                let _ = tx_event_clone.send(WsEvent::Error(format!("Send error: {}", e)));
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    let _ = write.send(Message::Close(None)).await;
+                    break;
+                }
             }
         }
     });
 
-    tokio::spawn(async move {
+    let read_handle: JoinHandle<()> = tokio::spawn(async move {
         while let Some(result) = read.next().await {
             match result {
                 Ok(msg) => {
@@ -156,6 +183,9 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, String> {
     Ok(WsConnection {
         receiver: rx_event,
         sender: WsSender { tx: tx_out },
+        shutdown_tx: Some(shutdown_tx),
+        write_handle,
+        read_handle,
     })
 }
 
@@ -180,14 +210,6 @@ pub fn parse_ws_message(msg: Message) -> Option<WsMessage> {
         )),
         Message::Frame(_) => None,
     }
-}
-
-fn chrono_now() -> String {
-    use std::time::SystemTime;
-    let duration = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}", duration.as_secs())
 }
 
 #[cfg(test)]

@@ -20,6 +20,8 @@ pub enum Message {
     InputChanged(String),
     ToggleHeaders,
     ToggleAutoReconnect,
+    ReconnectDelayChanged(String),
+    MaxRetriesChanged(String),
 }
 
 #[derive(Debug)]
@@ -33,6 +35,9 @@ pub struct WebSocketView {
     pub input: String,
     pub show_headers: bool,
     pub auto_reconnect: bool,
+    pub reconnect_delay_ms: u64,
+    pub max_retries: u32,
+    pub current_retries: u32,
     pub ws_sender: Option<WsSender>,
 }
 
@@ -48,6 +53,9 @@ impl Clone for WebSocketView {
             input: self.input.clone(),
             show_headers: self.show_headers,
             auto_reconnect: self.auto_reconnect,
+            reconnect_delay_ms: self.reconnect_delay_ms,
+            max_retries: self.max_retries,
+            current_retries: self.current_retries,
             ws_sender: self.ws_sender.clone(),
         }
     }
@@ -65,6 +73,9 @@ impl Default for WebSocketView {
             input: String::new(),
             show_headers: false,
             auto_reconnect: false,
+            reconnect_delay_ms: 3000,
+            max_retries: 5,
+            current_retries: 0,
             ws_sender: None,
         }
     }
@@ -110,6 +121,38 @@ impl WebSocketView {
         };
         let auto_reconnect_toggle =
             button(text(auto_reconnect_label).size(12)).on_press(Message::ToggleAutoReconnect);
+
+        let reconnect_config = if self.auto_reconnect {
+            let delay_input = text_input("Delay (ms)", &self.reconnect_delay_ms.to_string())
+                .on_input(Message::ReconnectDelayChanged)
+                .padding(5)
+                .width(Length::Fixed(100.0));
+
+            let max_retries_input = text_input("Max retries", &self.max_retries.to_string())
+                .on_input(Message::MaxRetriesChanged)
+                .padding(5)
+                .width(Length::Fixed(80.0));
+
+            let retry_info = if self.current_retries > 0 {
+                text(format!("Retry {}/{}", self.current_retries, self.max_retries))
+                    .size(11)
+                    .color(Color::from_rgb(0.8, 0.7, 0.1))
+            } else {
+                text("").size(11)
+            };
+
+            row![
+                text("Delay:").size(12),
+                delay_input,
+                text("Max:").size(12),
+                max_retries_input,
+                retry_info,
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+        } else {
+            row![]
+        };
 
         let header_toggle = button(
             text(if self.show_headers {
@@ -207,14 +250,18 @@ impl WebSocketView {
             button("Clear").on_press(Message::Disconnected("cleared".to_string()))
         };
 
-        let header = row![
-            text("WebSocket").size(16),
-            auto_reconnect_toggle,
-            header_toggle,
-            clear_button,
+        let header = column![
+            row![
+                text("WebSocket").size(16),
+                auto_reconnect_toggle,
+                header_toggle,
+                clear_button,
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+            reconnect_config,
         ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        .spacing(4);
 
         container(
             column![

@@ -102,7 +102,7 @@ impl std::fmt::Display for MultipartFieldType {
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
-    MethodSelected(&'static str),
+    MethodSelected(String),
     TabSelected(TabId),
     ResponseTabSelected(ResponseTab),
     AuthTypeSelected(AuthType),
@@ -143,6 +143,7 @@ pub enum Message {
     ToggleWordWrap,
     OAuth2StartAuth,
     OAuth2RefreshToken,
+    OAuth2StartDeviceAuth,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -176,6 +177,7 @@ pub enum AuthInput {
     OAuth2GrantType(crate::data::auth::OAuth2GrantType),
     OAuth2AuthUrl(String),
     OAuth2TokenUrl(String),
+    OAuth2DeviceAuthUrl(String),
     OAuth2ClientId(String),
     OAuth2ClientSecret(String),
     OAuth2Scopes(String),
@@ -220,7 +222,7 @@ fn status_color(status: u16) -> Color {
 #[derive(Debug)]
 pub struct HttpRequestView {
     pub url_input: String,
-    pub method: &'static str,
+    pub method: String,
     pub body_input: text_editor::Content,
     pub auth: Auth,
     pub headers_editor: KeyValueEditor,
@@ -252,7 +254,7 @@ impl Clone for HttpRequestView {
     fn clone(&self) -> Self {
         Self {
             url_input: self.url_input.clone(),
-            method: self.method,
+            method: self.method.clone(),
             body_input: text_editor::Content::with_text(&self.body_input.text()),
             auth: self.auth.clone(),
             headers_editor: self.headers_editor.clone(),
@@ -288,7 +290,7 @@ impl Default for HttpRequestView {
     fn default() -> Self {
         Self {
             url_input: "https://jsonplaceholder.typicode.com/todos/1".to_string(),
-            method: "GET",
+            method: "GET".to_string(),
             body_input: text_editor::Content::new(),
             auth: Auth::default(),
             headers_editor: KeyValueEditor::new("Add Header".to_string()),
@@ -557,6 +559,9 @@ impl HttpRequestView {
                 (Auth::OAuth2(config), AuthInput::OAuth2RefreshToken(token)) => {
                     config.refresh_token = token;
                 }
+                (Auth::OAuth2(config), AuthInput::OAuth2DeviceAuthUrl(url)) => {
+                    config.device_auth_url = url;
+                }
                 _ => {}
             },
             Message::HeadersEditor(msg) => self.headers_editor.update(msg),
@@ -770,6 +775,9 @@ impl HttpRequestView {
             Message::OAuth2RefreshToken => {
                 // Handled in app.rs
             }
+            Message::OAuth2StartDeviceAuth => {
+                // Handled in app.rs
+            }
         }
     }
 
@@ -916,7 +924,7 @@ impl HttpRequestView {
                 Element::from(column![])
             };
 
-        let method_colored = text(self.method).size(16).color(method_color(self.method));
+        let method_colored = text(self.method.as_str()).size(16).color(method_color(self.method.as_str()));
 
         let status_text = if let Some(status) = self.status_code {
             let color = status_color(status);
@@ -953,8 +961,8 @@ impl HttpRequestView {
             row![
                 pick_list(
                     &HTTP_METHODS[..],
-                    Some(self.method),
-                    Message::MethodSelected
+                    Some(self.method.as_str()),
+                    |s: &str| Message::MethodSelected(s.to_string())
                 )
                 .padding(10),
                 text_input("URL", &self.url_input)
@@ -1174,54 +1182,142 @@ impl HttpRequestView {
                     .secure(true),
             ]
             .spacing(10),
-            Auth::OAuth2(config) => column![
-                text("OAuth 2.0 Configuration").size(16),
-                pick_list(
-                    &crate::data::auth::OAuth2GrantType::ALL[..],
-                    Some(config.grant_type.clone()),
-                    |gt| Message::AuthInputChanged(AuthInput::OAuth2GrantType(gt)),
-                )
-                .padding(10),
-                text_input("Authorization URL", &config.auth_url)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2AuthUrl(u)))
-                    .padding(10),
-                text_input("Token URL", &config.token_url)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2TokenUrl(u)))
-                    .padding(10),
-                text_input("Client ID", &config.client_id)
-                    .on_input(|id| Message::AuthInputChanged(AuthInput::OAuth2ClientId(id)))
-                    .padding(10),
-                text_input("Client Secret", &config.client_secret)
-                    .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2ClientSecret(s)))
-                    .padding(10)
-                    .secure(true),
-                text_input("Scopes (space-separated)", &config.scopes)
-                    .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2Scopes(s)))
-                    .padding(10),
-                text_input("Redirect URI", &config.redirect_uri)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(u)))
-                    .padding(10),
-                row![
-                    text("PKCE:"),
-                    button(if config.pkce_enabled { "ON" } else { "OFF" })
-                        .on_press(Message::AuthInputChanged(AuthInput::OAuth2PkceEnabled(!config.pkce_enabled))),
+            Auth::OAuth2(config) => {
+                let grant_type_fields = match config.grant_type {
+                    crate::data::auth::OAuth2GrantType::AuthorizationCode => column![
+                        text_input("Authorization URL", &config.auth_url)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2AuthUrl(u)))
+                            .padding(10),
+                        text_input("Token URL", &config.token_url)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2TokenUrl(u)))
+                            .padding(10),
+                        text_input("Redirect URI", &config.redirect_uri)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(u)))
+                            .padding(10),
+                        row![
+                            text("PKCE:"),
+                            button(if config.pkce_enabled { "ON" } else { "OFF" })
+                                .on_press(Message::AuthInputChanged(AuthInput::OAuth2PkceEnabled(!config.pkce_enabled))),
+                        ]
+                        .spacing(10)
+                        .align_y(Alignment::Center),
+                        button("Get Authorization").on_press(Message::OAuth2StartAuth),
+                    ]
+                    .spacing(10),
+                    crate::data::auth::OAuth2GrantType::ClientCredentials => column![
+                        text_input("Token URL", &config.token_url)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2TokenUrl(u)))
+                            .padding(10),
+                        text_input("Scopes (space-separated)", &config.scopes)
+                            .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2Scopes(s)))
+                            .padding(10),
+                        button("Get Token").on_press(Message::OAuth2RefreshToken),
+                    ]
+                    .spacing(10),
+                    crate::data::auth::OAuth2GrantType::DeviceCode => column![
+                        text_input("Device Auth URL", &config.device_auth_url)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2DeviceAuthUrl(u)))
+                            .padding(10),
+                        if config.user_code.is_empty() {
+                            Element::from(button("Start Device Authorization").on_press(Message::OAuth2StartDeviceAuth))
+                        } else {
+                            Element::from(column![
+                                container(
+                                    text(format!("  {}  ", config.user_code))
+                                        .size(24)
+                                        .color(Color::from_rgb(0.0, 0.5, 1.0))
+                                )
+                                .padding(15)
+                                .center_x(Length::Fill)
+                                .style(iced::widget::container::rounded_box),
+                                text(format!("Open: {}", config.verification_uri)).size(12),
+                                button("Copy User Code").on_press({
+                                    let code = config.user_code.clone();
+                                    Message::AuthInputChanged(AuthInput::OAuth2AccessToken(code))
+                                }),
+                                button("Poll for Token").on_press(Message::OAuth2RefreshToken),
+                            ].spacing(8))
+                        },
+                    ]
+                    .spacing(10),
+                    crate::data::auth::OAuth2GrantType::Implicit => column![
+                        text_input("Authorization URL", &config.auth_url)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2AuthUrl(u)))
+                            .padding(10),
+                        text_input("Redirect URI", &config.redirect_uri)
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(u)))
+                            .padding(10),
+                        text_input("Scopes (space-separated)", &config.scopes)
+                            .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2Scopes(s)))
+                            .padding(10),
+                        button("Get Authorization").on_press(Message::OAuth2StartAuth),
+                    ]
+                    .spacing(10),
+                };
+
+                column![
+                    row![
+                        text("OAuth 2.0").size(16),
+                        pick_list(
+                            &crate::data::auth::OAuth2GrantType::ALL[..],
+                            Some(config.grant_type.clone()),
+                            |gt| Message::AuthInputChanged(AuthInput::OAuth2GrantType(gt)),
+                        )
+                        .padding(10),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    text_input("Client ID", &config.client_id)
+                        .on_input(|id| Message::AuthInputChanged(AuthInput::OAuth2ClientId(id)))
+                        .padding(10),
+                    text_input("Client Secret", &config.client_secret)
+                        .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2ClientSecret(s)))
+                        .padding(10)
+                        .secure(true),
+                    grant_type_fields,
+                    rule::horizontal(10),
+                    text("Tokens").size(14),
+                    row![
+                        text_input("Access Token", &config.access_token)
+                            .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2AccessToken(t)))
+                            .padding(10)
+                            .secure(true),
+                        button("Copy").on_press({
+                            let token = config.access_token.clone();
+                            Message::AuthInputChanged(AuthInput::OAuth2AccessToken(token))
+                        }),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+                    row![
+                        text_input("Refresh Token", &config.refresh_token)
+                            .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(t)))
+                            .padding(10)
+                            .secure(true),
+                        button("Copy").on_press({
+                            let token = config.refresh_token.clone();
+                            Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(token))
+                        }),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+                    if !config.status.to_string().is_empty() {
+                        Element::from(
+                            text(config.status.to_string())
+                                .size(12)
+                                .color(match &config.status {
+                                    crate::data::auth::OAuth2Status::Error(_) => Color::from_rgb(0.8, 0.2, 0.2),
+                                    crate::data::auth::OAuth2Status::Success(_) => Color::from_rgb(0.2, 0.7, 0.3),
+                                    crate::data::auth::OAuth2Status::Loading => Color::from_rgb(0.8, 0.7, 0.1),
+                                    _ => Color::from_rgb(0.5, 0.5, 0.5),
+                                }),
+                        )
+                    } else {
+                        Element::from(column![])
+                    },
                 ]
                 .spacing(10)
-                .align_y(Alignment::Center),
-                button("Get Authorization").on_press(Message::OAuth2StartAuth),
-                rule::horizontal(10),
-                text("Token Status").size(14),
-                text_input("Access Token", &config.access_token)
-                    .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2AccessToken(t)))
-                    .padding(10)
-                    .secure(true),
-                text_input("Refresh Token", &config.refresh_token)
-                    .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(t)))
-                    .padding(10)
-                    .secure(true),
-                button("Refresh Token").on_press(Message::OAuth2RefreshToken),
-            ]
-            .spacing(10),
+            }
             Auth::None => column![text("No authentication required.").size(14),].spacing(10),
         };
 
@@ -1510,10 +1606,10 @@ mod tests {
     use crate::persistence::database::Environment;
     use crate::ui::components::key_value_editor::KeyValueEntry;
 
-    fn make_view(url: &str, method: &'static str) -> HttpRequestView {
+    fn make_view(url: &str, method: &str) -> HttpRequestView {
         let mut view = HttpRequestView::default();
         view.url_input = url.to_string();
-        view.method = method;
+        view.method = method.to_string();
         view
     }
 

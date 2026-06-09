@@ -13,6 +13,27 @@ pub struct OAuth2TokenResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeviceAuthorizationResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: Option<String>,
+    pub expires_in: u64,
+    pub interval: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeviceTokenResponse {
+    pub access_token: Option<String>,
+    pub token_type: Option<String>,
+    pub expires_in: Option<u64>,
+    pub refresh_token: Option<String>,
+    pub scope: Option<String>,
+    pub error: Option<String>,
+    pub error_description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OAuth2ErrorResponse {
     pub error: String,
     pub error_description: Option<String>,
@@ -240,6 +261,95 @@ pub fn generate_state() -> String {
         .collect()
 }
 
+pub async fn device_authorization(
+    device_auth_url: &str,
+    client_id: &str,
+    scopes: &str,
+) -> Result<DeviceAuthorizationResponse, String> {
+    let client = Client::new();
+    let mut params = vec![("client_id", client_id)];
+
+    if !scopes.is_empty() {
+        params.push(("scope", scopes));
+    }
+
+    let response = client
+        .post(device_auth_url)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send device authorization request: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    if status.is_success() {
+        serde_json::from_str(&body)
+            .map_err(|e| format!("Failed to parse device authorization response: {}", e))
+    } else {
+        let error: OAuth2ErrorResponse =
+            serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
+                error: "unknown_error".to_string(),
+                error_description: Some(body),
+            });
+        Err(format!(
+            "Device authorization failed: {} - {}",
+            error.error,
+            error.error_description.unwrap_or_default()
+        ))
+    }
+}
+
+pub async fn poll_device_token(
+    token_url: &str,
+    device_code: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<DeviceTokenResponse, String> {
+    let client = Client::new();
+    let mut params = vec![
+        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ("device_code", device_code),
+        ("client_id", client_id),
+    ];
+
+    if !client_secret.is_empty() {
+        params.push(("client_secret", client_secret));
+    }
+
+    let response = client
+        .post(token_url)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to poll device token: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    if status.is_success() {
+        serde_json::from_str(&body)
+            .map_err(|e| format!("Failed to parse device token response: {}", e))
+    } else {
+        let error: OAuth2ErrorResponse =
+            serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
+                error: "unknown_error".to_string(),
+                error_description: Some(body),
+            });
+        Err(format!(
+            "Device token poll failed: {} - {}",
+            error.error,
+            error.error_description.unwrap_or_default()
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +450,48 @@ mod tests {
             response.error_description,
             Some("Authorization code expired".to_string())
         );
+    }
+
+    #[test]
+    fn device_authorization_response_deserialization() {
+        let json = r#"{
+            "device_code": "device_code_123",
+            "user_code": "ABCD-1234",
+            "verification_uri": "https://auth.example.com/device",
+            "verification_uri_complete": "https://auth.example.com/device?user_code=ABCD-1234",
+            "expires_in": 600,
+            "interval": 5
+        }"#;
+        let response: DeviceAuthorizationResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.device_code, "device_code_123");
+        assert_eq!(response.user_code, "ABCD-1234");
+        assert_eq!(response.verification_uri, "https://auth.example.com/device");
+        assert_eq!(response.expires_in, 600);
+        assert_eq!(response.interval, Some(5));
+    }
+
+    #[test]
+    fn device_token_response_pending_deserialization() {
+        let json = r#"{
+            "error": "authorization_pending",
+            "error_description": "The authorization request is still pending"
+        }"#;
+        let response: DeviceTokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.error, Some("authorization_pending".to_string()));
+        assert!(response.access_token.is_none());
+    }
+
+    #[test]
+    fn device_token_response_success_deserialization() {
+        let json = r#"{
+            "access_token": "device_token_123",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "refresh_device_token"
+        }"#;
+        let response: DeviceTokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.access_token, Some("device_token_123".to_string()));
+        assert_eq!(response.token_type, Some("Bearer".to_string()));
+        assert_eq!(response.expires_in, Some(3600));
     }
 }

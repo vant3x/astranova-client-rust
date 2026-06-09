@@ -7,6 +7,7 @@ mod persistence;
 mod protocols;
 mod services;
 mod ui;
+mod utils;
 
 fn main() -> iced::Result {
     env_logger::init();

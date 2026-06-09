@@ -234,7 +234,7 @@ pub fn save_request_history(
     request_data: Option<&str>,
     response_data: Option<&str>,
 ) -> Result<()> {
-    let timestamp = chrono_now();
+    let timestamp = crate::utils::timestamp_seconds();
     conn.execute(
         "INSERT INTO request_history (method, url, status, duration_ms, timestamp, request_data, response_data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![method, url, status.map(|s| s as i64), duration_ms.map(|d| d as i64), timestamp, request_data, response_data],
@@ -513,15 +513,6 @@ pub fn move_collection_request(
 pub fn delete_collection_request(conn: &Connection, id: i32) -> Result<()> {
     conn.execute("DELETE FROM collection_requests WHERE id = ?1", [id])?;
     Ok(())
-}
-
-fn chrono_now() -> String {
-    use std::time::SystemTime;
-    let duration = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs();
-    format!("{}", secs)
 }
 
 #[cfg(test)]

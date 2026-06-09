@@ -84,6 +84,7 @@ pub struct OAuth2Config {
     pub grant_type: OAuth2GrantType,
     pub auth_url: String,
     pub token_url: String,
+    pub device_auth_url: String,
     pub client_id: String,
     pub client_secret: String,
     pub scopes: String,
@@ -92,6 +93,22 @@ pub struct OAuth2Config {
     pub access_token: String,
     pub refresh_token: String,
     pub token_expiry: Option<String>,
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub device_code_expires_in: Option<u64>,
+    pub device_code_interval: Option<u64>,
+    pub status: OAuth2Status,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum OAuth2Status {
+    #[default]
+    Idle,
+    Loading,
+    Success(String),
+    Error(String),
+    AwaitingAuthorization,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -100,13 +117,15 @@ pub enum OAuth2GrantType {
     AuthorizationCode,
     ClientCredentials,
     Implicit,
+    DeviceCode,
 }
 
 impl OAuth2GrantType {
-    pub const ALL: [OAuth2GrantType; 3] = [
+    pub const ALL: [OAuth2GrantType; 4] = [
         OAuth2GrantType::AuthorizationCode,
         OAuth2GrantType::ClientCredentials,
         OAuth2GrantType::Implicit,
+        OAuth2GrantType::DeviceCode,
     ];
 }
 
@@ -116,6 +135,19 @@ impl std::fmt::Display for OAuth2GrantType {
             OAuth2GrantType::AuthorizationCode => write!(f, "Authorization Code"),
             OAuth2GrantType::ClientCredentials => write!(f, "Client Credentials"),
             OAuth2GrantType::Implicit => write!(f, "Implicit"),
+            OAuth2GrantType::DeviceCode => write!(f, "Device Code"),
+        }
+    }
+}
+
+impl std::fmt::Display for OAuth2Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OAuth2Status::Idle => write!(f, ""),
+            OAuth2Status::Loading => write!(f, "Loading..."),
+            OAuth2Status::Success(msg) => write!(f, "{}", msg),
+            OAuth2Status::Error(msg) => write!(f, "Error: {}", msg),
+            OAuth2Status::AwaitingAuthorization => write!(f, "Awaiting authorization..."),
         }
     }
 }
