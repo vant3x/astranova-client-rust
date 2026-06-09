@@ -5,6 +5,7 @@ use iced::{
     widget::{button, column, pick_list, row, text, text_input},
     Element, Length,
 };
+use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -138,9 +139,9 @@ impl EnvironmentManagerView {
                 .push(self.variables_editor.view().map(Message::VariablesEditor))
                 .push(
                     row![
-                        button("Save").on_press(Message::SaveEnvironment),
-                        button("Delete").on_press(Message::DeleteEnvironment),
-                        button("Load from .env").on_press(Message::LoadEnvFile)
+                        button(row![lucide::save().size(14), text(" Save")].spacing(4)).on_press(Message::SaveEnvironment),
+                        button(row![lucide::trash().size(14), text(" Delete")].spacing(4)).on_press(Message::DeleteEnvironment),
+                        button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4)).on_press(Message::LoadEnvFile)
                     ]
                     .spacing(10),
                 );
@@ -149,14 +150,14 @@ impl EnvironmentManagerView {
         let create_new_env_section = column![
             text_input("New Environment Name", &self.new_environment_name)
                 .on_input(Message::NewEnvironmentNameChanged),
-            button("Create").on_press(Message::CreateEnvironment)
+            button(row![lucide::plus().size(14), text(" Create")].spacing(4)).on_press(Message::CreateEnvironment)
         ];
 
         let content = column![
             row![text("Environments"), environments_list].spacing(10),
             environment_details,
             create_new_env_section,
-            button("Close").on_press(Message::Close),
+            button(row![lucide::x().size(14), text(" Close")].spacing(4)).on_press(Message::Close),
         ]
         .spacing(20)
         .padding(20);

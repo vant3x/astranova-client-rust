@@ -4,6 +4,7 @@ use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
 };
+use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -91,15 +92,15 @@ impl HistoryView {
 
     pub fn view(&self) -> Element<'_, Message, Theme, Renderer> {
         let clear_button: Element<'_, Message, Theme, Renderer> = if self.entries.is_empty() {
-            button("Clear").into()
+            button(row![lucide::trash().size(14), text(" Clear")].spacing(4)).into()
         } else {
-            button("Clear").on_press(Message::ClearHistory).into()
+            button(row![lucide::trash().size(14), text(" Clear")].spacing(4)).on_press(Message::ClearHistory).into()
         };
 
         let export_button: Element<'_, Message, Theme, Renderer> = if self.entries.is_empty() {
-            button("Export").into()
+            button(row![lucide::download().size(14), text(" Export")].spacing(4)).into()
         } else {
-            button("Export").on_press(Message::ExportHistory).into()
+            button(row![lucide::download().size(14), text(" Export")].spacing(4)).on_press(Message::ExportHistory).into()
         };
 
         let header = row![text("History").size(16), clear_button, export_button]

@@ -4,6 +4,7 @@ use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
 };
+use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -249,8 +250,8 @@ impl CollectionView {
     fn collections_list_view(&self) -> Element<'_, Message, Theme, Renderer> {
         let header = row![
             text("Collections").size(16),
-            button("+").on_press(Message::CreateCollection),
-            button("Import").on_press(Message::ImportCollection),
+            button(lucide::plus().size(14)).on_press(Message::CreateCollection),
+            button(row![lucide::upload().size(14), text(" Import")].spacing(4)).on_press(Message::ImportCollection),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
@@ -261,9 +262,9 @@ impl CollectionView {
             .padding(5);
 
         let save_button: Element<'_, Message, Theme, Renderer> = if self.collections.is_empty() {
-            button(text("Save Current Request")).into()
+            button(row![lucide::save().size(14), text(" Save Current Request")].spacing(4)).into()
         } else {
-            button(text("Save Current Request"))
+            button(row![lucide::save().size(14), text(" Save Current Request")].spacing(4))
                 .on_press(Message::SaveCurrentRequest)
                 .into()
         };
@@ -276,7 +277,6 @@ impl CollectionView {
                 .get(index)
                 .copied()
                 .unwrap_or(false);
-            let expand_icon = if is_expanded { "v " } else { "> " };
 
             let is_renaming = self.renaming_collection == Some(index);
 
@@ -286,21 +286,27 @@ impl CollectionView {
                         .on_input(Message::RenameCollectionValueChanged)
                         .size(13)
                         .padding(5),
-                    button(text("OK").size(11)).on_press(Message::ConfirmRenameCollection),
-                    button(text("X").size(11)).on_press(Message::CancelRenameCollection),
+                    button(lucide::check().size(12)).on_press(Message::ConfirmRenameCollection),
+                    button(lucide::x().size(12)).on_press(Message::CancelRenameCollection),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
                 list = list.push(rename_row);
             } else {
+                let expand_icon: Element<'_, Message, Theme, Renderer> = if is_expanded {
+                    lucide::chevron_down().size(14).into()
+                } else {
+                    lucide::chevron_right().size(14).into()
+                };
+
                 let col_row = row![
-                    button(text(format!("{}{}", expand_icon, col.name)).size(13))
+                    button(row![expand_icon, text(&col.name).size(13)].spacing(4))
                         .on_press(Message::ToggleExpanded(index)),
-                    button(text("R").size(10))
+                    button(lucide::pencil().size(12))
                         .on_press(Message::StartRenameCollection(index)),
-                    button(text("E").size(10))
+                    button(lucide::download().size(12))
                         .on_press(Message::ExportCollection(index)),
-                    button(text("x").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                    button(lucide::trash().size(12).color(Color::from_rgb(0.8, 0.2, 0.2)))
                         .on_press(Message::DeleteCollection(index)),
                 ]
                 .spacing(4)
@@ -350,7 +356,7 @@ impl CollectionView {
             None => return self.collections_list_view(),
         };
 
-        let back_button = button(text("< Back")).on_press(Message::Close);
+        let back_button = button(row![lucide::arrow_left().size(14), text(" Back")].spacing(4)).on_press(Message::Close);
 
         let header = row![back_button, text(&col.name).size(16),]
             .spacing(10)
@@ -361,7 +367,7 @@ impl CollectionView {
             .size(13)
             .padding(5);
 
-        let new_folder_button = button(text("+ Folder")).on_press(Message::CreateFolder(col.id));
+        let new_folder_button = button(row![lucide::folder_plus().size(14), text(" Folder")].spacing(4)).on_press(Message::CreateFolder(col.id));
 
         let folder_controls = row![new_folder_input, new_folder_button].spacing(8);
 
@@ -369,7 +375,6 @@ impl CollectionView {
 
         for (f_idx, folder) in self.folders.iter().enumerate() {
             let is_expanded = self.expanded_folders.get(f_idx).copied().unwrap_or(false);
-            let expand_icon = if is_expanded { "v " } else { "> " };
 
             let is_renaming = self.renaming_folder == Some(folder.id);
 
@@ -379,22 +384,27 @@ impl CollectionView {
                         .on_input(Message::RenameFolderValueChanged)
                         .size(13)
                         .padding(5),
-                    button(text("OK").size(11)).on_press(Message::ConfirmRenameFolder),
-                    button(text("X").size(11)).on_press(Message::CancelRenameFolder),
+                    button(lucide::check().size(12)).on_press(Message::ConfirmRenameFolder),
+                    button(lucide::x().size(12)).on_press(Message::CancelRenameFolder),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
                 list = list.push(rename_row);
             } else {
+                let expand_icon: Element<'_, Message, Theme, Renderer> = if is_expanded {
+                    lucide::chevron_down().size(14).into()
+                } else {
+                    lucide::chevron_right().size(14).into()
+                };
+
                 let folder_row = row![
                     button(
-                        row![text(format!("{}{}/", expand_icon, folder.name)).size(13)]
-                            .spacing(4)
+                        row![expand_icon, lucide::folder().size(14), text(&folder.name).size(13)].spacing(4)
                     )
                     .on_press(Message::ToggleExpanded(col_idx)),
-                    button(text("R").size(10))
+                    button(lucide::pencil().size(12))
                         .on_press(Message::StartRenameFolder(folder.id)),
-                    button(text("x").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                    button(lucide::trash().size(12).color(Color::from_rgb(0.8, 0.2, 0.2)))
                         .on_press(Message::DeleteFolder(folder.id)),
                 ]
                 .spacing(4)
@@ -415,9 +425,9 @@ impl CollectionView {
                                     .on_input(Message::RenameRequestValueChanged)
                                     .size(11)
                                     .padding(3),
-                                button(text("OK").size(10))
+                                button(lucide::check().size(11))
                                     .on_press(Message::ConfirmRenameRequest),
-                                button(text("X").size(10))
+                                button(lucide::x().size(11))
                                     .on_press(Message::CancelRenameRequest),
                             ]
                             .spacing(4)
@@ -429,9 +439,9 @@ impl CollectionView {
                                     .size(11)
                                     .color(method_color),
                                 text(&req.name).size(11),
-                                button(text("R").size(9))
+                                button(lucide::pencil().size(10))
                                     .on_press(Message::StartRenameRequest(req.id)),
-                                button(text("x").size(9).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                                button(lucide::trash().size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
                                     .on_press(Message::DeleteRequest(req.id)),
                             ]
                             .spacing(4)
@@ -445,7 +455,7 @@ impl CollectionView {
                 }
 
                 let load_folder =
-                    button(text("      Open Folder")).on_press(Message::SelectFolder(folder.id));
+                    button(row![lucide::folder_open().size(12), text(" Open Folder")].spacing(4)).on_press(Message::SelectFolder(folder.id));
                 list = list.push(load_folder);
             }
         }
@@ -474,8 +484,8 @@ impl CollectionView {
                         .on_input(Message::RenameRequestValueChanged)
                         .size(12)
                         .padding(3),
-                    button(text("OK").size(11)).on_press(Message::ConfirmRenameRequest),
-                    button(text("X").size(11)).on_press(Message::CancelRenameRequest),
+                    button(lucide::check().size(11)).on_press(Message::ConfirmRenameRequest),
+                    button(lucide::x().size(11)).on_press(Message::CancelRenameRequest),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
@@ -485,8 +495,8 @@ impl CollectionView {
                 let req_row = row![
                     text(&req.method).size(12).color(method_color),
                     text(url_short).size(12),
-                    button(text("R").size(10)).on_press(Message::StartRenameRequest(req.id)),
-                    button(text("x").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                    button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
+                    button(lucide::trash().size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
                         .on_press(Message::DeleteRequest(req.id)),
                 ]
                 .spacing(6)
@@ -523,7 +533,7 @@ impl CollectionView {
             .map(|f| f.name.as_str())
             .unwrap_or("");
 
-        let back_button = button(text("< Back")).on_press(Message::Close);
+        let back_button = button(row![lucide::arrow_left().size(14), text(" Back")].spacing(4)).on_press(Message::Close);
 
         let header = row![back_button, text(folder_name).size(16),]
             .spacing(10)
@@ -542,8 +552,10 @@ impl CollectionView {
                             .on_input(Message::RenameRequestValueChanged)
                             .size(12)
                             .padding(3),
-                        button(text("OK").size(11)).on_press(Message::ConfirmRenameRequest),
-                        button(text("X").size(11)).on_press(Message::CancelRenameRequest),
+                        button(lucide::check().size(11))
+                            .on_press(Message::ConfirmRenameRequest),
+                        button(lucide::x().size(11))
+                            .on_press(Message::CancelRenameRequest),
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center);
@@ -556,8 +568,8 @@ impl CollectionView {
                         text(url_short)
                             .size(11)
                             .color(Color::from_rgb(0.4, 0.4, 0.4)),
-                        button(text("R").size(10)).on_press(Message::StartRenameRequest(req.id)),
-                        button(text("x").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                        button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
+                        button(lucide::trash().size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
                             .on_press(Message::DeleteRequest(req.id)),
                     ]
                     .spacing(6)

@@ -4,6 +4,7 @@ use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
 };
+use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -98,10 +99,10 @@ impl WebSocketView {
 
         let connect_button = match &self.status {
             WsStatus::Disconnected | WsStatus::Error(_) => {
-                button("Connect").on_press(Message::Connect)
+                button(row![lucide::plug().size(14), text(" Connect")].spacing(4)).on_press(Message::Connect)
             }
-            WsStatus::Connecting => button("Connecting..."),
-            WsStatus::Connected => button("Disconnect").on_press(Message::Disconnect),
+            WsStatus::Connecting => button(row![lucide::loader().size(14), text(" Connecting...")].spacing(4)),
+            WsStatus::Connected => button(row![lucide::plug_zap().size(14), text(" Disconnect")].spacing(4)).on_press(Message::Disconnect),
         };
 
         let url_row = row![
@@ -155,12 +156,10 @@ impl WebSocketView {
         };
 
         let header_toggle = button(
-            text(if self.show_headers {
-                "Hide Headers"
-            } else {
-                "Show Headers"
-            })
-            .size(12),
+            row![
+                if self.show_headers { lucide::panel_left_close().size(14) } else { lucide::panel_left_open().size(14) },
+                text(if self.show_headers { " Hide Headers" } else { " Show Headers" }).size(12),
+            ].spacing(4)
         )
         .on_press(Message::ToggleHeaders);
 
@@ -170,7 +169,7 @@ impl WebSocketView {
                 header_list = header_list.push(
                     row![
                         text(format!("{}: {}", k, v)).size(12),
-                        button(text("x").size(11)).on_press(Message::RemoveHeader(i)),
+                        button(lucide::x().size(11)).on_press(Message::RemoveHeader(i)),
                     ]
                     .spacing(8),
                 );
@@ -185,7 +184,7 @@ impl WebSocketView {
                     .on_input(Message::HeaderValueChanged)
                     .padding(5)
                     .width(Length::FillPortion(2)),
-                button("+").on_press(Message::AddHeader),
+                button(lucide::plus().size(14)).on_press(Message::AddHeader),
             ]
             .spacing(8);
 
@@ -236,18 +235,18 @@ impl WebSocketView {
                 .on_input(Message::InputChanged)
                 .padding(8),
             if is_connected {
-                button("Send").on_press(Message::SendMessage(self.input.clone()))
+                button(lucide::send().size(14)).on_press(Message::SendMessage(self.input.clone()))
             } else {
-                button("Send")
+                button(lucide::send().size(14))
             },
         ]
         .spacing(8)
         .align_y(Alignment::Center);
 
         let clear_button = if self.messages.is_empty() {
-            button("Clear")
+            button(row![lucide::trash().size(14), text(" Clear")].spacing(4))
         } else {
-            button("Clear").on_press(Message::Disconnected("cleared".to_string()))
+            button(row![lucide::trash().size(14), text(" Clear")].spacing(4)).on_press(Message::Disconnected("cleared".to_string()))
         };
 
         let header = column![

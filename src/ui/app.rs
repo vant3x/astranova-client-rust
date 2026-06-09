@@ -11,6 +11,7 @@ use iced::{
     Alignment, Element, Length, Subscription, Task,
 };
 use iced_aw::{TabLabel, Tabs};
+use iced_fonts::lucide;
 use reqwest;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -85,6 +86,7 @@ pub fn main() -> iced::Result {
     iced::application(AstraNovaApp::new, AstraNovaApp::update, AstraNovaApp::view)
         .title("AstraNova Client")
         .subscription(AstraNovaApp::subscription)
+        .font(iced_fonts::LUCIDE_FONT_BYTES)
         .run()
 }
 
@@ -1373,18 +1375,18 @@ impl AstraNovaApp {
                     .width(Length::Fill)
                     .height(Length::Fill);
 
-                let add_tab_button = button(text("+")).on_press(Message::AddRequestTab);
+                let add_tab_button = button(lucide::plus().size(16)).on_press(Message::AddRequestTab);
                 let close_tab_button = if self.request_tabs.len() > 1 {
-                    button(text("x"))
+                    button(lucide::x().size(16))
                         .on_press(Message::CloseRequestTab(self.active_request_tab_index))
                 } else {
-                    button(text("x"))
+                    button(lucide::x().size(16))
                 };
 
-                let history_button = button(text("History")).on_press(Message::ToggleHistory);
+                let history_button = button(row![lucide::history().size(14), text(" History")].spacing(4)).on_press(Message::ToggleHistory);
 
                 let collections_button =
-                    button(text("Collections")).on_press(Message::ToggleCollections);
+                    button(row![lucide::folder().size(14), text(" Collections")].spacing(4)).on_press(Message::ToggleCollections);
 
                 let protocol_selector = pick_list(
                     &Protocol::ALL[..],
@@ -1404,7 +1406,7 @@ impl AstraNovaApp {
                     collections_button,
                     protocol_selector,
                     env_selector,
-                    button(text("Manage Environments"))
+                    button(row![lucide::settings().size(14), text(" Manage Environments")].spacing(4))
                         .on_press(Message::SwitchView(View::EnvironmentManager))
                 ]
                 .spacing(10);

@@ -38,6 +38,7 @@ iced_futures = "0.14.0"
 sha2 = "0.10"
 rand = "0.8"
 open = "5"
+iced_fonts = { version = "0.3.0", features = ["lucide"] }
 
 [package.metadata.bundle]
 name = "AstraNova"

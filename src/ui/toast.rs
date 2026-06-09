@@ -2,6 +2,7 @@ use iced::{
     widget::{column, container, row, text},
     Alignment, Color, Element, Length, Renderer, Theme,
 };
+use iced_fonts::lucide;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,13 +23,14 @@ impl ToastType {
         }
     }
 
-    pub fn icon(&self) -> &str {
-        match self {
-            ToastType::Success => "✓",
-            ToastType::Error => "✕",
-            ToastType::Warning => "⚠",
-            ToastType::Info => "ℹ",
-        }
+    pub fn icon_element(&self, size: f32) -> Element<'static, (), Theme, Renderer> {
+        let icon = match self {
+            ToastType::Success => lucide::circle_check(),
+            ToastType::Error => lucide::circle_x(),
+            ToastType::Warning => lucide::triangle_alert(),
+            ToastType::Info => lucide::info(),
+        };
+        icon.size(size).color(self.color()).into()
     }
 }
 
@@ -143,17 +145,14 @@ impl ToastManager {
 
         for toast in &self.toasts {
             let _opacity = toast.opacity();
-            let color = toast.toast_type.color();
 
-            let icon_text = text(toast.toast_type.icon())
-                .size(14)
-                .color(color);
+            let icon_element = toast.toast_type.icon_element(16.0);
 
             let message_text = text(&toast.message)
                 .size(13);
 
             let toast_content = row![
-                icon_text,
+                icon_element,
                 message_text,
             ]
             .spacing(8)

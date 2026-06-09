@@ -244,6 +244,7 @@ dependencies = [
  "http",
  "iced",
  "iced_aw",
+ "iced_fonts",
  "iced_futures",
  "image",
  "log",
