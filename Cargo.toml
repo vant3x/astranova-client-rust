@@ -1,6 +1,6 @@
 [package]
 name = "astranova-client"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["vant3x"]
 
@@ -44,7 +44,7 @@ iced_fonts = { version = "0.3.0", features = ["lucide"] }
 name = "AstraNova"
 identifier = "com.astranova.client"
 icon = ["assets/icon.png", "assets/icon.ico"]
-version = "0.1.2"
+version = "0.2.0"
 copyright = "Copyright (C) AstraNova 2025"
 category = "Developer Tool"
 short_description = "A simple HTTP client."
