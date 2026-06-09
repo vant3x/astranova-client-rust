@@ -388,6 +388,7 @@ pub fn rename_folder(conn: &Connection, id: i32, new_name: &str) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn save_collection_request(
     conn: &Connection,
     collection_id: i32,

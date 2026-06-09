@@ -230,12 +230,10 @@ pub fn apply_auth(
                     req_builder = req_builder.header(key, value);
                 }
                 ApiKeyLocation::Query => {
-                    if let Ok(built) = req_builder.try_clone().map(|b| b.build()).transpose() {
-                        if let Some(req) = built {
-                            let mut url = req.url().clone();
-                            url.query_pairs_mut().append_pair(key, value);
-                            req_builder = reqwest::Client::new().request(req.method().clone(), url);
-                        }
+                    if let Ok(Some(req)) = req_builder.try_clone().map(|b| b.build()).transpose() {
+                        let mut url = req.url().clone();
+                        url.query_pairs_mut().append_pair(key, value);
+                        req_builder = reqwest::Client::new().request(req.method().clone(), url);
                     }
                 }
             }

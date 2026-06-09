@@ -8,6 +8,7 @@ use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 pub enum Message {
     UrlChanged(String),
     HeaderKeyChanged(String),

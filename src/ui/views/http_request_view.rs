@@ -503,7 +503,7 @@ impl HttpRequestView {
                         user: String::new(),
                         pass: String::new(),
                     },
-                    AuthType::OAuth2 => Auth::OAuth2(crate::data::auth::OAuth2Config::default()),
+                    AuthType::OAuth2 => Auth::OAuth2(Box::default()),
                 };
             }
             Message::AuthInputChanged(input) => match (&mut self.auth, input) {

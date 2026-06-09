@@ -74,7 +74,7 @@ pub enum Auth {
         user: String,
         pass: String,
     },
-    OAuth2(OAuth2Config),
+    OAuth2(Box<OAuth2Config>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -317,9 +317,6 @@ mod tests {
             .auth_type(),
             AuthType::Digest
         );
-        assert_eq!(
-            Auth::OAuth2(OAuth2Config::default()).auth_type(),
-            AuthType::OAuth2
-        );
+        assert_eq!(Auth::OAuth2(Box::default()).auth_type(), AuthType::OAuth2);
     }
 }

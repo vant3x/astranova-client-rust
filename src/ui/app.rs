@@ -181,7 +181,7 @@ impl Clone for Message {
                 Arc::clone(wh),
                 Arc::clone(rh),
             ),
-            Self::SelectProtocol(p) => Self::SelectProtocol(p.clone()),
+            Self::SelectProtocol(p) => Self::SelectProtocol(*p),
             Self::OAuth2StartAuth(i) => Self::OAuth2StartAuth(*i),
             Self::OAuth2AuthComplete(i, r) => Self::OAuth2AuthComplete(*i, r.clone()),
             Self::OAuth2TokenReceived(i, r) => Self::OAuth2TokenReceived(*i, r.clone()),

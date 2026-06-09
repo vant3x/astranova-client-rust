@@ -79,6 +79,7 @@ pub fn get_requests(
     database::get_collection_requests(conn, collection_id, folder_id).unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn save_request(
     conn: &Connection,
     collection_id: i32,
