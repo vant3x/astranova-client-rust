@@ -87,8 +87,7 @@ pub fn export_collection(
             description: collection.description.clone(),
         },
         item: root_items,
-        schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-            .to_string(),
+        schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json".to_string(),
     };
 
     serde_json::to_string_pretty(&collection).map_err(|e| format!("Serialization error: {}", e))

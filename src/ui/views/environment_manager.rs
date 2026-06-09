@@ -139,9 +139,12 @@ impl EnvironmentManagerView {
                 .push(self.variables_editor.view().map(Message::VariablesEditor))
                 .push(
                     row![
-                        button(row![lucide::save().size(14), text(" Save")].spacing(4)).on_press(Message::SaveEnvironment),
-                        button(row![lucide::trash().size(14), text(" Delete")].spacing(4)).on_press(Message::DeleteEnvironment),
-                        button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4)).on_press(Message::LoadEnvFile)
+                        button(row![lucide::save().size(14), text(" Save")].spacing(4))
+                            .on_press(Message::SaveEnvironment),
+                        button(row![lucide::trash().size(14), text(" Delete")].spacing(4))
+                            .on_press(Message::DeleteEnvironment),
+                        button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4))
+                            .on_press(Message::LoadEnvFile)
                     ]
                     .spacing(10),
                 );
@@ -150,7 +153,8 @@ impl EnvironmentManagerView {
         let create_new_env_section = column![
             text_input("New Environment Name", &self.new_environment_name)
                 .on_input(Message::NewEnvironmentNameChanged),
-            button(row![lucide::plus().size(14), text(" Create")].spacing(4)).on_press(Message::CreateEnvironment)
+            button(row![lucide::plus().size(14), text(" Create")].spacing(4))
+                .on_press(Message::CreateEnvironment)
         ];
 
         let content = column![

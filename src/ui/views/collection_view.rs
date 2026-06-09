@@ -252,7 +252,8 @@ impl CollectionView {
         let header = row![
             text("Collections").size(16),
             button(lucide::plus().size(14)).on_press(Message::CreateCollection),
-            button(row![lucide::upload().size(14), text(" Import")].spacing(4)).on_press(Message::ImportCollection),
+            button(row![lucide::upload().size(14), text(" Import")].spacing(4))
+                .on_press(Message::ImportCollection),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
@@ -305,10 +306,13 @@ impl CollectionView {
                         .on_press(Message::ToggleExpanded(index)),
                     button(lucide::pencil().size(12))
                         .on_press(Message::StartRenameCollection(index)),
-                    button(lucide::download().size(12))
-                        .on_press(Message::ExportCollection(index)),
-                    button(lucide::trash().size(12).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                        .on_press(Message::DeleteCollection(index)),
+                    button(lucide::download().size(12)).on_press(Message::ExportCollection(index)),
+                    button(
+                        lucide::trash()
+                            .size(12)
+                            .color(Color::from_rgb(0.8, 0.2, 0.2))
+                    )
+                    .on_press(Message::DeleteCollection(index)),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
@@ -357,7 +361,8 @@ impl CollectionView {
             None => return self.collections_list_view(),
         };
 
-        let back_button = button(row![lucide::arrow_left().size(14), text(" Back")].spacing(4)).on_press(Message::Close);
+        let back_button = button(row![lucide::arrow_left().size(14), text(" Back")].spacing(4))
+            .on_press(Message::Close);
 
         let header = row![back_button, text(&col.name).size(16),]
             .spacing(10)
@@ -368,7 +373,9 @@ impl CollectionView {
             .size(13)
             .padding(5);
 
-        let new_folder_button = button(row![lucide::folder_plus().size(14), text(" Folder")].spacing(4)).on_press(Message::CreateFolder(col.id));
+        let new_folder_button =
+            button(row![lucide::folder_plus().size(14), text(" Folder")].spacing(4))
+                .on_press(Message::CreateFolder(col.id));
 
         let folder_controls = row![new_folder_input, new_folder_button].spacing(8);
 
@@ -400,13 +407,22 @@ impl CollectionView {
 
                 let folder_row = row![
                     button(
-                        row![expand_icon, lucide::folder().size(14), text(&folder.name).size(13)].spacing(4)
+                        row![
+                            expand_icon,
+                            lucide::folder().size(14),
+                            text(&folder.name).size(13)
+                        ]
+                        .spacing(4)
                     )
                     .on_press(Message::ToggleExpanded(col_idx)),
                     button(lucide::pencil().size(12))
                         .on_press(Message::StartRenameFolder(folder.id)),
-                    button(lucide::trash().size(12).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                        .on_press(Message::DeleteFolder(folder.id)),
+                    button(
+                        lucide::trash()
+                            .size(12)
+                            .color(Color::from_rgb(0.8, 0.2, 0.2))
+                    )
+                    .on_press(Message::DeleteFolder(folder.id)),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
@@ -428,8 +444,7 @@ impl CollectionView {
                                     .padding(3),
                                 button(lucide::check().size(11))
                                     .on_press(Message::ConfirmRenameRequest),
-                                button(lucide::x().size(11))
-                                    .on_press(Message::CancelRenameRequest),
+                                button(lucide::x().size(11)).on_press(Message::CancelRenameRequest),
                             ]
                             .spacing(4)
                             .align_y(Alignment::Center);
@@ -442,21 +457,25 @@ impl CollectionView {
                                 text(&req.name).size(11),
                                 button(lucide::pencil().size(10))
                                     .on_press(Message::StartRenameRequest(req.id)),
-                                button(lucide::trash().size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                                    .on_press(Message::DeleteRequest(req.id)),
+                                button(
+                                    lucide::trash()
+                                        .size(10)
+                                        .color(Color::from_rgb(0.8, 0.2, 0.2))
+                                )
+                                .on_press(Message::DeleteRequest(req.id)),
                             ]
                             .spacing(4)
                             .align_y(Alignment::Center);
 
-                            let req_button =
-                                button(req_row).on_press(Message::LoadRequest(req.id));
+                            let req_button = button(req_row).on_press(Message::LoadRequest(req.id));
                             list = list.push(req_button);
                         }
                     }
                 }
 
                 let load_folder =
-                    button(row![lucide::folder_open().size(12), text(" Open Folder")].spacing(4)).on_press(Message::SelectFolder(folder.id));
+                    button(row![lucide::folder_open().size(12), text(" Open Folder")].spacing(4))
+                        .on_press(Message::SelectFolder(folder.id));
                 list = list.push(load_folder);
             }
         }
@@ -497,8 +516,12 @@ impl CollectionView {
                     text(&req.method).size(12).color(method_color),
                     text(url_short).size(12),
                     button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
-                    button(lucide::trash().size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                        .on_press(Message::DeleteRequest(req.id)),
+                    button(
+                        lucide::trash()
+                            .size(10)
+                            .color(Color::from_rgb(0.8, 0.2, 0.2))
+                    )
+                    .on_press(Message::DeleteRequest(req.id)),
                 ]
                 .spacing(6)
                 .align_y(Alignment::Center);
@@ -534,7 +557,8 @@ impl CollectionView {
             .map(|f| f.name.as_str())
             .unwrap_or("");
 
-        let back_button = button(row![lucide::arrow_left().size(14), text(" Back")].spacing(4)).on_press(Message::Close);
+        let back_button = button(row![lucide::arrow_left().size(14), text(" Back")].spacing(4))
+            .on_press(Message::Close);
 
         let header = row![back_button, text(folder_name).size(16),]
             .spacing(10)
@@ -553,10 +577,8 @@ impl CollectionView {
                             .on_input(Message::RenameRequestValueChanged)
                             .size(12)
                             .padding(3),
-                        button(lucide::check().size(11))
-                            .on_press(Message::ConfirmRenameRequest),
-                        button(lucide::x().size(11))
-                            .on_press(Message::CancelRenameRequest),
+                        button(lucide::check().size(11)).on_press(Message::ConfirmRenameRequest),
+                        button(lucide::x().size(11)).on_press(Message::CancelRenameRequest),
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center);
@@ -569,9 +591,14 @@ impl CollectionView {
                         text(url_short)
                             .size(11)
                             .color(Color::from_rgb(0.4, 0.4, 0.4)),
-                        button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
-                        button(lucide::trash().size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                            .on_press(Message::DeleteRequest(req.id)),
+                        button(lucide::pencil().size(10))
+                            .on_press(Message::StartRenameRequest(req.id)),
+                        button(
+                            lucide::trash()
+                                .size(10)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::DeleteRequest(req.id)),
                     ]
                     .spacing(6)
                     .align_y(Alignment::Center);

@@ -244,8 +244,8 @@ pub fn apply_auth(
         Auth::Digest { .. } => req_builder,
         Auth::OAuth2(config) => {
             if !config.access_token.is_empty() {
-                req_builder = req_builder
-                    .header("Authorization", format!("Bearer {}", config.access_token));
+                req_builder =
+                    req_builder.header("Authorization", format!("Bearer {}", config.access_token));
             }
             req_builder
         }
@@ -271,7 +271,13 @@ pub async fn apply_digest_auth(
             if let Ok(resp) = client.execute(req).await {
                 if let Some(www_auth) = resp.headers().get("www-authenticate") {
                     if let Ok(www_auth_str) = www_auth.to_str() {
-                        return compute_digest_auth(www_auth_str, user, pass, &request.method, &request.url);
+                        return compute_digest_auth(
+                            www_auth_str,
+                            user,
+                            pass,
+                            &request.method,
+                            &request.url,
+                        );
                     }
                 }
             }
@@ -281,7 +287,13 @@ pub async fn apply_digest_auth(
 }
 
 #[allow(dead_code)]
-fn compute_digest_auth(www_authenticate: &str, username: &str, password: &str, method: &str, url: &str) -> Option<String> {
+fn compute_digest_auth(
+    www_authenticate: &str,
+    username: &str,
+    password: &str,
+    method: &str,
+    url: &str,
+) -> Option<String> {
     let params = parse_digest_params(www_authenticate);
     let realm = params.get("realm")?.clone();
     let nonce = params.get("nonce")?.clone();
@@ -375,14 +387,21 @@ mod tests {
 
     #[test]
     fn compute_digest_auth_returns_none_without_realm() {
-        let result = compute_digest_auth("Bearer token", "user", "pass", "GET", "https://example.com/");
+        let result = compute_digest_auth(
+            "Bearer token",
+            "user",
+            "pass",
+            "GET",
+            "https://example.com/",
+        );
         assert!(result.is_none());
     }
 
     #[test]
     fn compute_digest_auth_returns_header_with_valid_input() {
         let header = r#"Digest realm="test@example.com", nonce="nonce123", qop="auth""#;
-        let result = compute_digest_auth(header, "admin", "secret", "GET", "https://example.com/api");
+        let result =
+            compute_digest_auth(header, "admin", "secret", "GET", "https://example.com/api");
         assert!(result.is_some());
         let auth_header = result.unwrap();
         assert!(auth_header.starts_with("Digest "));

@@ -150,19 +150,13 @@ impl ToastManager {
 
             let icon_element = toast.toast_type.icon_element(16.0);
 
-            let message_text = text(&toast.message)
-                .size(13);
+            let message_text = text(&toast.message).size(13);
 
-            let toast_content = row![
-                icon_element,
-                message_text,
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
+            let toast_content = row![icon_element, message_text,]
+                .spacing(8)
+                .align_y(Alignment::Center);
 
-            let toast_element = container(toast_content)
-                .padding(12)
-                .max_width(400);
+            let toast_element = container(toast_content).padding(12).max_width(400);
 
             toasts_column = toasts_column.push(toast_element);
         }

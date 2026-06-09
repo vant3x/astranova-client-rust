@@ -100,10 +100,16 @@ impl WebSocketView {
 
         let connect_button = match &self.status {
             WsStatus::Disconnected | WsStatus::Error(_) => {
-                button(row![lucide::plug().size(14), text(" Connect")].spacing(4)).on_press(Message::Connect)
+                button(row![lucide::plug().size(14), text(" Connect")].spacing(4))
+                    .on_press(Message::Connect)
             }
-            WsStatus::Connecting => button(row![lucide::loader().size(14), text(" Connecting...")].spacing(4)),
-            WsStatus::Connected => button(row![lucide::plug_zap().size(14), text(" Disconnect")].spacing(4)).on_press(Message::Disconnect),
+            WsStatus::Connecting => {
+                button(row![lucide::loader().size(14), text(" Connecting...")].spacing(4))
+            }
+            WsStatus::Connected => {
+                button(row![lucide::plug_zap().size(14), text(" Disconnect")].spacing(4))
+                    .on_press(Message::Disconnect)
+            }
         };
 
         let url_row = row![
@@ -136,9 +142,12 @@ impl WebSocketView {
                 .width(Length::Fixed(80.0));
 
             let retry_info = if self.current_retries > 0 {
-                text(format!("Retry {}/{}", self.current_retries, self.max_retries))
-                    .size(11)
-                    .color(Color::from_rgb(0.8, 0.7, 0.1))
+                text(format!(
+                    "Retry {}/{}",
+                    self.current_retries, self.max_retries
+                ))
+                .size(11)
+                .color(Color::from_rgb(0.8, 0.7, 0.1))
             } else {
                 text("").size(11)
             };
@@ -158,9 +167,19 @@ impl WebSocketView {
 
         let header_toggle = button(
             row![
-                if self.show_headers { lucide::panel_left_close().size(14) } else { lucide::panel_left_open().size(14) },
-                text(if self.show_headers { " Hide Headers" } else { " Show Headers" }).size(12),
-            ].spacing(4)
+                if self.show_headers {
+                    lucide::panel_left_close().size(14)
+                } else {
+                    lucide::panel_left_open().size(14)
+                },
+                text(if self.show_headers {
+                    " Hide Headers"
+                } else {
+                    " Show Headers"
+                })
+                .size(12),
+            ]
+            .spacing(4),
         )
         .on_press(Message::ToggleHeaders);
 
@@ -247,7 +266,8 @@ impl WebSocketView {
         let clear_button = if self.messages.is_empty() {
             button(row![lucide::trash().size(14), text(" Clear")].spacing(4))
         } else {
-            button(row![lucide::trash().size(14), text(" Clear")].spacing(4)).on_press(Message::Disconnected("cleared".to_string()))
+            button(row![lucide::trash().size(14), text(" Clear")].spacing(4))
+                .on_press(Message::Disconnected("cleared".to_string()))
         };
 
         let header = column![

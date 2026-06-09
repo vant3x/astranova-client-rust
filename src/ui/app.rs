@@ -1,11 +1,11 @@
+use crate::data::auth::Auth;
 use crate::persistence::database::{self, Environment};
 use crate::protocols::websocket::{WsEvent, WsSender};
+use crate::ui::toast::ToastManager;
 use crate::ui::views::collection_view::{self, CollectionView};
 use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use crate::ui::views::websocket_view::{self, WebSocketView};
-use crate::ui::toast::ToastManager;
-use crate::data::auth::Auth;
 use iced::{
     widget::{button, column, container, pick_list, row, rule, text},
     Alignment, Element, Length, Subscription, Task,
@@ -54,8 +54,6 @@ impl Recipe for WsRecipe {
         .boxed()
     }
 }
-
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
@@ -141,11 +139,20 @@ pub enum Message {
     SelectProtocol(Protocol),
     OAuth2StartAuth(usize),
     OAuth2AuthComplete(usize, Result<String, String>),
-    OAuth2TokenReceived(usize, Result<crate::data::oauth2::OAuth2TokenResponse, String>),
+    OAuth2TokenReceived(
+        usize,
+        Result<crate::data::oauth2::OAuth2TokenResponse, String>,
+    ),
     OAuth2RefreshToken(usize),
     OAuth2StartDeviceAuth(usize),
-    OAuth2DeviceAuthReceived(usize, Result<crate::data::oauth2::DeviceAuthorizationResponse, String>),
-    OAuth2DeviceTokenPoll(usize, Result<crate::data::oauth2::DeviceTokenResponse, String>),
+    OAuth2DeviceAuthReceived(
+        usize,
+        Result<crate::data::oauth2::DeviceAuthorizationResponse, String>,
+    ),
+    OAuth2DeviceTokenPoll(
+        usize,
+        Result<crate::data::oauth2::DeviceTokenResponse, String>,
+    ),
 }
 
 impl Clone for Message {
@@ -167,9 +174,13 @@ impl Clone for Message {
             Self::ToggleCollections => Self::ToggleCollections,
             Self::WebSocketMsg(m) => Self::WebSocketMsg(m.clone()),
             Self::WsEvent(e) => Self::WsEvent(e.clone()),
-            Self::WsConnected(s, r, st, wh, rh) => {
-                Self::WsConnected(s.clone(), r.clone(), st.clone(), Arc::clone(wh), Arc::clone(rh))
-            }
+            Self::WsConnected(s, r, st, wh, rh) => Self::WsConnected(
+                s.clone(),
+                r.clone(),
+                st.clone(),
+                Arc::clone(wh),
+                Arc::clone(rh),
+            ),
             Self::SelectProtocol(p) => Self::SelectProtocol(p.clone()),
             Self::OAuth2StartAuth(i) => Self::OAuth2StartAuth(*i),
             Self::OAuth2AuthComplete(i, r) => Self::OAuth2AuthComplete(*i, r.clone()),
@@ -300,12 +311,23 @@ impl AstraNovaApp {
                                         response_data.as_deref(),
                                     );
                                     self.history_view.entries =
-                                        crate::services::history_service::get_all(&self.db_conn, 50);
+                                        crate::services::history_service::get_all(
+                                            &self.db_conn,
+                                            50,
+                                        );
 
                                     if response.status >= 400 {
-                                        self.toast_manager.warning(format!("{} {}", response.status, response.url));
+                                        self.toast_manager.warning(format!(
+                                            "{} {}",
+                                            response.status, response.url
+                                        ));
                                     } else {
-                                        self.toast_manager.success(format!("{} {} - {}ms", response.status, response.url, response.duration.as_millis()));
+                                        self.toast_manager.success(format!(
+                                            "{} {} - {}ms",
+                                            response.status,
+                                            response.url,
+                                            response.duration.as_millis()
+                                        ));
                                     }
                                 }
                                 Err(e) => {
@@ -412,8 +434,7 @@ impl AstraNovaApp {
                             ) {
                                 Ok(environments) => {
                                     self.environments = environments;
-                                    self.env_manager_view.environments =
-                                        self.environments.clone();
+                                    self.env_manager_view.environments = self.environments.clone();
                                     if let Some(selected_env) =
                                         &self.env_manager_view.selected_environment
                                     {
@@ -436,8 +457,7 @@ impl AstraNovaApp {
                             ) {
                                 Ok(environments) => {
                                     self.environments = environments;
-                                    self.env_manager_view.environments =
-                                        self.environments.clone();
+                                    self.env_manager_view.environments = self.environments.clone();
                                 }
                                 Err(e) => log::error!("Error deleting environment: {}", e),
                             }
@@ -682,7 +702,9 @@ impl AstraNovaApp {
                                                     None,
                                                 );
                                             }
-                                            let cols = crate::services::collection_service::get_all(&self.db_conn);
+                                            let cols = crate::services::collection_service::get_all(
+                                                &self.db_conn,
+                                            );
                                             self.collection_view.sync_collections(&cols);
                                         }
                                     }
@@ -704,7 +726,9 @@ impl AstraNovaApp {
                                 col.id,
                                 None,
                             );
-                            match crate::export::postman::export_collection(col, &folders, &requests) {
+                            match crate::export::postman::export_collection(
+                                col, &folders, &requests,
+                            ) {
                                 Ok(json) => {
                                     let col_name = col.name.clone();
                                     return Task::perform(
@@ -716,15 +740,18 @@ impl AstraNovaApp {
                                                 .await;
                                             if let Some(file_handle) = file {
                                                 let path = file_handle.path().to_path_buf();
-                                                let _ = tokio::fs::write(&path, json.as_bytes()).await;
+                                                let _ =
+                                                    tokio::fs::write(&path, json.as_bytes()).await;
                                             }
                                             None::<()>
                                         },
-                                        |_: Option<_>| Message::CollectionMsg(
-                                            collection_view::Message::ExportCollectionData(
-                                                String::new(),
-                                            ),
-                                        ),
+                                        |_: Option<_>| {
+                                            Message::CollectionMsg(
+                                                collection_view::Message::ExportCollectionData(
+                                                    String::new(),
+                                                ),
+                                            )
+                                        },
                                     );
                                 }
                                 Err(e) => log::error!("Error exporting collection: {}", e),
@@ -742,7 +769,9 @@ impl AstraNovaApp {
                                     &new_name,
                                 ) {
                                     Ok(()) => {
-                                        let cols = crate::services::collection_service::get_all(&self.db_conn);
+                                        let cols = crate::services::collection_service::get_all(
+                                            &self.db_conn,
+                                        );
                                         self.collection_view.sync_collections(&cols);
                                     }
                                     Err(e) => log::error!("Error renaming collection: {}", e),
@@ -762,11 +791,14 @@ impl AstraNovaApp {
                                     if let collection_view::PanelState::CollectionDetail(col_idx) =
                                         self.collection_view.panel_state
                                     {
-                                        if let Some(col) = self.collection_view.collections.get(col_idx) {
-                                            let folders = crate::services::collection_service::get_folders(
-                                                &self.db_conn,
-                                                col.id,
-                                            );
+                                        if let Some(col) =
+                                            self.collection_view.collections.get(col_idx)
+                                        {
+                                            let folders =
+                                                crate::services::collection_service::get_folders(
+                                                    &self.db_conn,
+                                                    col.id,
+                                                );
                                             self.collection_view.sync_folders(&folders);
                                         }
                                     }
@@ -787,12 +819,15 @@ impl AstraNovaApp {
                                     if let collection_view::PanelState::CollectionDetail(col_idx) =
                                         self.collection_view.panel_state
                                     {
-                                        if let Some(col) = self.collection_view.collections.get(col_idx) {
-                                            let reqs = crate::services::collection_service::get_requests(
-                                                &self.db_conn,
-                                                col.id,
-                                                None,
-                                            );
+                                        if let Some(col) =
+                                            self.collection_view.collections.get(col_idx)
+                                        {
+                                            let reqs =
+                                                crate::services::collection_service::get_requests(
+                                                    &self.db_conn,
+                                                    col.id,
+                                                    None,
+                                                );
                                             self.collection_view.sync_requests(&reqs);
                                         }
                                     } else if let collection_view::PanelState::FolderDetail(
@@ -800,12 +835,15 @@ impl AstraNovaApp {
                                         folder_id,
                                     ) = self.collection_view.panel_state
                                     {
-                                        if let Some(col) = self.collection_view.collections.get(col_idx) {
-                                            let reqs = crate::services::collection_service::get_requests(
-                                                &self.db_conn,
-                                                col.id,
-                                                Some(folder_id),
-                                            );
+                                        if let Some(col) =
+                                            self.collection_view.collections.get(col_idx)
+                                        {
+                                            let reqs =
+                                                crate::services::collection_service::get_requests(
+                                                    &self.db_conn,
+                                                    col.id,
+                                                    Some(folder_id),
+                                                );
                                             self.collection_view.sync_requests(&reqs);
                                         }
                                     }
@@ -920,15 +958,13 @@ impl AstraNovaApp {
                             crate::protocols::websocket::connect_ws(&request).await
                         },
                         |result| match result {
-                            Ok(conn) => {
-                                Message::WsConnected(
-                                    conn.sender,
-                                    Arc::new(Mutex::new(Some(conn.receiver))),
-                                    conn.shutdown_tx,
-                                    Arc::new(Mutex::new(Some(conn.write_handle))),
-                                    Arc::new(Mutex::new(Some(conn.read_handle))),
-                                )
-                            }
+                            Ok(conn) => Message::WsConnected(
+                                conn.sender,
+                                Arc::new(Mutex::new(Some(conn.receiver))),
+                                conn.shutdown_tx,
+                                Arc::new(Mutex::new(Some(conn.write_handle))),
+                                Arc::new(Mutex::new(Some(conn.read_handle))),
+                            ),
                             Err(e) => {
                                 Message::WebSocketMsg(websocket_view::Message::Disconnected(e))
                             }
@@ -966,8 +1002,7 @@ impl AstraNovaApp {
                         self.ws_receiver = None;
 
                         if self.websocket_view.auto_reconnect
-                            && self.websocket_view.current_retries
-                                < self.websocket_view.max_retries
+                            && self.websocket_view.current_retries < self.websocket_view.max_retries
                         {
                             self.websocket_view.current_retries += 1;
                             self.websocket_view.status =
@@ -993,15 +1028,13 @@ impl AstraNovaApp {
                                     crate::protocols::websocket::connect_ws(&request).await
                                 },
                                 |result| match result {
-                                    Ok(conn) => {
-                                        Message::WsConnected(
-                                            conn.sender,
-                                            Arc::new(Mutex::new(Some(conn.receiver))),
-                                            conn.shutdown_tx,
-                                            Arc::new(Mutex::new(Some(conn.write_handle))),
-                                            Arc::new(Mutex::new(Some(conn.read_handle))),
-                                        )
-                                    }
+                                    Ok(conn) => Message::WsConnected(
+                                        conn.sender,
+                                        Arc::new(Mutex::new(Some(conn.receiver))),
+                                        conn.shutdown_tx,
+                                        Arc::new(Mutex::new(Some(conn.write_handle))),
+                                        Arc::new(Mutex::new(Some(conn.read_handle))),
+                                    ),
                                     Err(e) => Message::WebSocketMsg(
                                         websocket_view::Message::Disconnected(e),
                                     ),
@@ -1059,17 +1092,16 @@ impl AstraNovaApp {
                 websocket_view::Message::InputChanged(input) => {
                     self.websocket_view.input = input;
                 }
-                websocket_view::Message::SendMessage(text)
-                    if !text.is_empty() => {
-                        if let Some(sender) = &self.ws_sender {
-                            if sender.send(&text).is_ok() {
-                                self.websocket_view.messages.push(
-                                    crate::protocols::websocket::WsMessage::outgoing(text.clone()),
-                                );
-                                self.websocket_view.input.clear();
-                            }
+                websocket_view::Message::SendMessage(text) if !text.is_empty() => {
+                    if let Some(sender) = &self.ws_sender {
+                        if sender.send(&text).is_ok() {
+                            self.websocket_view.messages.push(
+                                crate::protocols::websocket::WsMessage::outgoing(text.clone()),
+                            );
+                            self.websocket_view.input.clear();
                         }
                     }
+                }
                 _ => {}
             },
             Message::WsConnected(sender, receiver_arc, shutdown_tx, write_handle, read_handle) => {
@@ -1105,9 +1137,7 @@ impl AstraNovaApp {
                                         )
                                         .await
                                     },
-                                    move |result| {
-                                        Message::OAuth2TokenReceived(tab_index, result)
-                                    },
+                                    move |result| Message::OAuth2TokenReceived(tab_index, result),
                                 );
                             }
                             Err(e) => {
@@ -1186,9 +1216,7 @@ impl AstraNovaApp {
                                     )
                                     .await
                                 },
-                                move |result| {
-                                    Message::OAuth2DeviceTokenPoll(tab_index, result)
-                                },
+                                move |result| Message::OAuth2DeviceTokenPoll(tab_index, result),
                             );
                         } else if config.refresh_token.is_empty() {
                             log::warn!("No refresh token available");
@@ -1235,9 +1263,7 @@ impl AstraNovaApp {
                                     )
                                     .await
                                 },
-                                move |result| {
-                                    Message::OAuth2DeviceAuthReceived(tab_index, result)
-                                },
+                                move |result| Message::OAuth2DeviceAuthReceived(tab_index, result),
                             );
                         }
                     }
@@ -1318,26 +1344,38 @@ impl AstraNovaApp {
             Subscription::none()
         };
 
-        let keyboard_subscription = iced::keyboard::listen().map(|event| {
-            match event {
-                iced::keyboard::Event::KeyPressed { key, modifiers, .. } => {
-                    if modifiers.control() {
-                        match key {
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "n" => Message::AddRequestTab,
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "w" => Message::CloseActiveRequestTab,
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "1" => Message::SelectRequestTab(0),
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "2" => Message::SelectRequestTab(1),
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "3" => Message::SelectRequestTab(2),
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "4" => Message::SelectRequestTab(3),
-                            iced::keyboard::Key::Character(ref c) if c.as_ref() == "5" => Message::SelectRequestTab(4),
-                            _ => Message::NoOp,
+        let keyboard_subscription = iced::keyboard::listen().map(|event| match event {
+            iced::keyboard::Event::KeyPressed { key, modifiers, .. } => {
+                if modifiers.control() {
+                    match key {
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "n" => {
+                            Message::AddRequestTab
                         }
-                    } else {
-                        Message::NoOp
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "w" => {
+                            Message::CloseActiveRequestTab
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "1" => {
+                            Message::SelectRequestTab(0)
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "2" => {
+                            Message::SelectRequestTab(1)
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "3" => {
+                            Message::SelectRequestTab(2)
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "4" => {
+                            Message::SelectRequestTab(3)
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "5" => {
+                            Message::SelectRequestTab(4)
+                        }
+                        _ => Message::NoOp,
                     }
+                } else {
+                    Message::NoOp
                 }
-                _ => Message::NoOp,
             }
+            _ => Message::NoOp,
         });
 
         Subscription::batch(vec![ws_subscription, keyboard_subscription])
@@ -1375,7 +1413,8 @@ impl AstraNovaApp {
                     .width(Length::Fill)
                     .height(Length::Fill);
 
-                let add_tab_button = button(lucide::plus().size(16)).on_press(Message::AddRequestTab);
+                let add_tab_button =
+                    button(lucide::plus().size(16)).on_press(Message::AddRequestTab);
                 let close_tab_button = if self.request_tabs.len() > 1 {
                     button(lucide::x().size(16))
                         .on_press(Message::CloseRequestTab(self.active_request_tab_index))
@@ -1383,10 +1422,13 @@ impl AstraNovaApp {
                     button(lucide::x().size(16))
                 };
 
-                let history_button = button(row![lucide::history().size(14), text(" History")].spacing(4)).on_press(Message::ToggleHistory);
+                let history_button =
+                    button(row![lucide::history().size(14), text(" History")].spacing(4))
+                        .on_press(Message::ToggleHistory);
 
                 let collections_button =
-                    button(row![lucide::folder().size(14), text(" Collections")].spacing(4)).on_press(Message::ToggleCollections);
+                    button(row![lucide::folder().size(14), text(" Collections")].spacing(4))
+                        .on_press(Message::ToggleCollections);
 
                 let protocol_selector = pick_list(
                     &Protocol::ALL[..],
@@ -1406,8 +1448,10 @@ impl AstraNovaApp {
                     collections_button,
                     protocol_selector,
                     env_selector,
-                    button(row![lucide::settings().size(14), text(" Manage Environments")].spacing(4))
-                        .on_press(Message::SwitchView(View::EnvironmentManager))
+                    button(
+                        row![lucide::settings().size(14), text(" Manage Environments")].spacing(4)
+                    )
+                    .on_press(Message::SwitchView(View::EnvironmentManager))
                 ]
                 .spacing(10);
 
@@ -1613,11 +1657,8 @@ impl AstraNovaApp {
                 None,
             );
 
-            let reqs = crate::services::collection_service::get_requests(
-                &self.db_conn,
-                col_id,
-                None,
-            );
+            let reqs =
+                crate::services::collection_service::get_requests(&self.db_conn, col_id, None);
             self.collection_view.sync_requests(&reqs);
         }
     }

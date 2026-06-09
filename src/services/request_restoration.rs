@@ -119,7 +119,6 @@ fn apply_request_to_view(view: &mut HttpRequestView, request: &HttpRequest) {
 mod tests {
     use super::*;
     use crate::http_client::config::RequestConfig;
-    use std::time::Duration;
 
     fn make_history_entry(method: &str, url: &str) -> RequestHistoryEntry {
         RequestHistoryEntry {

@@ -94,13 +94,17 @@ impl HistoryView {
         let clear_button: Element<'_, Message, Theme, Renderer> = if self.entries.is_empty() {
             button(row![lucide::trash().size(14), text(" Clear")].spacing(4)).into()
         } else {
-            button(row![lucide::trash().size(14), text(" Clear")].spacing(4)).on_press(Message::ClearHistory).into()
+            button(row![lucide::trash().size(14), text(" Clear")].spacing(4))
+                .on_press(Message::ClearHistory)
+                .into()
         };
 
         let export_button: Element<'_, Message, Theme, Renderer> = if self.entries.is_empty() {
             button(row![lucide::download().size(14), text(" Export")].spacing(4)).into()
         } else {
-            button(row![lucide::download().size(14), text(" Export")].spacing(4)).on_press(Message::ExportHistory).into()
+            button(row![lucide::download().size(14), text(" Export")].spacing(4))
+                .on_press(Message::ExportHistory)
+                .into()
         };
 
         let header = row![text("History").size(16), clear_button, export_button]
@@ -121,8 +125,7 @@ impl HistoryView {
                     .style(button::secondary)
                     .on_press(Message::FilterMethod(method.to_string()))
             } else {
-                button(text(method).size(11))
-                    .on_press(Message::FilterMethod(method.to_string()))
+                button(text(method).size(11)).on_press(Message::FilterMethod(method.to_string()))
             };
             filter_buttons = filter_buttons.push(btn);
         }
@@ -223,10 +226,9 @@ impl HistoryView {
             .spacing(8)
             .align_y(Alignment::Center);
 
-            let entry_button: Element<'_, Message, Theme, Renderer> =
-                button(entry_row)
-                    .on_press(Message::ResendEntry(entry.id))
-                    .into();
+            let entry_button: Element<'_, Message, Theme, Renderer> = button(entry_row)
+                .on_press(Message::ResendEntry(entry.id))
+                .into();
 
             list = list.push(entry_button);
         }

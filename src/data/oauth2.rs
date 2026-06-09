@@ -64,7 +64,10 @@ impl PKCEChallenge {
         let digest = Sha256::digest(verifier.as_bytes());
         let challenge = general_purpose::URL_SAFE_NO_PAD.encode(digest);
 
-        Self { verifier, challenge }
+        Self {
+            verifier,
+            challenge,
+        }
     }
 }
 
@@ -136,8 +139,7 @@ pub async fn exchange_code(
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
     if status.is_success() {
-        serde_json::from_str(&body)
-            .map_err(|e| format!("Failed to parse token response: {}", e))
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse token response: {}", e))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
@@ -188,8 +190,7 @@ pub async fn client_credentials(
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
     if status.is_success() {
-        serde_json::from_str(&body)
-            .map_err(|e| format!("Failed to parse token response: {}", e))
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse token response: {}", e))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
@@ -235,8 +236,7 @@ pub async fn refresh_token(
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
     if status.is_success() {
-        serde_json::from_str(&body)
-            .map_err(|e| format!("Failed to parse token response: {}", e))
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse token response: {}", e))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {

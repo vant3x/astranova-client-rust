@@ -854,7 +854,11 @@ impl HttpRequestView {
                             let body_text = self.response_body_editor.text();
                             let wrapped_text = text(body_text).size(13).font(iced::Font::MONOSPACE);
                             let context_menu = ContextMenu::new(scrollable(wrapped_text), || {
-                                column![button(row![lucide::copy().size(12), text(" Copy Body")].spacing(4)).on_press(Message::CopyBody),].into()
+                                column![button(
+                                    row![lucide::copy().size(12), text(" Copy Body")].spacing(4)
+                                )
+                                .on_press(Message::CopyBody),]
+                                .into()
                             });
                             container(context_menu)
                         } else {
@@ -863,8 +867,16 @@ impl HttpRequestView {
                                 .highlight(syntax, self.highlighter_theme);
                             let context_menu = ContextMenu::new(scrollable(editor), || {
                                 column![
-                                    button(row![lucide::copy().size(12), text(" Copy Selection")].spacing(4)).on_press(Message::CopySelection),
-                                    button(row![lucide::copy().size(12), text(" Copy Body")].spacing(4)).on_press(Message::CopyBody),
+                                    button(
+                                        row![lucide::copy().size(12), text(" Copy Selection")]
+                                            .spacing(4)
+                                    )
+                                    .on_press(Message::CopySelection),
+                                    button(
+                                        row![lucide::copy().size(12), text(" Copy Body")]
+                                            .spacing(4)
+                                    )
+                                    .on_press(Message::CopyBody),
                                 ]
                                 .into()
                             });
@@ -906,7 +918,7 @@ impl HttpRequestView {
         ) {
             Element::from(
                 button(row![lucide::copy().size(14), text(" Copy")].spacing(4))
-                    .on_press(Message::CopyResponse)
+                    .on_press(Message::CopyResponse),
             )
         } else {
             Element::from(column![])
@@ -918,8 +930,14 @@ impl HttpRequestView {
                     button(
                         row![
                             lucide::wrap_text().size(14),
-                            text(if self.word_wrap { "Wrap ON" } else { "Wrap OFF" }).size(11),
-                        ].spacing(4)
+                            text(if self.word_wrap {
+                                "Wrap ON"
+                            } else {
+                                "Wrap OFF"
+                            })
+                            .size(11),
+                        ]
+                        .spacing(4),
                     )
                     .on_press(Message::ToggleWordWrap),
                 )
@@ -927,7 +945,9 @@ impl HttpRequestView {
                 Element::from(column![])
             };
 
-        let method_colored = text(self.method.as_str()).size(16).color(method_color(self.method.as_str()));
+        let method_colored = text(self.method.as_str())
+            .size(16)
+            .color(method_color(self.method.as_str()));
 
         let status_text = if let Some(status) = self.status_code {
             let color = status_color(status);
@@ -962,17 +982,17 @@ impl HttpRequestView {
                 .width(Length::Fixed(100.0))
                 .height(Length::Fixed(100.0)),
             row![
-                pick_list(
-                    &HTTP_METHODS[..],
-                    Some(self.method.as_str()),
-                    |s: &str| Message::MethodSelected(s.to_string())
-                )
+                pick_list(&HTTP_METHODS[..], Some(self.method.as_str()), |s: &str| {
+                    Message::MethodSelected(s.to_string())
+                })
                 .padding(10),
                 text_input("URL", &self.url_input)
                     .on_input(Message::UrlInputChanged)
                     .padding(10),
-                button(row![lucide::send().size(14), text(" Send")].spacing(4)).on_press(Message::SendRequest),
-                button(row![lucide::code().size(14), text(" Code")].spacing(4)).on_press(Message::ShowSnippets),
+                button(row![lucide::send().size(14), text(" Send")].spacing(4))
+                    .on_press(Message::SendRequest),
+                button(row![lucide::code().size(14), text(" Code")].spacing(4))
+                    .on_press(Message::ShowSnippets),
             ]
             .spacing(10)
             .padding(10),
@@ -1195,16 +1215,22 @@ impl HttpRequestView {
                             .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2TokenUrl(u)))
                             .padding(10),
                         text_input("Redirect URI", &config.redirect_uri)
-                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(u)))
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(
+                                u
+                            )))
                             .padding(10),
                         row![
                             text("PKCE:"),
-                            button(if config.pkce_enabled { "ON" } else { "OFF" })
-                                .on_press(Message::AuthInputChanged(AuthInput::OAuth2PkceEnabled(!config.pkce_enabled))),
+                            button(if config.pkce_enabled { "ON" } else { "OFF" }).on_press(
+                                Message::AuthInputChanged(AuthInput::OAuth2PkceEnabled(
+                                    !config.pkce_enabled
+                                ))
+                            ),
                         ]
                         .spacing(10)
                         .align_y(Alignment::Center),
-                        button(row![lucide::key().size(14), text(" Get Authorization")].spacing(4)).on_press(Message::OAuth2StartAuth),
+                        button(row![lucide::key().size(14), text(" Get Authorization")].spacing(4))
+                            .on_press(Message::OAuth2StartAuth),
                     ]
                     .spacing(10),
                     crate::data::auth::OAuth2GrantType::ClientCredentials => column![
@@ -1214,32 +1240,60 @@ impl HttpRequestView {
                         text_input("Scopes (space-separated)", &config.scopes)
                             .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2Scopes(s)))
                             .padding(10),
-                        button(row![lucide::key().size(14), text(" Get Token")].spacing(4)).on_press(Message::OAuth2RefreshToken),
+                        button(row![lucide::key().size(14), text(" Get Token")].spacing(4))
+                            .on_press(Message::OAuth2RefreshToken),
                     ]
                     .spacing(10),
                     crate::data::auth::OAuth2GrantType::DeviceCode => column![
                         text_input("Device Auth URL", &config.device_auth_url)
-                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2DeviceAuthUrl(u)))
+                            .on_input(|u| Message::AuthInputChanged(
+                                AuthInput::OAuth2DeviceAuthUrl(u)
+                            ))
                             .padding(10),
                         if config.user_code.is_empty() {
-                            Element::from(button(row![lucide::smartphone().size(14), text(" Start Device Authorization")].spacing(4)).on_press(Message::OAuth2StartDeviceAuth))
-                        } else {
-                            Element::from(column![
-                                container(
-                                    text(format!("  {}  ", config.user_code))
-                                        .size(24)
-                                        .color(Color::from_rgb(0.0, 0.5, 1.0))
+                            Element::from(
+                                button(
+                                    row![
+                                        lucide::smartphone().size(14),
+                                        text(" Start Device Authorization")
+                                    ]
+                                    .spacing(4),
                                 )
-                                .padding(15)
-                                .center_x(Length::Fill)
-                                .style(iced::widget::container::rounded_box),
-                                text(format!("Open: {}", config.verification_uri)).size(12),
-                                button(row![lucide::copy().size(12), text(" Copy User Code")].spacing(4)).on_press({
-                                    let code = config.user_code.clone();
-                                    Message::AuthInputChanged(AuthInput::OAuth2AccessToken(code))
-                                }),
-                                button(row![lucide::refresh_cw().size(12), text(" Poll for Token")].spacing(4)).on_press(Message::OAuth2RefreshToken),
-                            ].spacing(8))
+                                .on_press(Message::OAuth2StartDeviceAuth),
+                            )
+                        } else {
+                            Element::from(
+                                column![
+                                    container(
+                                        text(format!("  {}  ", config.user_code))
+                                            .size(24)
+                                            .color(Color::from_rgb(0.0, 0.5, 1.0))
+                                    )
+                                    .padding(15)
+                                    .center_x(Length::Fill)
+                                    .style(iced::widget::container::rounded_box),
+                                    text(format!("Open: {}", config.verification_uri)).size(12),
+                                    button(
+                                        row![lucide::copy().size(12), text(" Copy User Code")]
+                                            .spacing(4)
+                                    )
+                                    .on_press({
+                                        let code = config.user_code.clone();
+                                        Message::AuthInputChanged(AuthInput::OAuth2AccessToken(
+                                            code,
+                                        ))
+                                    }),
+                                    button(
+                                        row![
+                                            lucide::refresh_cw().size(12),
+                                            text(" Poll for Token")
+                                        ]
+                                        .spacing(4)
+                                    )
+                                    .on_press(Message::OAuth2RefreshToken),
+                                ]
+                                .spacing(8),
+                            )
                         },
                     ]
                     .spacing(10),
@@ -1248,12 +1302,15 @@ impl HttpRequestView {
                             .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2AuthUrl(u)))
                             .padding(10),
                         text_input("Redirect URI", &config.redirect_uri)
-                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(u)))
+                            .on_input(|u| Message::AuthInputChanged(AuthInput::OAuth2RedirectUri(
+                                u
+                            )))
                             .padding(10),
                         text_input("Scopes (space-separated)", &config.scopes)
                             .on_input(|s| Message::AuthInputChanged(AuthInput::OAuth2Scopes(s)))
                             .padding(10),
-                        button(row![lucide::key().size(14), text(" Get Authorization")].spacing(4)).on_press(Message::OAuth2StartAuth),
+                        button(row![lucide::key().size(14), text(" Get Authorization")].spacing(4))
+                            .on_press(Message::OAuth2StartAuth),
                     ]
                     .spacing(10),
                 };
@@ -1282,7 +1339,9 @@ impl HttpRequestView {
                     text("Tokens").size(14),
                     row![
                         text_input("Access Token", &config.access_token)
-                            .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2AccessToken(t)))
+                            .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2AccessToken(
+                                t
+                            )))
                             .padding(10)
                             .secure(true),
                         button(lucide::copy().size(14)).on_press({
@@ -1294,7 +1353,9 @@ impl HttpRequestView {
                     .align_y(Alignment::Center),
                     row![
                         text_input("Refresh Token", &config.refresh_token)
-                            .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(t)))
+                            .on_input(|t| Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(
+                                t
+                            )))
                             .padding(10)
                             .secure(true),
                         button(lucide::copy().size(14)).on_press({
@@ -1305,16 +1366,20 @@ impl HttpRequestView {
                     .spacing(4)
                     .align_y(Alignment::Center),
                     if !config.status.to_string().is_empty() {
-                        Element::from(
-                            text(config.status.to_string())
-                                .size(12)
-                                .color(match &config.status {
-                                    crate::data::auth::OAuth2Status::Error(_) => Color::from_rgb(0.8, 0.2, 0.2),
-                                    crate::data::auth::OAuth2Status::Success(_) => Color::from_rgb(0.2, 0.7, 0.3),
-                                    crate::data::auth::OAuth2Status::Loading => Color::from_rgb(0.8, 0.7, 0.1),
-                                    _ => Color::from_rgb(0.5, 0.5, 0.5),
-                                }),
-                        )
+                        Element::from(text(config.status.to_string()).size(12).color(
+                            match &config.status {
+                                crate::data::auth::OAuth2Status::Error(_) => {
+                                    Color::from_rgb(0.8, 0.2, 0.2)
+                                }
+                                crate::data::auth::OAuth2Status::Success(_) => {
+                                    Color::from_rgb(0.2, 0.7, 0.3)
+                                }
+                                crate::data::auth::OAuth2Status::Loading => {
+                                    Color::from_rgb(0.8, 0.7, 0.1)
+                                }
+                                _ => Color::from_rgb(0.5, 0.5, 0.5),
+                            },
+                        ))
                     } else {
                         Element::from(column![])
                     },
@@ -1385,9 +1450,11 @@ impl HttpRequestView {
                             text_input("File path", &entry.value)
                                 .on_input(move |v| Message::MultipartValueChanged(entry.id, v))
                                 .padding(8),
-                            button(row![lucide::folder_open().size(12), text(" Browse")].spacing(4))
-                                .on_press(Message::MultipartBrowseFile(entry.id))
-                                .padding(8),
+                            button(
+                                row![lucide::folder_open().size(12), text(" Browse")].spacing(4)
+                            )
+                            .on_press(Message::MultipartBrowseFile(entry.id))
+                            .padding(8),
                         ]
                         .spacing(8)
                     } else {
@@ -1415,7 +1482,9 @@ impl HttpRequestView {
                     entries_col = entries_col.push(row);
                 }
 
-                let add_button = button(row![lucide::plus().size(14), text(" Add Field")].spacing(4)).on_press(Message::AddMultipartEntry);
+                let add_button =
+                    button(row![lucide::plus().size(14), text(" Add Field")].spacing(4))
+                        .on_press(Message::AddMultipartEntry);
 
                 container(
                     column![
@@ -1523,7 +1592,8 @@ impl HttpRequestView {
                     .spacing(10)
                     .align_y(Alignment::Center),
                 rule::horizontal(10),
-                button(row![lucide::rotate_ccw().size(14), text(" Reset to Defaults")].spacing(4)).on_press(Message::ResetSettings),
+                button(row![lucide::rotate_ccw().size(14), text(" Reset to Defaults")].spacing(4))
+                    .on_press(Message::ResetSettings),
             ]
             .spacing(15)
             .padding(20),
@@ -1564,7 +1634,8 @@ impl HttpRequestView {
             .highlight(syntax, self.highlighter_theme)
             .height(Length::Fill);
 
-        let copy_button = button(row![lucide::copy().size(14), text(" Copy")].spacing(4)).on_press(Message::CopySnippet);
+        let copy_button = button(row![lucide::copy().size(14), text(" Copy")].spacing(4))
+            .on_press(Message::CopySnippet);
 
         container(
             column![

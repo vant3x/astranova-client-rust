@@ -36,8 +36,7 @@ impl std::fmt::Display for AuthType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ApiKeyLocation {
     #[default]
     Header,
@@ -47,7 +46,6 @@ pub enum ApiKeyLocation {
 impl ApiKeyLocation {
     pub const ALL: [ApiKeyLocation; 2] = [ApiKeyLocation::Header, ApiKeyLocation::Query];
 }
-
 
 impl std::fmt::Display for ApiKeyLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

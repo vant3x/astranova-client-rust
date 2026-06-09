@@ -55,15 +55,13 @@ impl fmt::Display for RetryConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RedirectPolicy {
     #[default]
     Follow,
     NoFollow,
     Limited(u32),
 }
-
 
 impl RedirectPolicy {
     #[allow(dead_code)]
