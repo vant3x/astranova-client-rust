@@ -116,6 +116,7 @@ pub fn rename_request(conn: &Connection, id: i32, new_name: &str) -> Result<(), 
     database::rename_collection_request(conn, id, new_name).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 pub fn move_request(
     conn: &Connection,
     id: i32,

@@ -71,6 +71,7 @@ pub struct PostmanQueryParam {
 #[derive(Debug)]
 pub struct ImportedCollection {
     pub name: String,
+    #[allow(dead_code)]
     pub description: Option<String>,
     pub folders: Vec<ImportedFolder>,
     pub requests: Vec<ImportedRequest>,

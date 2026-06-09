@@ -40,6 +40,11 @@ rand = "0.8"
 open = "5"
 iced_fonts = { version = "0.3.0", features = ["lucide"] }
 
+[dependencies.zbus]
+version = ">=5.0, <5.12"
+default-features = false
+features = ["tokio"]
+
 [package.metadata.bundle]
 name = "AstraNova"
 identifier = "com.astranova.client"

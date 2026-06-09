@@ -152,6 +152,7 @@ pub async fn exchange_code(
     }
 }
 
+#[allow(dead_code)]
 pub async fn client_credentials(
     token_url: &str,
     client_id: &str,

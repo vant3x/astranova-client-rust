@@ -101,6 +101,7 @@ impl std::fmt::Display for MultipartFieldType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Message {
     UrlInputChanged(String),
     MethodSelected(String),

@@ -7,6 +7,7 @@ pub fn timestamp_seconds() -> String {
     duration.as_secs().to_string()
 }
 
+#[allow(dead_code)]
 pub fn timestamp_millis() -> u64 {
     let duration = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

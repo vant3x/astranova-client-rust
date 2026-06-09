@@ -7,6 +7,7 @@ use iced::{
 use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Message {
     UrlChanged(String),
     HeaderKeyChanged(String),

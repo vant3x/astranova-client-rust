@@ -102,6 +102,7 @@ pub struct OAuth2Config {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[allow(dead_code)]
 pub enum OAuth2Status {
     #[default]
     Idle,

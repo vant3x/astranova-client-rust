@@ -103,6 +103,7 @@ pub struct WsConnection {
 }
 
 impl WsConnection {
+    #[allow(dead_code)]
     pub fn shutdown(&mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
@@ -113,6 +114,7 @@ impl WsConnection {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum WsEvent {
     Message(WsMessage),
     Connected,

@@ -3,6 +3,7 @@ use crate::http_client::response::HttpResponse;
 use crate::persistence::database::{self, RequestHistoryEntry};
 use rusqlite::Connection;
 
+#[allow(dead_code)]
 pub fn save(
     conn: &Connection,
     request: &HttpRequest,
@@ -49,6 +50,7 @@ pub fn clear(conn: &Connection) {
     let _ = database::delete_request_history(conn);
 }
 
+#[allow(dead_code)]
 pub fn restore_request(entry: &RequestHistoryEntry) -> Option<HttpRequest> {
     entry
         .request_data

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use iced::{
     widget::{column, container, row, text},
     Alignment, Color, Element, Length, Renderer, Theme,

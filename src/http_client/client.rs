@@ -202,6 +202,7 @@ pub async fn send_request(
     Err(last_error)
 }
 
+#[allow(dead_code)]
 pub fn apply_auth(
     mut req_builder: reqwest::RequestBuilder,
     auth: &Auth,
@@ -251,6 +252,7 @@ pub fn apply_auth(
     }
 }
 
+#[allow(dead_code)]
 pub async fn apply_digest_auth(
     client: &reqwest::Client,
     request: &HttpRequest,
@@ -278,6 +280,7 @@ pub async fn apply_digest_auth(
     None
 }
 
+#[allow(dead_code)]
 fn compute_digest_auth(www_authenticate: &str, username: &str, password: &str, method: &str, url: &str) -> Option<String> {
     let params = parse_digest_params(www_authenticate);
     let realm = params.get("realm")?.clone();
@@ -322,6 +325,7 @@ fn compute_digest_auth(www_authenticate: &str, username: &str, password: &str, m
     Some(format!("Digest {}", parts.join(", ")))
 }
 
+#[allow(dead_code)]
 fn parse_digest_params(header: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     let header = header.strip_prefix("Digest ").unwrap_or(header);
@@ -337,6 +341,7 @@ fn parse_digest_params(header: &str) -> HashMap<String, String> {
     params
 }
 
+#[allow(dead_code)]
 fn md5_hex(input: &str) -> String {
     let hash = md5::compute(input.as_bytes());
     format!("{:x}", hash)
