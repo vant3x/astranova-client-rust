@@ -7,7 +7,7 @@ use crate::ui::views::environment_manager::{self, EnvironmentManagerView};
 use crate::ui::views::history_view::{self, HistoryView};
 use crate::ui::views::websocket_view::{self, WebSocketView};
 use iced::{
-    widget::{button, column, container, pick_list, row, rule, text},
+    widget::{button, column, container, pick_list, row, rule, stack, text},
     Alignment, Element, Length, Subscription, Task,
 };
 use iced_aw::{TabLabel, Tabs};
@@ -256,6 +256,7 @@ impl AstraNovaApp {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        self.toast_manager.clean_expired();
         match message {
             Message::HttpRequestViewMsg(index, msg) => {
                 if let Some(view) = self.request_tabs.get_mut(index) {
@@ -449,7 +450,7 @@ impl AstraNovaApp {
                             }
                         }
                     }
-                    environment_manager::Message::DeleteEnvironment => {
+                    environment_manager::Message::ConfirmDeleteEnvironment(_env_id) => {
                         if let Some(env) = &self.env_manager_view.selected_environment {
                             match crate::services::environment_service::delete_and_refresh(
                                 &self.db_conn,
@@ -599,7 +600,10 @@ impl AstraNovaApp {
                             }
                         }
                     }
-                    collection_view::Message::DeleteCollection(idx) => {
+                    collection_view::Message::DeleteCollection(_idx) => {
+                        // Local state cleanup is handled by collection_view.update()
+                    }
+                    collection_view::Message::ConfirmDeleteCollection(idx) => {
                         if let Some(col) = self.collection_view.collections.get(idx) {
                             match crate::services::collection_service::delete_and_refresh(
                                 &self.db_conn,
@@ -610,7 +614,10 @@ impl AstraNovaApp {
                             }
                         }
                     }
-                    collection_view::Message::DeleteFolder(folder_id) => {
+                    collection_view::Message::DeleteFolder(_folder_id) => {
+                        // Local state cleanup is handled by collection_view.update()
+                    }
+                    collection_view::Message::ConfirmDeleteFolder(folder_id) => {
                         if let collection_view::PanelState::CollectionDetail(col_idx) =
                             self.collection_view.panel_state
                         {
@@ -852,7 +859,10 @@ impl AstraNovaApp {
                             }
                         }
                     }
-                    collection_view::Message::DeleteRequest(req_id) => {
+                    collection_view::Message::DeleteRequest(_req_id) => {
+                        // Local state cleanup is handled by collection_view.update()
+                    }
+                    collection_view::Message::ConfirmDeleteRequest(req_id) => {
                         if let collection_view::PanelState::CollectionDetail(col_idx) =
                             self.collection_view.panel_state
                         {
@@ -1497,7 +1507,9 @@ impl AstraNovaApp {
                     }
                 };
 
-                if self.show_history {
+                let toast_overlay = self.toast_manager.view().map(|_| Message::NoOp);
+
+                let content: Element<'_, Message> = if self.show_history {
                     let history_panel =
                         container(self.history_view.view().map(Message::HistoryMsg))
                             .width(Length::FillPortion(1))
@@ -1554,7 +1566,9 @@ impl AstraNovaApp {
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .into()
-                }
+                };
+
+                stack![content, toast_overlay].into()
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
         }

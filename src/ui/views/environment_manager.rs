@@ -17,7 +17,9 @@ pub enum Message {
     UpdateVariables(Vec<(String, String)>),
     CreateEnvironment,
     SaveEnvironment,
-    DeleteEnvironment,
+    RequestDeleteEnvironment(i32),
+    ConfirmDeleteEnvironment(i32),
+    CancelDeleteEnvironment,
     LoadEnvFile,
     Close,
 }
@@ -28,6 +30,7 @@ pub struct EnvironmentManagerView {
     pub selected_environment: Option<Environment>,
     pub new_environment_name: String,
     pub variables_editor: KeyValueEditor,
+    pub pending_delete_environment: Option<i32>,
 }
 
 impl EnvironmentManagerView {
@@ -37,6 +40,7 @@ impl EnvironmentManagerView {
             selected_environment: None,
             new_environment_name: String::new(),
             variables_editor: KeyValueEditor::new("Add Variable".to_string()),
+            pending_delete_environment: None,
         }
     }
 
@@ -104,8 +108,14 @@ impl EnvironmentManagerView {
                         .collect();
                 }
             }
-            Message::DeleteEnvironment => {
-                self.selected_environment = None;
+            Message::RequestDeleteEnvironment(env_id) => {
+                self.pending_delete_environment = Some(env_id);
+            }
+            Message::ConfirmDeleteEnvironment(_env_id) => {
+                self.pending_delete_environment = None;
+            }
+            Message::CancelDeleteEnvironment => {
+                self.pending_delete_environment = None;
             }
             Message::LoadEnvFile => {
                 // This message is handled in app.rs
@@ -137,17 +147,29 @@ impl EnvironmentManagerView {
                     .on_input(Message::DefaultEndpointChanged),
                 )
                 .push(self.variables_editor.view().map(Message::VariablesEditor))
-                .push(
-                    row![
-                        button(row![lucide::save().size(14), text(" Save")].spacing(4))
-                            .on_press(Message::SaveEnvironment),
-                        button(row![lucide::trash().size(14), text(" Delete")].spacing(4))
-                            .on_press(Message::DeleteEnvironment),
-                        button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4))
-                            .on_press(Message::LoadEnvFile)
-                    ]
-                    .spacing(10),
-                );
+                .push({
+                    let save_btn = button(row![lucide::save().size(14), text(" Save")].spacing(4))
+                        .on_press(Message::SaveEnvironment);
+                    let load_btn = button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4))
+                        .on_press(Message::LoadEnvFile);
+
+                    let delete_section = if self.pending_delete_environment == Some(selected_env.id) {
+                        row![
+                            button(text("Delete?").size(14).color(iced::Color::from_rgb(0.8, 0.2, 0.2)))
+                                .on_press(Message::ConfirmDeleteEnvironment(selected_env.id)),
+                            button(lucide::x().size(14))
+                                .on_press(Message::CancelDeleteEnvironment),
+                        ]
+                        .spacing(4)
+                    } else {
+                        row![
+                            button(row![lucide::trash().size(14), text(" Delete")].spacing(4))
+                                .on_press(Message::RequestDeleteEnvironment(selected_env.id)),
+                        ]
+                    };
+
+                    row![save_btn, delete_section, load_btn].spacing(10)
+                });
         }
 
         let create_new_env_section = column![

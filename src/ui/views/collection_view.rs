@@ -20,6 +20,9 @@ pub enum Message {
     ConfirmRenameCollection,
     CancelRenameCollection,
     DeleteCollection(usize),
+    RequestDeleteCollection(usize),
+    ConfirmDeleteCollection(usize),
+    CancelDeleteCollection,
     ImportCollection,
     ImportCollectionData(Option<String>),
     ExportCollection(usize),
@@ -31,12 +34,18 @@ pub enum Message {
     ConfirmRenameFolder,
     CancelRenameFolder,
     DeleteFolder(i32),
+    RequestDeleteFolder(i32),
+    ConfirmDeleteFolder(i32),
+    CancelDeleteFolder,
     SaveCurrentRequest,
     StartRenameRequest(i32),
     RenameRequestValueChanged(String),
     ConfirmRenameRequest,
     CancelRenameRequest,
     DeleteRequest(i32),
+    RequestDeleteRequest(i32),
+    ConfirmDeleteRequest(i32),
+    CancelDeleteRequest,
     Close,
 }
 
@@ -67,6 +76,9 @@ pub struct CollectionView {
     pub rename_folder_value: String,
     pub renaming_request: Option<i32>,
     pub rename_request_value: String,
+    pub pending_delete_collection: Option<usize>,
+    pub pending_delete_folder: Option<i32>,
+    pub pending_delete_request: Option<i32>,
 }
 
 impl Clone for CollectionView {
@@ -89,6 +101,9 @@ impl Clone for CollectionView {
             rename_folder_value: self.rename_folder_value.clone(),
             renaming_request: self.renaming_request,
             rename_request_value: self.rename_request_value.clone(),
+            pending_delete_collection: self.pending_delete_collection,
+            pending_delete_folder: self.pending_delete_folder,
+            pending_delete_request: self.pending_delete_request,
         }
     }
 }
@@ -139,10 +154,36 @@ impl CollectionView {
                     self.collections.remove(idx);
                     self.expanded_collections.remove(idx);
                 }
+                self.pending_delete_collection = None;
+                None
+            }
+            Message::RequestDeleteCollection(idx) => {
+                self.pending_delete_collection = Some(idx);
+                None
+            }
+            Message::ConfirmDeleteCollection(_idx) => {
+                self.pending_delete_collection = None;
+                None
+            }
+            Message::CancelDeleteCollection => {
+                self.pending_delete_collection = None;
                 None
             }
             Message::DeleteFolder(folder_id) => {
                 self.folders.retain(|f| f.id != folder_id);
+                self.pending_delete_folder = None;
+                None
+            }
+            Message::RequestDeleteFolder(folder_id) => {
+                self.pending_delete_folder = Some(folder_id);
+                None
+            }
+            Message::ConfirmDeleteFolder(_folder_id) => {
+                self.pending_delete_folder = None;
+                None
+            }
+            Message::CancelDeleteFolder => {
+                self.pending_delete_folder = None;
                 None
             }
             Message::ImportCollection => None,
@@ -208,7 +249,22 @@ impl CollectionView {
                 self.renaming_request = None;
                 None
             }
-            Message::DeleteRequest(_req_id) => None,
+            Message::DeleteRequest(_req_id) => {
+                self.pending_delete_request = None;
+                None
+            }
+            Message::RequestDeleteRequest(req_id) => {
+                self.pending_delete_request = Some(req_id);
+                None
+            }
+            Message::ConfirmDeleteRequest(_req_id) => {
+                self.pending_delete_request = None;
+                None
+            }
+            Message::CancelDeleteRequest => {
+                self.pending_delete_request = None;
+                None
+            }
         }
     }
 
@@ -301,21 +357,37 @@ impl CollectionView {
                     lucide::chevron_right().size(14).into()
                 };
 
-                let col_row = row![
-                    button(row![expand_icon, text(&col.name).size(13)].spacing(4))
-                        .on_press(Message::ToggleExpanded(index)),
-                    button(lucide::pencil().size(12))
-                        .on_press(Message::StartRenameCollection(index)),
-                    button(lucide::download().size(12)).on_press(Message::ExportCollection(index)),
-                    button(
-                        lucide::trash()
-                            .size(12)
-                            .color(Color::from_rgb(0.8, 0.2, 0.2))
-                    )
-                    .on_press(Message::DeleteCollection(index)),
-                ]
-                .spacing(4)
-                .align_y(Alignment::Center);
+                let col_row = if self.pending_delete_collection == Some(index) {
+                    row![
+                        button(row![expand_icon, text(&col.name).size(13)].spacing(4))
+                            .on_press(Message::ToggleExpanded(index)),
+                        button(lucide::pencil().size(12))
+                            .on_press(Message::StartRenameCollection(index)),
+                        button(lucide::download().size(12)).on_press(Message::ExportCollection(index)),
+                        button(text("Delete?").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                            .on_press(Message::ConfirmDeleteCollection(index)),
+                        button(lucide::x().size(11))
+                            .on_press(Message::CancelDeleteCollection),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                } else {
+                    row![
+                        button(row![expand_icon, text(&col.name).size(13)].spacing(4))
+                            .on_press(Message::ToggleExpanded(index)),
+                        button(lucide::pencil().size(12))
+                            .on_press(Message::StartRenameCollection(index)),
+                        button(lucide::download().size(12)).on_press(Message::ExportCollection(index)),
+                        button(
+                            lucide::trash()
+                                .size(12)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::RequestDeleteCollection(index)),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                };
 
                 list = list.push(col_row);
             }
@@ -405,27 +477,49 @@ impl CollectionView {
                     lucide::chevron_right().size(14).into()
                 };
 
-                let folder_row = row![
-                    button(
-                        row![
-                            expand_icon,
-                            lucide::folder().size(14),
-                            text(&folder.name).size(13)
-                        ]
-                        .spacing(4)
-                    )
-                    .on_press(Message::ToggleExpanded(col_idx)),
-                    button(lucide::pencil().size(12))
-                        .on_press(Message::StartRenameFolder(folder.id)),
-                    button(
-                        lucide::trash()
-                            .size(12)
-                            .color(Color::from_rgb(0.8, 0.2, 0.2))
-                    )
-                    .on_press(Message::DeleteFolder(folder.id)),
-                ]
-                .spacing(4)
-                .align_y(Alignment::Center);
+                let folder_row = if self.pending_delete_folder == Some(folder.id) {
+                    row![
+                        button(
+                            row![
+                                expand_icon,
+                                lucide::folder().size(14),
+                                text(&folder.name).size(13)
+                            ]
+                            .spacing(4)
+                        )
+                        .on_press(Message::ToggleExpanded(col_idx)),
+                        button(lucide::pencil().size(12))
+                            .on_press(Message::StartRenameFolder(folder.id)),
+                        button(text("Delete?").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                            .on_press(Message::ConfirmDeleteFolder(folder.id)),
+                        button(lucide::x().size(11))
+                            .on_press(Message::CancelDeleteFolder),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                } else {
+                    row![
+                        button(
+                            row![
+                                expand_icon,
+                                lucide::folder().size(14),
+                                text(&folder.name).size(13)
+                            ]
+                            .spacing(4)
+                        )
+                        .on_press(Message::ToggleExpanded(col_idx)),
+                        button(lucide::pencil().size(12))
+                            .on_press(Message::StartRenameFolder(folder.id)),
+                        button(
+                            lucide::trash()
+                                .size(12)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::RequestDeleteFolder(folder.id)),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                };
 
                 list = list.push(folder_row);
             }
@@ -450,22 +544,39 @@ impl CollectionView {
                             .align_y(Alignment::Center);
                             list = list.push(rename_row);
                         } else {
-                            let req_row = row![
-                                text(format!("    {}", req.method))
-                                    .size(11)
-                                    .color(method_color),
-                                text(&req.name).size(11),
-                                button(lucide::pencil().size(10))
-                                    .on_press(Message::StartRenameRequest(req.id)),
-                                button(
-                                    lucide::trash()
-                                        .size(10)
-                                        .color(Color::from_rgb(0.8, 0.2, 0.2))
-                                )
-                                .on_press(Message::DeleteRequest(req.id)),
-                            ]
-                            .spacing(4)
-                            .align_y(Alignment::Center);
+                            let req_row = if self.pending_delete_request == Some(req.id) {
+                                row![
+                                    text(format!("    {}", req.method))
+                                        .size(11)
+                                        .color(method_color),
+                                    text(&req.name).size(11),
+                                    button(lucide::pencil().size(10))
+                                        .on_press(Message::StartRenameRequest(req.id)),
+                                    button(text("Delete?").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                                        .on_press(Message::ConfirmDeleteRequest(req.id)),
+                                    button(lucide::x().size(10))
+                                        .on_press(Message::CancelDeleteRequest),
+                                ]
+                                .spacing(4)
+                                .align_y(Alignment::Center)
+                            } else {
+                                row![
+                                    text(format!("    {}", req.method))
+                                        .size(11)
+                                        .color(method_color),
+                                    text(&req.name).size(11),
+                                    button(lucide::pencil().size(10))
+                                        .on_press(Message::StartRenameRequest(req.id)),
+                                    button(
+                                        lucide::trash()
+                                            .size(10)
+                                            .color(Color::from_rgb(0.8, 0.2, 0.2))
+                                    )
+                                    .on_press(Message::RequestDeleteRequest(req.id)),
+                                ]
+                                .spacing(4)
+                                .align_y(Alignment::Center)
+                            };
 
                             let req_button = button(req_row).on_press(Message::LoadRequest(req.id));
                             list = list.push(req_button);
@@ -512,19 +623,33 @@ impl CollectionView {
                 list = list.push(rename_row);
             } else {
                 let url_short: String = req.url.chars().take(35).collect();
-                let req_row = row![
-                    text(&req.method).size(12).color(method_color),
-                    text(url_short).size(12),
-                    button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
-                    button(
-                        lucide::trash()
-                            .size(10)
-                            .color(Color::from_rgb(0.8, 0.2, 0.2))
-                    )
-                    .on_press(Message::DeleteRequest(req.id)),
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center);
+                let req_row = if self.pending_delete_request == Some(req.id) {
+                    row![
+                        text(&req.method).size(12).color(method_color),
+                        text(url_short).size(12),
+                        button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
+                        button(text("Delete?").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                            .on_press(Message::ConfirmDeleteRequest(req.id)),
+                        button(lucide::x().size(10))
+                            .on_press(Message::CancelDeleteRequest),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                } else {
+                    row![
+                        text(&req.method).size(12).color(method_color),
+                        text(url_short).size(12),
+                        button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
+                        button(
+                            lucide::trash()
+                                .size(10)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::RequestDeleteRequest(req.id)),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                };
 
                 let req_button = button(req_row).on_press(Message::LoadRequest(req.id));
                 list = list.push(req_button);
@@ -585,23 +710,41 @@ impl CollectionView {
                     list = list.push(rename_row);
                 } else {
                     let url_short: String = req.url.chars().take(35).collect();
-                    let req_row = row![
-                        text(&req.method).size(12).color(method_color),
-                        text(&req.name).size(12),
-                        text(url_short)
-                            .size(11)
-                            .color(Color::from_rgb(0.4, 0.4, 0.4)),
-                        button(lucide::pencil().size(10))
-                            .on_press(Message::StartRenameRequest(req.id)),
-                        button(
-                            lucide::trash()
-                                .size(10)
-                                .color(Color::from_rgb(0.8, 0.2, 0.2))
-                        )
-                        .on_press(Message::DeleteRequest(req.id)),
-                    ]
-                    .spacing(6)
-                    .align_y(Alignment::Center);
+                    let req_row = if self.pending_delete_request == Some(req.id) {
+                        row![
+                            text(&req.method).size(12).color(method_color),
+                            text(&req.name).size(12),
+                            text(url_short)
+                                .size(11)
+                                .color(Color::from_rgb(0.4, 0.4, 0.4)),
+                            button(lucide::pencil().size(10))
+                                .on_press(Message::StartRenameRequest(req.id)),
+                            button(text("Delete?").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
+                                .on_press(Message::ConfirmDeleteRequest(req.id)),
+                            button(lucide::x().size(10))
+                                .on_press(Message::CancelDeleteRequest),
+                        ]
+                        .spacing(6)
+                        .align_y(Alignment::Center)
+                    } else {
+                        row![
+                            text(&req.method).size(12).color(method_color),
+                            text(&req.name).size(12),
+                            text(url_short)
+                                .size(11)
+                                .color(Color::from_rgb(0.4, 0.4, 0.4)),
+                            button(lucide::pencil().size(10))
+                                .on_press(Message::StartRenameRequest(req.id)),
+                            button(
+                                lucide::trash()
+                                    .size(10)
+                                    .color(Color::from_rgb(0.8, 0.2, 0.2))
+                            )
+                            .on_press(Message::RequestDeleteRequest(req.id)),
+                        ]
+                        .spacing(6)
+                        .align_y(Alignment::Center)
+                    };
 
                     let req_button = button(req_row).on_press(Message::LoadRequest(req.id));
                     list = list.push(req_button);
