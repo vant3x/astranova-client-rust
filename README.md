@@ -39,6 +39,16 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
     This command will compile the application and then run it. The application window should appear.
 
+## macOS - App sin firmar
+
+Si descargaste la app desde GitHub Releases y macOS no te deja abrirla (error de "desarrollador no verificado" o que la app esta dañada), ejecuta esto en Terminal:
+
+```bash
+xattr -cr /Applications/AstraNova.app
+```
+
+Esto elimina la marca de quarantine que macOS aplica a apps descargadas de internet. No necesitas compilar nada con `cargo`.
+
 ## Built With
 
 *   [Rust](https://www.rust-lang.org/) - A language empowering everyone to build reliable and efficient software.

@@ -180,6 +180,10 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: cargo wix -v
 
+    - name: Fix macOS quarantine attribute
+      if: matrix.os == 'macos-latest'
+      run: xattr -cr target/release/bundle/osx/AstraNova.app
+
     - name: Package macOS bundle
       if: matrix.os == 'macos-latest'
       run: |
