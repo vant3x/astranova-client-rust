@@ -5,3 +5,4 @@ astranova-contend-images-brand/
 *.db
 *.db-journal
 .env
+.idea/
