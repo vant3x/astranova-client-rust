@@ -140,12 +140,9 @@ pub async fn send_request(
                                         &current_url,
                                     ) {
                                         let mut retry_builder = client.request(
-                                            request
-                                                .method
-                                                .parse()
-                                                .map_err(|e: http::method::InvalidMethod| {
-                                                    e.to_string()
-                                                })?,
+                                            request.method.parse().map_err(
+                                                |e: http::method::InvalidMethod| e.to_string(),
+                                            )?,
                                             current_url.clone(),
                                         );
                                         retry_builder =
@@ -153,12 +150,11 @@ pub async fn send_request(
                                         for (key, value) in &request.headers {
                                             retry_builder = retry_builder.header(key, value);
                                         }
-                                        retry_builder = retry_builder
-                                            .header("Authorization", digest_header);
+                                        retry_builder =
+                                            retry_builder.header("Authorization", digest_header);
                                         match retry_builder.send().await {
                                             Ok(retry_res) => {
-                                                response_status =
-                                                    retry_res.status().as_u16();
+                                                response_status = retry_res.status().as_u16();
                                                 response_headers = retry_res
                                                     .headers()
                                                     .iter()

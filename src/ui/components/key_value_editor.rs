@@ -72,18 +72,21 @@ impl KeyValueEditor {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let entries_view = self.entries.iter().fold(column![].spacing(8), |col, entry| {
-            col.push(
-                row![
-                    text_input("Key", &entry.key)
-                        .on_input(move |k| Message::EntryKeyChanged(entry.id, k)),
-                    text_input("Value", &entry.value)
-                        .on_input(move |v| Message::EntryValueChanged(entry.id, v)),
-                    button(text("Remove")).on_press(Message::RemoveEntry(entry.id))
-                ]
-                .spacing(10),
-            )
-        });
+        let entries_view = self
+            .entries
+            .iter()
+            .fold(column![].spacing(8), |col, entry| {
+                col.push(
+                    row![
+                        text_input("Key", &entry.key)
+                            .on_input(move |k| Message::EntryKeyChanged(entry.id, k)),
+                        text_input("Value", &entry.value)
+                            .on_input(move |v| Message::EntryValueChanged(entry.id, v)),
+                        button(text("Remove")).on_press(Message::RemoveEntry(entry.id))
+                    ]
+                    .spacing(10),
+                )
+            });
 
         column![
             entries_view,

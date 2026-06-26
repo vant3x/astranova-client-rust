@@ -1501,12 +1501,12 @@ impl AstraNovaApp {
                                     .collect();
                                 format!("Available: {}", keys.join(", "))
                             };
-                        column![
-                            text("Use {{variable}} in URL, Headers, or Body.").size(12),
-                            text(variables_text).size(12)
-                        ]
-                        .spacing(5)
-                        .into()
+                            column![
+                                text("Use {{variable}} in URL, Headers, or Body.").size(12),
+                                text(variables_text).size(12)
+                            ]
+                            .spacing(5)
+                            .into()
                         } else {
                             column![].into()
                         }

@@ -1,7 +1,7 @@
 # AstraNova Client
 
 
-<img src="assets/logo-bg.png" alt="AstraNova Logo" width="300">
+<img src="assets/astra-bg.png" alt="AstraNova Logo" width="300">
 
 
 

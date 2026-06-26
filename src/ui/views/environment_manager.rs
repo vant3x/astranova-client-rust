@@ -150,15 +150,20 @@ impl EnvironmentManagerView {
                 .push({
                     let save_btn = button(row![lucide::save().size(14), text(" Save")].spacing(4))
                         .on_press(Message::SaveEnvironment);
-                    let load_btn = button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4))
-                        .on_press(Message::LoadEnvFile);
+                    let load_btn =
+                        button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4))
+                            .on_press(Message::LoadEnvFile);
 
-                    let delete_section = if self.pending_delete_environment == Some(selected_env.id) {
+                    let delete_section = if self.pending_delete_environment == Some(selected_env.id)
+                    {
                         row![
-                            button(text("Delete?").size(14).color(iced::Color::from_rgb(0.8, 0.2, 0.2)))
-                                .on_press(Message::ConfirmDeleteEnvironment(selected_env.id)),
-                            button(lucide::x().size(14))
-                                .on_press(Message::CancelDeleteEnvironment),
+                            button(
+                                text("Delete?")
+                                    .size(14)
+                                    .color(iced::Color::from_rgb(0.8, 0.2, 0.2))
+                            )
+                            .on_press(Message::ConfirmDeleteEnvironment(selected_env.id)),
+                            button(lucide::x().size(14)).on_press(Message::CancelDeleteEnvironment),
                         ]
                         .spacing(4)
                     } else {

@@ -363,11 +363,15 @@ impl CollectionView {
                             .on_press(Message::ToggleExpanded(index)),
                         button(lucide::pencil().size(12))
                             .on_press(Message::StartRenameCollection(index)),
-                        button(lucide::download().size(12)).on_press(Message::ExportCollection(index)),
-                        button(text("Delete?").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                            .on_press(Message::ConfirmDeleteCollection(index)),
-                        button(lucide::x().size(11))
-                            .on_press(Message::CancelDeleteCollection),
+                        button(lucide::download().size(12))
+                            .on_press(Message::ExportCollection(index)),
+                        button(
+                            text("Delete?")
+                                .size(11)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::ConfirmDeleteCollection(index)),
+                        button(lucide::x().size(11)).on_press(Message::CancelDeleteCollection),
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center)
@@ -377,7 +381,8 @@ impl CollectionView {
                             .on_press(Message::ToggleExpanded(index)),
                         button(lucide::pencil().size(12))
                             .on_press(Message::StartRenameCollection(index)),
-                        button(lucide::download().size(12)).on_press(Message::ExportCollection(index)),
+                        button(lucide::download().size(12))
+                            .on_press(Message::ExportCollection(index)),
                         button(
                             lucide::trash()
                                 .size(12)
@@ -490,10 +495,13 @@ impl CollectionView {
                         .on_press(Message::ToggleExpanded(col_idx)),
                         button(lucide::pencil().size(12))
                             .on_press(Message::StartRenameFolder(folder.id)),
-                        button(text("Delete?").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                            .on_press(Message::ConfirmDeleteFolder(folder.id)),
-                        button(lucide::x().size(11))
-                            .on_press(Message::CancelDeleteFolder),
+                        button(
+                            text("Delete?")
+                                .size(11)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::ConfirmDeleteFolder(folder.id)),
+                        button(lucide::x().size(11)).on_press(Message::CancelDeleteFolder),
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center)
@@ -552,8 +560,12 @@ impl CollectionView {
                                     text(&req.name).size(11),
                                     button(lucide::pencil().size(10))
                                         .on_press(Message::StartRenameRequest(req.id)),
-                                    button(text("Delete?").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                                        .on_press(Message::ConfirmDeleteRequest(req.id)),
+                                    button(
+                                        text("Delete?")
+                                            .size(10)
+                                            .color(Color::from_rgb(0.8, 0.2, 0.2))
+                                    )
+                                    .on_press(Message::ConfirmDeleteRequest(req.id)),
                                     button(lucide::x().size(10))
                                         .on_press(Message::CancelDeleteRequest),
                                 ]
@@ -627,11 +639,15 @@ impl CollectionView {
                     row![
                         text(&req.method).size(12).color(method_color),
                         text(url_short).size(12),
-                        button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
-                        button(text("Delete?").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                            .on_press(Message::ConfirmDeleteRequest(req.id)),
-                        button(lucide::x().size(10))
-                            .on_press(Message::CancelDeleteRequest),
+                        button(lucide::pencil().size(10))
+                            .on_press(Message::StartRenameRequest(req.id)),
+                        button(
+                            text("Delete?")
+                                .size(10)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2))
+                        )
+                        .on_press(Message::ConfirmDeleteRequest(req.id)),
+                        button(lucide::x().size(10)).on_press(Message::CancelDeleteRequest),
                     ]
                     .spacing(6)
                     .align_y(Alignment::Center)
@@ -639,7 +655,8 @@ impl CollectionView {
                     row![
                         text(&req.method).size(12).color(method_color),
                         text(url_short).size(12),
-                        button(lucide::pencil().size(10)).on_press(Message::StartRenameRequest(req.id)),
+                        button(lucide::pencil().size(10))
+                            .on_press(Message::StartRenameRequest(req.id)),
                         button(
                             lucide::trash()
                                 .size(10)
@@ -719,10 +736,13 @@ impl CollectionView {
                                 .color(Color::from_rgb(0.4, 0.4, 0.4)),
                             button(lucide::pencil().size(10))
                                 .on_press(Message::StartRenameRequest(req.id)),
-                            button(text("Delete?").size(10).color(Color::from_rgb(0.8, 0.2, 0.2)))
-                                .on_press(Message::ConfirmDeleteRequest(req.id)),
-                            button(lucide::x().size(10))
-                                .on_press(Message::CancelDeleteRequest),
+                            button(
+                                text("Delete?")
+                                    .size(10)
+                                    .color(Color::from_rgb(0.8, 0.2, 0.2))
+                            )
+                            .on_press(Message::ConfirmDeleteRequest(req.id)),
+                            button(lucide::x().size(10)).on_press(Message::CancelDeleteRequest),
                         ]
                         .spacing(6)
                         .align_y(Alignment::Center)

@@ -443,23 +443,21 @@ impl HttpRequestView {
                 key,
                 value,
                 location,
-            } if !key.is_empty() => {
-                match location {
-                    crate::data::auth::ApiKeyLocation::Header => {
-                        headers.push((key.clone(), value.clone()));
-                    }
-                    crate::data::auth::ApiKeyLocation::Query => {
-                        let separator = if final_url.contains('?') { "&" } else { "?" };
-                        final_url = format!(
-                            "{}{}{}={}",
-                            final_url,
-                            separator,
-                            urlencoding::encode(key),
-                            urlencoding::encode(value)
-                        );
-                    }
+            } if !key.is_empty() => match location {
+                crate::data::auth::ApiKeyLocation::Header => {
+                    headers.push((key.clone(), value.clone()));
                 }
-            }
+                crate::data::auth::ApiKeyLocation::Query => {
+                    let separator = if final_url.contains('?') { "&" } else { "?" };
+                    final_url = format!(
+                        "{}{}{}={}",
+                        final_url,
+                        separator,
+                        urlencoding::encode(key),
+                        urlencoding::encode(value)
+                    );
+                }
+            },
             Auth::OAuth2(config) if !config.access_token.is_empty() => {
                 headers.push((
                     "Authorization".to_string(),
@@ -2178,10 +2176,7 @@ mod tests {
         };
         let req = view.build_request();
         assert!(req.url.contains("api_key=secret123"));
-        assert!(!req
-            .headers
-            .iter()
-            .any(|(k, _)| k == "api_key"));
+        assert!(!req.headers.iter().any(|(k, _)| k == "api_key"));
     }
 
     #[test]
@@ -2206,10 +2201,7 @@ mod tests {
             location: crate::data::auth::ApiKeyLocation::Header,
         };
         let req = view.build_request();
-        assert!(!req
-            .headers
-            .iter()
-            .any(|(k, _)| k == "X-API-Key" || k == ""));
+        assert!(!req.headers.iter().any(|(k, _)| k == "X-API-Key" || k == ""));
     }
 
     #[test]
@@ -2218,7 +2210,10 @@ mod tests {
         view.auth = Auth::BearerToken("token".to_string());
         let req = view.build_request();
         assert!(req.auth.is_some());
-        assert_eq!(req.auth.as_ref().unwrap(), &Auth::BearerToken("token".to_string()));
+        assert_eq!(
+            req.auth.as_ref().unwrap(),
+            &Auth::BearerToken("token".to_string())
+        );
     }
 
     #[test]

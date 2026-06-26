@@ -274,9 +274,8 @@ pub fn delete_request_history(conn: &Connection) -> Result<()> {
 pub const DEFAULT_HISTORY_LIMIT: usize = 500;
 
 pub fn trim_request_history(conn: &Connection, max_entries: usize) -> Result<()> {
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM request_history", [], |row| {
-        row.get(0)
-    })?;
+    let count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM request_history", [], |row| row.get(0))?;
     let excess = count - max_entries as i64;
     if excess > 0 {
         conn.execute(

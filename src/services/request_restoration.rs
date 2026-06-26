@@ -503,26 +503,27 @@ mod tests {
 
     #[test]
     fn oauth2_json_round_trip_preserves_all_fields() {
-        let original_auth = crate::data::auth::Auth::OAuth2(Box::new(crate::data::auth::OAuth2Config {
-            grant_type: crate::data::auth::OAuth2GrantType::DeviceCode,
-            auth_url: "https://auth.example.com/authorize".to_string(),
-            token_url: "https://token.example.com/token".to_string(),
-            device_auth_url: "https://device.example.com".to_string(),
-            client_id: "my-client-id".to_string(),
-            client_secret: "my-secret".to_string(),
-            scopes: "read write admin".to_string(),
-            redirect_uri: "http://localhost:8080/callback".to_string(),
-            pkce_enabled: true,
-            access_token: "eyJhbGciOiJSUzI1NiIs...".to_string(),
-            refresh_token: "dGhpcyBpcyBhIHJlZnJlc2g...".to_string(),
-            token_expiry: Some("2025-12-31T23:59:59Z".to_string()),
-            device_code: "ABC-123-DEF".to_string(),
-            user_code: "ABCD-1234".to_string(),
-            verification_uri: "https://device.example.com/verify".to_string(),
-            device_code_expires_in: Some(300),
-            device_code_interval: Some(5),
-            status: crate::data::auth::OAuth2Status::default(),
-        }));
+        let original_auth =
+            crate::data::auth::Auth::OAuth2(Box::new(crate::data::auth::OAuth2Config {
+                grant_type: crate::data::auth::OAuth2GrantType::DeviceCode,
+                auth_url: "https://auth.example.com/authorize".to_string(),
+                token_url: "https://token.example.com/token".to_string(),
+                device_auth_url: "https://device.example.com".to_string(),
+                client_id: "my-client-id".to_string(),
+                client_secret: "my-secret".to_string(),
+                scopes: "read write admin".to_string(),
+                redirect_uri: "http://localhost:8080/callback".to_string(),
+                pkce_enabled: true,
+                access_token: "eyJhbGciOiJSUzI1NiIs...".to_string(),
+                refresh_token: "dGhpcyBpcyBhIHJlZnJlc2g...".to_string(),
+                token_expiry: Some("2025-12-31T23:59:59Z".to_string()),
+                device_code: "ABC-123-DEF".to_string(),
+                user_code: "ABCD-1234".to_string(),
+                verification_uri: "https://device.example.com/verify".to_string(),
+                device_code_expires_in: Some(300),
+                device_code_interval: Some(5),
+                status: crate::data::auth::OAuth2Status::default(),
+            }));
 
         let json = serde_json::to_string(&original_auth).unwrap();
         let req = CollectionRequest {
@@ -596,7 +597,11 @@ mod tests {
         };
         let view = build_view_from_collection_request(&req);
         match &view.auth {
-            crate::data::auth::Auth::ApiKey { key, value, location } => {
+            crate::data::auth::Auth::ApiKey {
+                key,
+                value,
+                location,
+            } => {
                 assert_eq!(key, "X-API-Key");
                 assert_eq!(value, "secret-123");
                 assert_eq!(*location, crate::data::auth::ApiKeyLocation::Query);

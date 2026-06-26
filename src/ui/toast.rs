@@ -150,24 +150,27 @@ impl ToastManager {
 
             let icon_element = toast.toast_type.icon_element(16.0);
 
-            let message_text = text(&toast.message).size(13).color(Color::from_rgb(0.9, 0.9, 0.9));
+            let message_text = text(&toast.message)
+                .size(13)
+                .color(Color::from_rgb(0.9, 0.9, 0.9));
 
             let toast_content = row![icon_element, message_text,]
                 .spacing(8)
                 .align_y(Alignment::Center);
 
-            let toast_element = container(toast_content)
-                .padding(12)
-                .max_width(400)
-                .style(move |_theme| container::Style {
-                    background: Some(Color::from_rgb(0.15, 0.15, 0.15).into()),
-                    border: Border {
-                        color: toast.toast_type.color(),
-                        width: 1.0,
-                        radius: 8.0.into(),
-                    },
-                    ..container::Style::default()
-                });
+            let toast_element =
+                container(toast_content)
+                    .padding(12)
+                    .max_width(400)
+                    .style(move |_theme| container::Style {
+                        background: Some(Color::from_rgb(0.15, 0.15, 0.15).into()),
+                        border: Border {
+                            color: toast.toast_type.color(),
+                            width: 1.0,
+                            radius: 8.0.into(),
+                        },
+                        ..container::Style::default()
+                    });
 
             toasts_column = toasts_column.push(toast_element);
         }

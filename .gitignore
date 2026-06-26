@@ -6,3 +6,4 @@ astranova-contend-images-brand/
 *.db-journal
 .env
 .idea/
+.DS_Store**/.DS_Store
