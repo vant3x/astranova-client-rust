@@ -5,7 +5,7 @@ use std::time::Duration;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_MAX_REDIRECTS: u32 = 10;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RequestConfig {
     pub timeout: Duration,
     pub follow_redirects: bool,
@@ -30,7 +30,7 @@ impl Default for RequestConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RetryConfig {
     pub max_retries: u32,
     pub backoff_ms: u64,

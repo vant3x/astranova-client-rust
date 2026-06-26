@@ -286,6 +286,7 @@ mod tests {
             body: None,
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         }
     }
 

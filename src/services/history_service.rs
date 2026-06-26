@@ -58,6 +58,10 @@ pub fn clear(conn: &Connection) {
     let _ = database::delete_request_history(conn);
 }
 
+pub fn trim(conn: &Connection, max_entries: usize) {
+    let _ = database::trim_request_history(conn, max_entries);
+}
+
 #[allow(dead_code)]
 pub fn restore_request(entry: &RequestHistoryEntry) -> Option<HttpRequest> {
     entry
@@ -99,6 +103,7 @@ mod tests {
             body: None,
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         }
     }
 

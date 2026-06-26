@@ -1,7 +1,7 @@
 use super::config::RequestConfig;
 use super::request::{HttpRequest, MultipartValue};
 use super::response::HttpResponse;
-use crate::data::auth::{ApiKeyLocation, Auth};
+use crate::data::auth::Auth;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -116,13 +116,78 @@ pub async fn send_request(
             match req_builder.send().await {
                 Ok(res) => {
                     let status = res.status().as_u16();
-                    let headers: Vec<(String, String)> = res
+                    let res_headers: Vec<(String, String)> = res
                         .headers()
                         .iter()
                         .map(|(name, value)| {
                             (name.to_string(), value.to_str().unwrap_or("").to_string())
                         })
                         .collect();
+
+                    if status == 401 {
+                        if let Some(Auth::Digest { user, pass }) = &request.auth {
+                            if let Some(www_auth) = res
+                                .headers()
+                                .get("www-authenticate")
+                                .and_then(|v| v.to_str().ok())
+                            {
+                                if www_auth.starts_with("Digest ") {
+                                    if let Some(digest_header) = compute_digest_auth(
+                                        www_auth,
+                                        user,
+                                        pass,
+                                        &request.method,
+                                        &current_url,
+                                    ) {
+                                        let mut retry_builder = client.request(
+                                            request
+                                                .method
+                                                .parse()
+                                                .map_err(|e: http::method::InvalidMethod| {
+                                                    e.to_string()
+                                                })?,
+                                            current_url.clone(),
+                                        );
+                                        retry_builder =
+                                            retry_builder.timeout(request.config.timeout);
+                                        for (key, value) in &request.headers {
+                                            retry_builder = retry_builder.header(key, value);
+                                        }
+                                        retry_builder = retry_builder
+                                            .header("Authorization", digest_header);
+                                        match retry_builder.send().await {
+                                            Ok(retry_res) => {
+                                                response_status =
+                                                    retry_res.status().as_u16();
+                                                response_headers = retry_res
+                                                    .headers()
+                                                    .iter()
+                                                    .map(|(name, value)| {
+                                                        (
+                                                            name.to_string(),
+                                                            value
+                                                                .to_str()
+                                                                .unwrap_or("")
+                                                                .to_string(),
+                                                        )
+                                                    })
+                                                    .collect();
+                                                response_body = retry_res
+                                                    .text()
+                                                    .await
+                                                    .map_err(|e| e.to_string())?;
+                                                break;
+                                            }
+                                            Err(e) => {
+                                                last_error = e.to_string();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     let is_redirect = follow_redirects
                         && (status == 301
@@ -140,7 +205,7 @@ pub async fn send_request(
 
                         if location.is_empty() {
                             response_status = status;
-                            response_headers = headers;
+                            response_headers = res_headers;
                             response_body = res.text().await.map_err(|e| e.to_string())?;
                             break;
                         }
@@ -159,7 +224,7 @@ pub async fn send_request(
                     }
 
                     response_status = status;
-                    response_headers = headers;
+                    response_headers = res_headers;
                     response_body = res.text().await.map_err(|e| e.to_string())?;
                     break;
                 }
@@ -202,89 +267,6 @@ pub async fn send_request(
     Err(last_error)
 }
 
-#[allow(dead_code)]
-pub fn apply_auth(
-    mut req_builder: reqwest::RequestBuilder,
-    auth: &Auth,
-) -> reqwest::RequestBuilder {
-    match auth {
-        Auth::None => req_builder,
-        Auth::BearerToken(token) => {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
-            req_builder
-        }
-        Auth::Basic { user, pass } => {
-            use base64::Engine;
-            let credentials = format!("{}:{}", user, pass);
-            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
-            req_builder = req_builder.header("Authorization", format!("Basic {}", encoded));
-            req_builder
-        }
-        Auth::ApiKey {
-            key,
-            value,
-            location,
-        } => {
-            match location {
-                ApiKeyLocation::Header => {
-                    req_builder = req_builder.header(key, value);
-                }
-                ApiKeyLocation::Query => {
-                    if let Ok(Some(req)) = req_builder.try_clone().map(|b| b.build()).transpose() {
-                        let mut url = req.url().clone();
-                        url.query_pairs_mut().append_pair(key, value);
-                        req_builder = reqwest::Client::new().request(req.method().clone(), url);
-                    }
-                }
-            }
-            req_builder
-        }
-        Auth::Digest { .. } => req_builder,
-        Auth::OAuth2(config) => {
-            if !config.access_token.is_empty() {
-                req_builder =
-                    req_builder.header("Authorization", format!("Bearer {}", config.access_token));
-            }
-            req_builder
-        }
-    }
-}
-
-#[allow(dead_code)]
-pub async fn apply_digest_auth(
-    client: &reqwest::Client,
-    request: &HttpRequest,
-    auth: &Auth,
-) -> Option<String> {
-    if let Auth::Digest { user, pass } = auth {
-        let mut req_builder = client.request(
-            request.method.parse().unwrap_or(reqwest::Method::GET),
-            &request.url,
-        );
-        for (key, value) in &request.headers {
-            req_builder = req_builder.header(key, value);
-        }
-
-        if let Ok(req) = req_builder.build() {
-            if let Ok(resp) = client.execute(req).await {
-                if let Some(www_auth) = resp.headers().get("www-authenticate") {
-                    if let Ok(www_auth_str) = www_auth.to_str() {
-                        return compute_digest_auth(
-                            www_auth_str,
-                            user,
-                            pass,
-                            &request.method,
-                            &request.url,
-                        );
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-#[allow(dead_code)]
 fn compute_digest_auth(
     www_authenticate: &str,
     username: &str,
@@ -335,7 +317,6 @@ fn compute_digest_auth(
     Some(format!("Digest {}", parts.join(", ")))
 }
 
-#[allow(dead_code)]
 fn parse_digest_params(header: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     let header = header.strip_prefix("Digest ").unwrap_or(header);
@@ -351,7 +332,6 @@ fn parse_digest_params(header: &str) -> HashMap<String, String> {
     params
 }
 
-#[allow(dead_code)]
 fn md5_hex(input: &str) -> String {
     let hash = md5::compute(input.as_bytes());
     format!("{:x}", hash)

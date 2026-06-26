@@ -1,4 +1,5 @@
 use super::config::RequestConfig;
+use crate::data::auth::Auth;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9,6 +10,8 @@ pub struct HttpRequest {
     pub body: Option<String>,
     pub config: RequestConfig,
     pub multipart_fields: Vec<MultipartField>,
+    #[serde(default)]
+    pub auth: Option<Auth>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +42,7 @@ mod tests {
             body: None,
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         };
         assert_eq!(req.method, "GET");
         assert_eq!(req.url, "https://example.com");
@@ -56,6 +60,7 @@ mod tests {
             body: Some(r#"{"key": "value"}"#.to_string()),
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         };
         assert_eq!(req.method, "POST");
         assert!(req.body.is_some());
@@ -71,6 +76,7 @@ mod tests {
             body: Some("data".to_string()),
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         };
         let cloned = req.clone();
         assert_eq!(req.method, cloned.method);
@@ -92,6 +98,7 @@ mod tests {
             body: None,
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         };
         assert_eq!(req.headers.len(), 3);
     }
@@ -110,6 +117,7 @@ mod tests {
             body: None,
             config,
             multipart_fields: vec![],
+            auth: None,
         };
         assert_eq!(req.config.timeout, Duration::from_secs(60));
     }
@@ -166,6 +174,7 @@ mod tests {
                     },
                 },
             ],
+            auth: None,
         };
         assert_eq!(req.multipart_fields.len(), 2);
     }
@@ -179,6 +188,7 @@ mod tests {
             body: Some(r#"{"name": "John"}"#.to_string()),
             config: RequestConfig::default(),
             multipart_fields: vec![],
+            auth: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"method\":\"POST\""));
@@ -226,6 +236,7 @@ mod tests {
                 name: "field".to_string(),
                 value: MultipartValue::Text("text value".to_string()),
             }],
+            auth: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: HttpRequest = serde_json::from_str(&json).unwrap();

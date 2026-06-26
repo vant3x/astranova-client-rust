@@ -36,7 +36,7 @@ impl std::fmt::Display for AuthType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Copy, serde::Serialize, serde::Deserialize)]
 pub enum ApiKeyLocation {
     #[default]
     Header,
@@ -56,7 +56,7 @@ impl std::fmt::Display for ApiKeyLocation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Auth {
     #[default]
     None,
@@ -77,7 +77,7 @@ pub enum Auth {
     OAuth2(Box<OAuth2Config>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct OAuth2Config {
     pub grant_type: OAuth2GrantType,
     pub auth_url: String,
@@ -99,7 +99,7 @@ pub struct OAuth2Config {
     pub status: OAuth2Status,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
 pub enum OAuth2Status {
     #[default]
@@ -110,7 +110,7 @@ pub enum OAuth2Status {
     AwaitingAuthorization,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum OAuth2GrantType {
     #[default]
     AuthorizationCode,

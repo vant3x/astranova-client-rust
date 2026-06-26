@@ -266,9 +266,24 @@ pub fn get_request_history(conn: &Connection, limit: usize) -> Result<Vec<Reques
     Ok(result)
 }
 
-#[allow(dead_code)]
 pub fn delete_request_history(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM request_history", [])?;
+    Ok(())
+}
+
+pub const DEFAULT_HISTORY_LIMIT: usize = 500;
+
+pub fn trim_request_history(conn: &Connection, max_entries: usize) -> Result<()> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM request_history", [], |row| {
+        row.get(0)
+    })?;
+    let excess = count - max_entries as i64;
+    if excess > 0 {
+        conn.execute(
+            "DELETE FROM request_history WHERE id IN (SELECT id FROM request_history ORDER BY id ASC LIMIT ?1)",
+            [excess],
+        )?;
+    }
     Ok(())
 }
 
@@ -326,7 +341,6 @@ pub fn get_collections(conn: &Connection) -> Result<Vec<Collection>> {
     rows.collect()
 }
 
-#[allow(dead_code)]
 pub fn update_collection(conn: &Connection, collection: &Collection) -> Result<()> {
     conn.execute(
         "UPDATE collections SET name = ?1, description = ?2 WHERE id = ?3",
@@ -379,7 +393,6 @@ pub fn delete_folder(conn: &Connection, id: i32) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn rename_folder(conn: &Connection, id: i32, new_name: &str) -> Result<()> {
     conn.execute(
         "UPDATE collection_folders SET name = ?1 WHERE id = ?2",
@@ -488,7 +501,6 @@ fn parse_collection_request(row: &rusqlite::Row) -> rusqlite::Result<CollectionR
     })
 }
 
-#[allow(dead_code)]
 pub fn rename_collection_request(conn: &Connection, id: i32, new_name: &str) -> Result<()> {
     conn.execute(
         "UPDATE collection_requests SET name = ?1 WHERE id = ?2",
@@ -497,7 +509,6 @@ pub fn rename_collection_request(conn: &Connection, id: i32, new_name: &str) -> 
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn move_collection_request(
     conn: &Connection,
     id: i32,
@@ -510,7 +521,6 @@ pub fn move_collection_request(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn delete_collection_request(conn: &Connection, id: i32) -> Result<()> {
     conn.execute("DELETE FROM collection_requests WHERE id = ?1", [id])?;
     Ok(())
@@ -1125,5 +1135,80 @@ mod tests {
         .unwrap();
         let entry = get_request_history_entry_by_id(&conn, 999).unwrap();
         assert!(entry.is_none());
+    }
+
+    #[test]
+    fn trim_request_history_removes_oldest() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
+            )",
+            [],
+        )
+        .unwrap();
+
+        for i in 0..5 {
+            save_request_history(
+                &conn,
+                "GET",
+                &format!("https://example.com/{}", i),
+                Some(200),
+                Some(100),
+                None,
+                None,
+            )
+            .unwrap();
+        }
+
+        trim_request_history(&conn, 3).unwrap();
+        let history = get_request_history(&conn, 10).unwrap();
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].url, "https://example.com/4");
+        assert_eq!(history[1].url, "https://example.com/3");
+        assert_eq!(history[2].url, "https://example.com/2");
+    }
+
+    #[test]
+    fn trim_request_history_no_op_when_under_limit() {
+        let conn = setup_test_db();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY,
+                method TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status INTEGER,
+                duration_ms INTEGER,
+                timestamp TEXT NOT NULL,
+                request_data TEXT,
+                response_data TEXT
+            )",
+            [],
+        )
+        .unwrap();
+
+        for i in 0..3 {
+            save_request_history(
+                &conn,
+                "GET",
+                &format!("https://example.com/{}", i),
+                Some(200),
+                Some(100),
+                None,
+                None,
+            )
+            .unwrap();
+        }
+
+        trim_request_history(&conn, 5).unwrap();
+        let history = get_request_history(&conn, 10).unwrap();
+        assert_eq!(history.len(), 3);
     }
 }

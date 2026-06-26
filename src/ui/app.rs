@@ -103,6 +103,7 @@ struct AstraNovaApp {
     current_view: View,
     show_history: bool,
     show_collections: bool,
+    show_env_info: bool,
     ws_sender: Option<WsSender>,
     ws_receiver: Option<Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>>,
     ws_shutdown: Option<mpsc::UnboundedSender<()>>,
@@ -127,6 +128,7 @@ pub enum Message {
     ToggleHistory,
     CollectionMsg(collection_view::Message),
     ToggleCollections,
+    ToggleEnvInfo,
     WebSocketMsg(websocket_view::Message),
     WsEvent(crate::protocols::websocket::WsEvent),
     WsConnected(
@@ -172,6 +174,7 @@ impl Clone for Message {
             Self::ToggleHistory => Self::ToggleHistory,
             Self::CollectionMsg(m) => Self::CollectionMsg(m.clone()),
             Self::ToggleCollections => Self::ToggleCollections,
+            Self::ToggleEnvInfo => Self::ToggleEnvInfo,
             Self::WebSocketMsg(m) => Self::WebSocketMsg(m.clone()),
             Self::WsEvent(e) => Self::WsEvent(e.clone()),
             Self::WsConnected(s, r, st, wh, rh) => Self::WsConnected(
@@ -245,6 +248,7 @@ impl AstraNovaApp {
             current_view: View::Main,
             show_history: false,
             show_collections: false,
+            show_env_info: false,
             ws_sender: None,
             ws_receiver: None,
             ws_shutdown: None,
@@ -310,6 +314,10 @@ impl AstraNovaApp {
                                         Some(response.duration.as_millis() as u64),
                                         request_data.as_deref(),
                                         response_data.as_deref(),
+                                    );
+                                    crate::services::history_service::trim(
+                                        &self.db_conn,
+                                        crate::persistence::database::DEFAULT_HISTORY_LIMIT,
                                     );
                                     self.history_view.entries =
                                         crate::services::history_service::get_all(
@@ -523,6 +531,9 @@ impl AstraNovaApp {
                     let cols = crate::services::collection_service::get_all(&self.db_conn);
                     self.collection_view.sync_collections(&cols);
                 }
+            }
+            Message::ToggleEnvInfo => {
+                self.show_env_info = !self.show_env_info;
             }
             Message::CollectionMsg(msg) => {
                 match msg.clone() {
@@ -1466,25 +1477,42 @@ impl AstraNovaApp {
                 .spacing(10);
 
                 if let Some(active_env) = &self.active_environment {
-                    let variables_text = if active_env.variables.is_empty() {
-                        "This environment has no variables.".to_string()
+                    let chevron = if self.show_env_info {
+                        lucide::chevron_down().size(12)
                     } else {
-                        let keys: Vec<_> = active_env
-                            .variables
-                            .iter()
-                            .map(|(k, _)| k.as_str())
-                            .collect();
-                        format!("Available: {}", keys.join(", "))
+                        lucide::chevron_right().size(12)
                     };
-
-                    let help_texts = column![
-                        text("Use {{variable}} in URL, Headers, or Body.").size(12),
-                        text(variables_text).size(12)
-                    ]
-                    .spacing(5);
-
-                    env_controls = env_controls.push(help_texts);
+                    env_controls = env_controls.push(
+                        button(row![chevron, text(" Help").size(12)].spacing(4))
+                            .on_press(Message::ToggleEnvInfo),
+                    );
                 }
+
+                let env_help_section: Element<Message> =
+                    if let Some(active_env) = &self.active_environment {
+                        if self.show_env_info {
+                            let variables_text = if active_env.variables.is_empty() {
+                                "This environment has no variables.".to_string()
+                            } else {
+                                let keys: Vec<_> = active_env
+                                    .variables
+                                    .iter()
+                                    .map(|(k, _)| k.as_str())
+                                    .collect();
+                                format!("Available: {}", keys.join(", "))
+                            };
+                        column![
+                            text("Use {{variable}} in URL, Headers, or Body.").size(12),
+                            text(variables_text).size(12)
+                        ]
+                        .spacing(5)
+                        .into()
+                        } else {
+                            column![].into()
+                        }
+                    } else {
+                        column![].into()
+                    };
 
                 let main_content = match self.active_protocol {
                     Protocol::Http => {
@@ -1493,6 +1521,7 @@ impl AstraNovaApp {
                                 .spacing(10)
                                 .padding(10)
                                 .align_y(Alignment::Center),
+                            env_help_section,
                             tabs_widget,
                         ]
                     }
@@ -1502,6 +1531,7 @@ impl AstraNovaApp {
                                 .spacing(10)
                                 .padding(10)
                                 .align_y(Alignment::Center),
+                            env_help_section,
                             self.websocket_view.view().map(Message::WebSocketMsg),
                         ]
                     }
@@ -1624,16 +1654,8 @@ impl AstraNovaApp {
                 crate::data::auth::Auth::None => "none",
             };
             let auth_data = match &view.auth {
-                crate::data::auth::Auth::BearerToken(token) => Some(token.clone()),
-                crate::data::auth::Auth::Basic { user, pass } => Some(format!("{}:{}", user, pass)),
-                crate::data::auth::Auth::ApiKey { key, value, .. } => {
-                    Some(format!("{}:{}", key, value))
-                }
-                crate::data::auth::Auth::Digest { user, pass } => {
-                    Some(format!("{}:{}", user, pass))
-                }
-                crate::data::auth::Auth::OAuth2(config) => Some(config.access_token.clone()),
                 crate::data::auth::Auth::None => None,
+                auth => serde_json::to_string(auth).ok(),
             };
 
             let params: Vec<(String, String)> = view

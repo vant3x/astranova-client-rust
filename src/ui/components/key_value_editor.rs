@@ -72,7 +72,7 @@ impl KeyValueEditor {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let entries_view = self.entries.iter().fold(column![], |col, entry| {
+        let entries_view = self.entries.iter().fold(column![].spacing(8), |col, entry| {
             col.push(
                 row![
                     text_input("Key", &entry.key)

@@ -129,7 +129,11 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, String> {
         request_builder = request_builder.header(key, value);
     }
 
-    let (ws_stream, _response) = connect_async(request_builder.uri(&request.url).body(()).unwrap())
+    let request = request_builder
+        .uri(&request.url)
+        .body(())
+        .map_err(|e| format!("Failed to build WebSocket request: {}", e))?;
+    let (ws_stream, _response) = connect_async(request)
         .await
         .map_err(|e| format!("WebSocket connection failed: {}", e))?;
 

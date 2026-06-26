@@ -146,6 +146,7 @@ pub enum Message {
     OAuth2StartAuth,
     OAuth2RefreshToken,
     OAuth2StartDeviceAuth,
+    OAuth2CopyUserCode(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -328,6 +329,28 @@ impl Default for HttpRequestView {
 }
 
 impl HttpRequestView {
+    pub fn restore_multipart(&mut self, fields: &[crate::http_client::request::MultipartField]) {
+        self.multipart_entries = fields
+            .iter()
+            .enumerate()
+            .map(|(i, field)| {
+                let (value, is_file) = match &field.value {
+                    crate::http_client::request::MultipartValue::Text(t) => (t.clone(), false),
+                    crate::http_client::request::MultipartValue::File { path, .. } => {
+                        (path.clone(), true)
+                    }
+                };
+                MultipartEntry {
+                    id: i,
+                    name: field.name.clone(),
+                    value,
+                    is_file,
+                }
+            })
+            .collect();
+        self.multipart_next_id = fields.len();
+    }
+
     pub fn apply_environment(&mut self, env: &Environment) {
         for (key, value) in &env.variables {
             let placeholder = format!("{{{{{}}}}}", key);
@@ -364,6 +387,7 @@ impl HttpRequestView {
                 Auth::OAuth2(config) => {
                     config.auth_url = config.auth_url.replace(&placeholder, value);
                     config.token_url = config.token_url.replace(&placeholder, value);
+                    config.device_auth_url = config.device_auth_url.replace(&placeholder, value);
                     config.client_id = config.client_id.replace(&placeholder, value);
                     config.client_secret = config.client_secret.replace(&placeholder, value);
                     config.scopes = config.scopes.replace(&placeholder, value);
@@ -391,7 +415,7 @@ impl HttpRequestView {
             .collect::<Vec<String>>()
             .join("&");
 
-        let final_url = if query_string.is_empty() {
+        let mut final_url = if query_string.is_empty() {
             self.url_input.clone()
         } else if self.url_input.contains('?') {
             format!("{}&{}", self.url_input, query_string)
@@ -414,6 +438,27 @@ impl HttpRequestView {
             Auth::Basic { user, pass } if !user.is_empty() || !pass.is_empty() => {
                 let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
                 headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
+            }
+            Auth::ApiKey {
+                key,
+                value,
+                location,
+            } if !key.is_empty() => {
+                match location {
+                    crate::data::auth::ApiKeyLocation::Header => {
+                        headers.push((key.clone(), value.clone()));
+                    }
+                    crate::data::auth::ApiKeyLocation::Query => {
+                        let separator = if final_url.contains('?') { "&" } else { "?" };
+                        final_url = format!(
+                            "{}{}{}={}",
+                            final_url,
+                            separator,
+                            urlencoding::encode(key),
+                            urlencoding::encode(value)
+                        );
+                    }
+                }
             }
             Auth::OAuth2(config) if !config.access_token.is_empty() => {
                 headers.push((
@@ -477,6 +522,7 @@ impl HttpRequestView {
             body,
             config: self.request_config.clone(),
             multipart_fields,
+            auth: Some(self.auth.clone()),
         }
     }
 
@@ -780,6 +826,11 @@ impl HttpRequestView {
             Message::OAuth2StartDeviceAuth => {
                 // Handled in app.rs
             }
+            Message::OAuth2CopyUserCode(code) => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(code);
+                }
+            }
         }
     }
 
@@ -996,7 +1047,7 @@ impl HttpRequestView {
             ]
             .spacing(10)
             .padding(10),
-            tabs.height(Length::Fixed(380.0)),
+            tabs.height(Length::Fixed(280.0)),
             rule::horizontal(10),
             column![
                 row![
@@ -1188,7 +1239,7 @@ impl HttpRequestView {
                     .padding(10),
                 pick_list(
                     &crate::data::auth::ApiKeyLocation::ALL[..],
-                    Some(location.clone()),
+                    Some(*location),
                     |loc| Message::AuthInputChanged(AuthInput::ApiKeyLocation(loc)),
                 )
                 .padding(10),
@@ -1279,9 +1330,7 @@ impl HttpRequestView {
                                     )
                                     .on_press({
                                         let code = config.user_code.clone();
-                                        Message::AuthInputChanged(AuthInput::OAuth2AccessToken(
-                                            code,
-                                        ))
+                                        Message::OAuth2CopyUserCode(code)
                                     }),
                                     button(
                                         row![
@@ -1389,7 +1438,7 @@ impl HttpRequestView {
             Auth::None => column![text("No authentication required.").size(14),].spacing(10),
         };
 
-        container(
+        container(scrollable(
             column![
                 text("Authentication Type").size(16),
                 auth_type_selector,
@@ -1397,7 +1446,9 @@ impl HttpRequestView {
             ]
             .spacing(15)
             .padding(20),
-        )
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
     }
 
@@ -1564,7 +1615,7 @@ impl HttpRequestView {
         )
         .padding(10);
 
-        container(
+        container(scrollable(
             column![
                 text("Request Settings").size(18),
                 row![text("Timeout:"), timeout_input]
@@ -1597,7 +1648,7 @@ impl HttpRequestView {
             ]
             .spacing(15)
             .padding(20),
-        )
+        ))
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -2100,5 +2151,131 @@ mod tests {
         }];
         let req = view.build_request();
         assert!(req.multipart_fields.is_empty());
+    }
+
+    #[test]
+    fn build_request_api_key_header() {
+        let mut view = make_view("https://example.com", "GET");
+        view.auth = Auth::ApiKey {
+            key: "X-API-Key".to_string(),
+            value: "secret123".to_string(),
+            location: crate::data::auth::ApiKeyLocation::Header,
+        };
+        let req = view.build_request();
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "X-API-Key" && v == "secret123"));
+    }
+
+    #[test]
+    fn build_request_api_key_query() {
+        let mut view = make_view("https://example.com", "GET");
+        view.auth = Auth::ApiKey {
+            key: "api_key".to_string(),
+            value: "secret123".to_string(),
+            location: crate::data::auth::ApiKeyLocation::Query,
+        };
+        let req = view.build_request();
+        assert!(req.url.contains("api_key=secret123"));
+        assert!(!req
+            .headers
+            .iter()
+            .any(|(k, _)| k == "api_key"));
+    }
+
+    #[test]
+    fn build_request_api_key_query_with_existing_params() {
+        let mut view = make_view("https://example.com?page=1", "GET");
+        view.auth = Auth::ApiKey {
+            key: "api_key".to_string(),
+            value: "secret123".to_string(),
+            location: crate::data::auth::ApiKeyLocation::Query,
+        };
+        let req = view.build_request();
+        assert!(req.url.contains("page=1"));
+        assert!(req.url.contains("api_key=secret123"));
+    }
+
+    #[test]
+    fn build_request_api_key_empty_key_ignored() {
+        let mut view = make_view("https://example.com", "GET");
+        view.auth = Auth::ApiKey {
+            key: String::new(),
+            value: "secret123".to_string(),
+            location: crate::data::auth::ApiKeyLocation::Header,
+        };
+        let req = view.build_request();
+        assert!(!req
+            .headers
+            .iter()
+            .any(|(k, _)| k == "X-API-Key" || k == ""));
+    }
+
+    #[test]
+    fn build_request_sets_auth_field() {
+        let mut view = make_view("https://example.com", "GET");
+        view.auth = Auth::BearerToken("token".to_string());
+        let req = view.build_request();
+        assert!(req.auth.is_some());
+        assert_eq!(req.auth.as_ref().unwrap(), &Auth::BearerToken("token".to_string()));
+    }
+
+    #[test]
+    fn build_request_oauth2_auth() {
+        let mut view = make_view("https://example.com", "GET");
+        let mut config = crate::data::auth::OAuth2Config::default();
+        config.access_token = "my-oauth-token".to_string();
+        view.auth = Auth::OAuth2(Box::new(config));
+        let req = view.build_request();
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Bearer my-oauth-token"));
+    }
+
+    #[test]
+    fn apply_environment_replaces_api_key_variable() {
+        let mut view = make_view("https://example.com", "GET");
+        view.auth = Auth::ApiKey {
+            key: "X-API-Key".to_string(),
+            value: "{{API_KEY}}".to_string(),
+            location: crate::data::auth::ApiKeyLocation::Header,
+        };
+        let env = Environment {
+            id: 1,
+            name: "test".to_string(),
+            variables: vec![("API_KEY".to_string(), "my-secret".to_string())],
+            default_endpoint: None,
+        };
+        view.apply_environment(&env);
+        match &view.auth {
+            Auth::ApiKey { value, .. } => assert_eq!(value, "my-secret"),
+            _ => panic!("Expected ApiKey"),
+        }
+    }
+
+    #[test]
+    fn apply_environment_replaces_oauth2_device_auth_url() {
+        let mut view = make_view("https://example.com", "GET");
+        let mut config = crate::data::auth::OAuth2Config::default();
+        config.device_auth_url = "{{DEVICE_AUTH}}".to_string();
+        view.auth = Auth::OAuth2(Box::new(config));
+        let env = Environment {
+            id: 1,
+            name: "test".to_string(),
+            variables: vec![(
+                "DEVICE_AUTH".to_string(),
+                "https://device.example.com".to_string(),
+            )],
+            default_endpoint: None,
+        };
+        view.apply_environment(&env);
+        match &view.auth {
+            Auth::OAuth2(config) => {
+                assert_eq!(config.device_auth_url, "https://device.example.com");
+            }
+            _ => panic!("Expected OAuth2"),
+        }
     }
 }

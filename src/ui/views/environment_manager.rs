@@ -132,7 +132,7 @@ impl EnvironmentManagerView {
         )
         .placeholder("Select an environment");
 
-        let mut environment_details = column![];
+        let mut environment_details = column![].spacing(15);
         if let Some(selected_env) = &self.selected_environment {
             environment_details = environment_details
                 .push(
@@ -168,7 +168,9 @@ impl EnvironmentManagerView {
                         ]
                     };
 
-                    row![save_btn, delete_section, load_btn].spacing(10)
+                    row![save_btn, delete_section, load_btn]
+                        .spacing(10)
+                        .padding(iced::Padding::from([5, 0]))
                 });
         }
 
@@ -177,7 +179,8 @@ impl EnvironmentManagerView {
                 .on_input(Message::NewEnvironmentNameChanged),
             button(row![lucide::plus().size(14), text(" Create")].spacing(4))
                 .on_press(Message::CreateEnvironment)
-        ];
+        ]
+        .spacing(10);
 
         let content = column![
             row![text("Environments"), environments_list].spacing(10),
