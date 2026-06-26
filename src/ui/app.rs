@@ -1476,7 +1476,7 @@ impl AstraNovaApp {
                 ]
                 .spacing(10);
 
-                if let Some(active_env) = &self.active_environment {
+                if self.active_environment.is_some() {
                     let chevron = if self.show_env_info {
                         lucide::chevron_down().size(12)
                     } else {

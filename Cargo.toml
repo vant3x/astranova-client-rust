@@ -45,6 +45,11 @@ version = ">=5.0, <5.12"
 default-features = false
 features = ["tokio"]
 
+[build-dependencies]
+# Embeds the app icon into the Windows .exe resource section.
+# Only used when cross-compiling or building natively on Windows.
+winresource = "0.1"
+
 [package.metadata.bundle]
 name = "AstraNova"
 identifier = "com.astranova.client"
@@ -55,7 +60,7 @@ category = "Developer Tool"
 short_description = "A simple HTTP client."
 
 [package.metadata.bundle.mac_os_x]
-icon = ["assets/icon.png"]
+icon = ["assets/icon.icns"]
 
 [package.metadata.bundle.windows]
 icon = ["assets/icon.ico"]

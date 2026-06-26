@@ -17,7 +17,7 @@ use iced_aw::{ContextMenu, TabLabel, Tabs};
 use iced_fonts::lucide;
 use std::time::Duration;
 
-const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/logo-bg.png");
+const LOGO_BG_BYTES: &[u8] = include_bytes!("../../../assets/astra-bg.png");
 
 static HTTP_METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 

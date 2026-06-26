@@ -60,7 +60,7 @@
 
     <Product
         Id='*'
-        Name='astranova-client'
+        Name='AstraNova'
         UpgradeCode='96030D32-2C73-420E-B750-4CD59934B254'
         Manufacturer='vant3x'
         Language='1033'
@@ -163,14 +163,9 @@
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
 
         
-        <!--
-          Uncomment the following `Icon` and `Property` tags to change the product icon.
-
-          The product icon is the graphic that appears in the Add/Remove
-          Programs control panel for the application.
-        -->
-        <!--<Icon Id='ProductICO' SourceFile='wix\Product.ico'/>-->
-        <!--<Property Id='ARPPRODUCTICON' Value='ProductICO' />-->
+        <!-- App icon shown in Add/Remove Programs and the installer UI -->
+        <Icon Id='ProductICO' SourceFile='assets\icon.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO' />
 
         
         <!--
