@@ -1367,7 +1367,7 @@ impl AstraNovaApp {
 
         let keyboard_subscription = iced::keyboard::listen().map(|event| match event {
             iced::keyboard::Event::KeyPressed { key, modifiers, .. } => {
-                if modifiers.control() {
+                if modifiers.control() || modifiers.command() {
                     match key {
                         iced::keyboard::Key::Character(ref c) if c.as_ref() == "n" => {
                             Message::AddRequestTab
@@ -1389,6 +1389,9 @@ impl AstraNovaApp {
                         }
                         iced::keyboard::Key::Character(ref c) if c.as_ref() == "5" => {
                             Message::SelectRequestTab(4)
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "t" => {
+                            Message::AddRequestTab
                         }
                         _ => Message::NoOp,
                     }
