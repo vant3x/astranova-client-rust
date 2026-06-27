@@ -120,6 +120,8 @@ pub enum Message {
     CloseActiveRequestTab,
     NoOp,
     SelectRequestTab(usize),
+    PrevRequestTab,
+    NextRequestTab,
     EnvManagerMsg(environment_manager::Message),
     EnvFileLoaded(Option<Vec<(String, String)>>),
     SelectEnvironment(i32),
@@ -166,6 +168,8 @@ impl Clone for Message {
             Self::CloseActiveRequestTab => Self::CloseActiveRequestTab,
             Self::NoOp => Self::NoOp,
             Self::SelectRequestTab(i) => Self::SelectRequestTab(*i),
+            Self::PrevRequestTab => Self::PrevRequestTab,
+            Self::NextRequestTab => Self::NextRequestTab,
             Self::EnvManagerMsg(m) => Self::EnvManagerMsg(m.clone()),
             Self::EnvFileLoaded(v) => Self::EnvFileLoaded(v.clone()),
             Self::SelectEnvironment(i) => Self::SelectEnvironment(*i),
@@ -413,6 +417,16 @@ impl AstraNovaApp {
             Message::NoOp => {}
             Message::SelectRequestTab(index) => {
                 self.active_request_tab_index = index;
+            }
+            Message::PrevRequestTab => {
+                if !self.request_tabs.is_empty() {
+                    self.active_request_tab_index = (self.active_request_tab_index + self.request_tabs.len() - 1) % self.request_tabs.len();
+                }
+            }
+            Message::NextRequestTab => {
+                if !self.request_tabs.is_empty() {
+                    self.active_request_tab_index = (self.active_request_tab_index + 1) % self.request_tabs.len();
+                }
             }
             Message::EnvManagerMsg(msg) => {
                 self.env_manager_view.update(msg.clone());
@@ -1375,6 +1389,15 @@ impl AstraNovaApp {
                         iced::keyboard::Key::Character(ref c) if c.as_ref() == "w" => {
                             Message::CloseActiveRequestTab
                         }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "t" => {
+                            Message::AddRequestTab
+                        }
+                        iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
+                            Message::PrevRequestTab
+                        }
+                        iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => {
+                            Message::NextRequestTab
+                        }
                         iced::keyboard::Key::Character(ref c) if c.as_ref() == "1" => {
                             Message::SelectRequestTab(0)
                         }
@@ -1389,9 +1412,6 @@ impl AstraNovaApp {
                         }
                         iced::keyboard::Key::Character(ref c) if c.as_ref() == "5" => {
                             Message::SelectRequestTab(4)
-                        }
-                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "t" => {
-                            Message::AddRequestTab
                         }
                         _ => Message::NoOp,
                     }
