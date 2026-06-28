@@ -31,7 +31,6 @@ pub async fn send_request(
     let method_for_log = request.method.clone();
     let max_retries = request.config.retry.max_retries;
     let backoff_ms = request.config.retry.backoff_ms;
-    let follow_redirects = request.config.follow_redirects;
     let max_redirects = request.config.max_redirects as usize;
 
     let mut last_error = String::new();
@@ -185,12 +184,15 @@ pub async fn send_request(
                         }
                     }
 
-                    let is_redirect = follow_redirects
-                        && (status == 301
-                            || status == 302
-                            || status == 303
-                            || status == 307
-                            || status == 308);
+                    let is_redirect = matches!(
+                        request.config.redirect_policy,
+                        crate::http_client::config::RedirectPolicy::Follow
+                            | crate::http_client::config::RedirectPolicy::Limited(_)
+                    ) && (status == 301
+                        || status == 302
+                        || status == 303
+                        || status == 307
+                        || status == 308);
 
                     if is_redirect && redirect_chain.len() < max_redirects {
                         let location = res

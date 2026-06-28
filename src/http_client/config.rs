@@ -8,7 +8,6 @@ const DEFAULT_MAX_REDIRECTS: u32 = 10;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RequestConfig {
     pub timeout: Duration,
-    pub follow_redirects: bool,
     pub max_redirects: u32,
     pub redirect_policy: RedirectPolicy,
     pub retry: RetryConfig,
@@ -20,7 +19,6 @@ impl Default for RequestConfig {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
-            follow_redirects: true,
             max_redirects: DEFAULT_MAX_REDIRECTS,
             redirect_policy: RedirectPolicy::Follow,
             retry: RetryConfig::default(),
@@ -133,7 +131,10 @@ mod tests {
         let config = RequestConfig::default();
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.redirect_policy, RedirectPolicy::Follow);
+        assert_eq!(config.max_redirects, 10);
         assert_eq!(config.retry.max_retries, 0);
+        assert!(config.verify_ssl);
+        assert!(config.proxy_url.is_none());
     }
 
     #[test]

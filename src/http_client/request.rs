@@ -205,7 +205,6 @@ mod tests {
             "body": null,
             "config": {
                 "timeout": {"secs": 30, "nanos": 0},
-                "follow_redirects": true,
                 "max_redirects": 10,
                 "redirect_policy": "Follow",
                 "retry": {"max_retries": 0, "backoff_ms": 1000},

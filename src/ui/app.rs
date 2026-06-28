@@ -1254,7 +1254,7 @@ impl AstraNovaApp {
                                 move |result| Message::OAuth2DeviceTokenPoll(tab_index, result),
                             );
                         } else if config.refresh_token.is_empty() {
-                            log::warn!("No refresh token available");
+                            self.toast_manager.warning("No refresh token available. Get a new token first.".to_string());
                         } else {
                             let token_url = config.token_url.clone();
                             let refresh_token = config.refresh_token.clone();
@@ -1282,7 +1282,7 @@ impl AstraNovaApp {
                 if let Some(view) = self.request_tabs.get(index) {
                     if let Auth::OAuth2(config) = &view.auth {
                         if config.device_auth_url.is_empty() {
-                            log::warn!("No device authorization URL configured");
+                            self.toast_manager.warning("No device authorization URL configured.".to_string());
                         } else {
                             let device_auth_url = config.device_auth_url.clone();
                             let client_id = config.client_id.clone();

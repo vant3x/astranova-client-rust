@@ -147,6 +147,8 @@ pub enum Message {
     OAuth2RefreshToken,
     OAuth2StartDeviceAuth,
     OAuth2CopyUserCode(String),
+    OAuth2CopyAccessToken(String),
+    OAuth2CopyRefreshToken(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -829,6 +831,16 @@ impl HttpRequestView {
                     let _ = clipboard.set_text(code);
                 }
             }
+            Message::OAuth2CopyAccessToken(token) => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(token);
+                }
+            }
+            Message::OAuth2CopyRefreshToken(token) => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(token);
+                }
+            }
         }
     }
 
@@ -1393,7 +1405,7 @@ impl HttpRequestView {
                             .secure(true),
                         button(lucide::copy().size(14)).on_press({
                             let token = config.access_token.clone();
-                            Message::AuthInputChanged(AuthInput::OAuth2AccessToken(token))
+                            Message::OAuth2CopyAccessToken(token)
                         }),
                     ]
                     .spacing(4)
@@ -1407,7 +1419,7 @@ impl HttpRequestView {
                             .secure(true),
                         button(lucide::copy().size(14)).on_press({
                             let token = config.refresh_token.clone();
-                            Message::AuthInputChanged(AuthInput::OAuth2RefreshToken(token))
+                            Message::OAuth2CopyRefreshToken(token)
                         }),
                     ]
                     .spacing(4)
