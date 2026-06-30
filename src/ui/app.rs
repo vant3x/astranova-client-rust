@@ -15,6 +15,7 @@ use reqwest;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+use super::views::graphql_view::{self, GraphQLView};
 use super::views::http_request_view::{self, HttpRequestView};
 use crate::http_client::client;
 
@@ -58,6 +59,7 @@ impl Recipe for WsRecipe {
 pub enum Protocol {
     Http,
     WebSocket,
+    GraphQL,
 }
 
 impl std::fmt::Display for Protocol {
@@ -65,12 +67,13 @@ impl std::fmt::Display for Protocol {
         match self {
             Protocol::Http => write!(f, "HTTP"),
             Protocol::WebSocket => write!(f, "WebSocket"),
+            Protocol::GraphQL => write!(f, "GraphQL"),
         }
     }
 }
 
 impl Protocol {
-    pub const ALL: [Protocol; 2] = [Protocol::Http, Protocol::WebSocket];
+    pub const ALL: [Protocol; 3] = [Protocol::Http, Protocol::WebSocket, Protocol::GraphQL];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +101,7 @@ pub(crate) struct AstraNovaApp {
     pub(crate) history_view: HistoryView,
     pub(crate) collection_view: CollectionView,
     pub(crate) websocket_view: WebSocketView,
+    pub(crate) graphql_view: GraphQLView,
     pub(crate) active_protocol: Protocol,
     pub(crate) current_view: View,
     pub(crate) show_history: bool,
@@ -131,6 +135,7 @@ pub enum Message {
     ToggleCollections,
     ToggleEnvInfo,
     WebSocketMsg(websocket_view::Message),
+    GraphQLMsg(graphql_view::Message),
     WsEvent(crate::protocols::websocket::WsEvent),
     WsConnected(
         WsSender,
@@ -141,7 +146,7 @@ pub enum Message {
     ),
     SelectProtocol(Protocol),
     OAuth2StartAuth(usize),
-    OAuth2AuthComplete(usize, Result<String, String>),
+    OAuth2AuthComplete(usize, Result<String, String>, Option<String>),
     OAuth2TokenReceived(
         usize,
         Result<crate::data::oauth2::OAuth2TokenResponse, String>,
@@ -179,6 +184,7 @@ impl Clone for Message {
             Self::ToggleCollections => Self::ToggleCollections,
             Self::ToggleEnvInfo => Self::ToggleEnvInfo,
             Self::WebSocketMsg(m) => Self::WebSocketMsg(m.clone()),
+            Self::GraphQLMsg(m) => Self::GraphQLMsg(m.clone()),
             Self::WsEvent(e) => Self::WsEvent(e.clone()),
             Self::WsConnected(s, r, st, wh, rh) => Self::WsConnected(
                 s.clone(),
@@ -189,7 +195,7 @@ impl Clone for Message {
             ),
             Self::SelectProtocol(p) => Self::SelectProtocol(*p),
             Self::OAuth2StartAuth(i) => Self::OAuth2StartAuth(*i),
-            Self::OAuth2AuthComplete(i, r) => Self::OAuth2AuthComplete(*i, r.clone()),
+            Self::OAuth2AuthComplete(i, r, v) => Self::OAuth2AuthComplete(*i, r.clone(), v.clone()),
             Self::OAuth2TokenReceived(i, r) => Self::OAuth2TokenReceived(*i, r.clone()),
             Self::OAuth2RefreshToken(i) => Self::OAuth2RefreshToken(*i),
             Self::OAuth2StartDeviceAuth(i) => Self::OAuth2StartDeviceAuth(*i),
@@ -247,6 +253,7 @@ impl AstraNovaApp {
             },
             collection_view: cv,
             websocket_view: WebSocketView::new(),
+            graphql_view: GraphQLView::default(),
             active_protocol: Protocol::Http,
             current_view: View::Main,
             show_history: false,
@@ -359,14 +366,15 @@ impl AstraNovaApp {
             }
             Message::WsEvent(event) => super::handlers::websocket::handle_ws_event(self, event),
             Message::WebSocketMsg(msg) => super::handlers::websocket::handle_message(self, msg),
+            Message::GraphQLMsg(msg) => super::handlers::graphql::handle_message(self, msg),
             Message::WsConnected(sender, receiver_arc, shutdown_tx, write_handle, read_handle) => {
                 super::handlers::websocket::handle_ws_connected(
                     self, sender, receiver_arc, shutdown_tx, write_handle, read_handle,
                 )
             }
             Message::OAuth2StartAuth(index) => super::handlers::oauth2::handle_start_auth(self, index),
-            Message::OAuth2AuthComplete(index, result) => {
-                super::handlers::oauth2::handle_auth_complete(self, index, result)
+            Message::OAuth2AuthComplete(index, result, pkce_verifier) => {
+                super::handlers::oauth2::handle_auth_complete(self, index, result, pkce_verifier)
             }
             Message::OAuth2TokenReceived(index, result) => {
                 super::handlers::oauth2::handle_token_received(self, index, result)
@@ -691,6 +699,16 @@ impl AstraNovaApp {
                                 .align_y(Alignment::Center),
                             env_help_section,
                             self.websocket_view.view().map(Message::WebSocketMsg),
+                        ]
+                    }
+                    Protocol::GraphQL => {
+                        column![
+                            row![add_tab_button, close_tab_button, env_controls,]
+                                .spacing(10)
+                                .padding(10)
+                                .align_y(Alignment::Center),
+                            env_help_section,
+                            self.graphql_view.view().map(Message::GraphQLMsg),
                         ]
                     }
                 };

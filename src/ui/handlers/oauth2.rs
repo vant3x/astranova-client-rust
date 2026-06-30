@@ -2,9 +2,9 @@ use crate::data::auth::Auth;
 use crate::ui::app::{AstraNovaApp, Message};
 use iced::Task;
 
-pub fn handle_start_auth(app: &AstraNovaApp, index: usize) -> Task<Message> {
-    if let Some(view) = app.request_tabs.get(index) {
-        if let Auth::OAuth2(config) = &view.auth {
+pub fn handle_start_auth(app: &mut AstraNovaApp, index: usize) -> Task<Message> {
+    if let Some(view) = app.request_tabs.get_mut(index) {
+        if let Auth::OAuth2(config) = &mut view.auth {
             let pkce = if config.pkce_enabled {
                 Some(crate::data::oauth2::PKCEChallenge::generate())
             } else {
@@ -22,13 +22,13 @@ pub fn handle_start_auth(app: &AstraNovaApp, index: usize) -> Task<Message> {
             );
 
             let verifier = pkce.map(|p| p.verifier);
+            config.pkce_verifier = verifier.clone();
 
             return Task::perform(
                 async move {
                     let _ = open::that(&auth_url);
-                    verifier.ok_or_else(|| "No PKCE verifier".to_string())
                 },
-                move |result| Message::OAuth2AuthComplete(index, result),
+                move |_| Message::OAuth2AuthComplete(index, Ok(String::new()), verifier),
             );
         }
     }
@@ -38,38 +38,19 @@ pub fn handle_start_auth(app: &AstraNovaApp, index: usize) -> Task<Message> {
 pub fn handle_auth_complete(
     app: &mut AstraNovaApp,
     index: usize,
-    result: Result<String, String>,
+    _result: Result<String, String>,
+    pkce_verifier: Option<String>,
 ) -> Task<Message> {
     if let Some(view) = app.request_tabs.get_mut(index) {
         if let Auth::OAuth2(config) = &mut view.auth {
-            match result {
-                Ok(code) => {
-                    let token_url = config.token_url.clone();
-                    let client_id = config.client_id.clone();
-                    let client_secret = config.client_secret.clone();
-                    let redirect_uri = config.redirect_uri.clone();
-                    let pkce_verifier = config.access_token.clone();
-                    let tab_index = index;
-
-                    return Task::perform(
-                        async move {
-                            crate::data::oauth2::exchange_code(
-                                &token_url,
-                                &code,
-                                &client_id,
-                                &client_secret,
-                                &redirect_uri,
-                                Some(&pkce_verifier),
-                            )
-                            .await
-                        },
-                        move |result| Message::OAuth2TokenReceived(tab_index, result),
-                    );
-                }
-                Err(e) => {
-                    log::error!("OAuth2 authorization failed: {}", e);
-                }
+            if let Some(ref v) = pkce_verifier {
+                config.pkce_verifier = Some(v.clone());
             }
+
+            log::warn!(
+                "OAuth2 Authorization Code flow: authorization code not yet captured from redirect. \
+                 PKCE verifier stored. Implement redirect capture to complete the flow."
+            );
         }
     }
     Task::none()

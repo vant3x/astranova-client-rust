@@ -514,6 +514,7 @@ mod tests {
                 scopes: "read write admin".to_string(),
                 redirect_uri: "http://localhost:8080/callback".to_string(),
                 pkce_enabled: true,
+                pkce_verifier: None,
                 access_token: "eyJhbGciOiJSUzI1NiIs...".to_string(),
                 refresh_token: "dGhpcyBpcyBhIHJlZnJlc2g...".to_string(),
                 token_expiry: Some("2025-12-31T23:59:59Z".to_string()),

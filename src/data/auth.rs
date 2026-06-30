@@ -88,6 +88,7 @@ pub struct OAuth2Config {
     pub scopes: String,
     pub redirect_uri: String,
     pub pkce_enabled: bool,
+    pub pkce_verifier: Option<String>,
     pub access_token: String,
     pub refresh_token: String,
     pub token_expiry: Option<String>,
