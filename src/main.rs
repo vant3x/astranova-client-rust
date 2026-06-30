@@ -3,6 +3,7 @@ mod error;
 mod export;
 mod http_client;
 mod import;
+mod openapi;
 mod persistence;
 mod protocols;
 mod services;
