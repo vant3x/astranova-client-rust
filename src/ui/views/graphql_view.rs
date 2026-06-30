@@ -41,6 +41,17 @@ pub enum ResponseTab {
     Headers,
 }
 
+type GraphQLResponseResult = Result<
+    (
+        GraphQLResponse,
+        u16,
+        Vec<(String, String)>,
+        std::time::Duration,
+        u64,
+    ),
+    String,
+>;
+
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
@@ -54,14 +65,27 @@ pub enum Message {
     AuthInputChanged(AuthInput),
     SendRequest,
     SetLoading,
-    ResponseReceived(Result<(GraphQLResponse, u16, Vec<(String, String)>, std::time::Duration, u64), String>),
+    ResponseReceived(
+        Result<
+            (
+                GraphQLResponse,
+                u16,
+                Vec<(String, String)>,
+                std::time::Duration,
+                u64,
+            ),
+            String,
+        >,
+    ),
     CopyResponse,
+    #[allow(dead_code)]
     CopyHeaders,
     CopyBody,
     CopySelection,
     ResponseContentChanged(text_editor::Action),
     ToggleWordWrap,
     ValidateQuery,
+    #[allow(dead_code)]
     QueryValidated(Result<(), String>),
 }
 
@@ -140,11 +164,13 @@ impl Clone for GraphQLView {
             headers_editor: self.headers_editor.clone(),
             auth: self.auth.clone(),
             request_config: self.request_config.clone(),
-            active_tab: self.active_tab.clone(),
-            active_response_tab: self.active_response_tab.clone(),
+            active_tab: self.active_tab,
+            active_response_tab: self.active_response_tab,
             request_status: self.request_status.clone(),
             last_response: self.last_response.clone(),
-            response_body_editor: text_editor::Content::with_text(&self.response_body_editor.text()),
+            response_body_editor: text_editor::Content::with_text(
+                &self.response_body_editor.text(),
+            ),
             status_code: self.status_code,
             content_type: self.content_type.clone(),
             response_duration: self.response_duration,
@@ -161,7 +187,7 @@ impl Default for GraphQLView {
         Self {
             url_input: "https://countries.trevorblades.com/".to_string(),
             query_input: text_editor::Content::with_text(
-                &r#"{
+                r#"{
   countries {
     code
     name
@@ -282,10 +308,7 @@ impl GraphQLView {
             .map(|h| (h.key.clone(), h.value.clone()))
             .collect();
 
-        headers.push((
-            "Content-Type".to_string(),
-            "application/json".to_string(),
-        ));
+        headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
         match &self.auth {
             Auth::BearerToken(token) if !token.is_empty() => {
@@ -455,9 +478,9 @@ impl GraphQLView {
                 self.word_wrap = !self.word_wrap;
             }
             Message::ValidateQuery => {
-                self.query_validation = Some(
-                    crate::protocols::graphql::validate_query(&self.query_input.text()),
-                );
+                self.query_validation = Some(crate::protocols::graphql::validate_query(
+                    &self.query_input.text(),
+                ));
             }
             Message::QueryValidated(result) => {
                 self.query_validation = Some(result);
@@ -484,16 +507,10 @@ impl GraphQLView {
                 .highlight("graphql", self.highlighter_theme);
             let context_menu = ContextMenu::new(scrollable(editor), || {
                 column![
-                    button(
-                        row![lucide::copy().size(12), text(" Copy Query")]
-                            .spacing(4)
-                    )
-                    .on_press(Message::CopyBody),
-                    button(
-                        row![lucide::check().size(12), text(" Validate")]
-                            .spacing(4)
-                    )
-                    .on_press(Message::ValidateQuery),
+                    button(row![lucide::copy().size(12), text(" Copy Query")].spacing(4))
+                        .on_press(Message::CopyBody),
+                    button(row![lucide::check().size(12), text(" Validate")].spacing(4))
+                        .on_press(Message::ValidateQuery),
                 ]
                 .into()
             });
@@ -550,7 +567,9 @@ impl GraphQLView {
                     container(
                         column![
                             text("Enter query and send request.").size(14),
-                            text(e.clone()).size(12).color(Color::from_rgb(0.8, 0.2, 0.2)),
+                            text(e.clone())
+                                .size(12)
+                                .color(Color::from_rgb(0.8, 0.2, 0.2)),
                         ]
                         .spacing(5),
                     )
@@ -697,12 +716,14 @@ impl GraphQLView {
 
         let validation_indicator: Element<'_, Message, Theme, Renderer> =
             match &self.query_validation {
-                Some(Ok(())) => {
-                    text("Valid").size(12).color(Color::from_rgb(0.2, 0.7, 0.3)).into()
-                }
-                Some(Err(e)) => {
-                    text(e.clone()).size(12).color(Color::from_rgb(0.8, 0.2, 0.2)).into()
-                }
+                Some(Ok(())) => text("Valid")
+                    .size(12)
+                    .color(Color::from_rgb(0.2, 0.7, 0.3))
+                    .into(),
+                Some(Err(e)) => text(e.clone())
+                    .size(12)
+                    .color(Color::from_rgb(0.8, 0.2, 0.2))
+                    .into(),
                 None => column![].into(),
             };
 
@@ -832,16 +853,9 @@ impl GraphQLView {
             if let Some(data) = &response.data {
                 let data_str = serde_json::to_string_pretty(data).unwrap_or_default();
                 items = items.push(
-                    row![
-                        text("Data:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),
-                    ]
-                    .spacing(8),
+                    row![text("Data:").size(14).color(Color::from_rgb(0.5, 0.5, 0.5)),].spacing(8),
                 );
-                items = items.push(
-                    text(data_str)
-                        .size(13)
-                        .font(iced::Font::MONOSPACE),
-                );
+                items = items.push(text(data_str).size(13).font(iced::Font::MONOSPACE));
             }
 
             if !response.errors.is_empty() {

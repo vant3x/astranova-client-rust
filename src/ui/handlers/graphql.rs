@@ -65,9 +65,9 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: graphql_view::Message) -> Tas
                                 Err(e) => Err(e),
                             }
                         },
-                        move |result| Message::GraphQLMsg(graphql_view::Message::ResponseReceived(
-                            result,
-                        )),
+                        move |result| {
+                            Message::GraphQLMsg(graphql_view::Message::ResponseReceived(result))
+                        },
                     )
                 }
                 Err(e) => {

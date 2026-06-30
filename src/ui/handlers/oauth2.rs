@@ -176,10 +176,7 @@ pub fn handle_device_auth_received(
                     let verification_url = config.verification_uri.clone();
                     let user_code = config.user_code.clone();
 
-                    log::info!(
-                        "Device authorization received. User code: {}",
-                        user_code
-                    );
+                    log::info!("Device authorization received. User code: {}", user_code);
 
                     let _ = open::that(&verification_url);
                 }

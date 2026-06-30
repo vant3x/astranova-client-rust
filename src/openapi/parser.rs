@@ -28,19 +28,15 @@ pub fn parse_spec_from_yaml(content: &str) -> Result<ParsedSpec, String> {
 }
 
 fn parse_openapi3(value: &serde_json::Value) -> Result<ParsedSpec, String> {
-    let spec: OpenApiSpec =
-        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse spec: {}", e))?;
+    let spec: OpenApiSpec = serde_json::from_value(value.clone())
+        .map_err(|e| format!("Failed to parse spec: {}", e))?;
 
-    let base_url = spec
-        .servers
-        .first()
-        .map(|s| s.url.clone())
-        .or_else(|| {
-            spec.info
-                .description
-                .as_ref()
-                .and_then(|_| Some("http://localhost".to_string()))
-        });
+    let base_url = spec.servers.first().map(|s| s.url.clone()).or_else(|| {
+        spec.info
+            .description
+            .as_ref()
+            .map(|_| "http://localhost".to_string())
+    });
 
     let schemas = spec.components.as_ref().and_then(|c| c.schemas.clone());
     let mut endpoints = Vec::new();
@@ -64,25 +60,22 @@ fn parse_openapi3(value: &serde_json::Value) -> Result<ParsedSpec, String> {
 }
 
 fn parse_swagger2(value: &serde_json::Value) -> Result<ParsedSpec, String> {
-    let spec: OpenApiSpec =
-        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse spec: {}", e))?;
+    let spec: OpenApiSpec = serde_json::from_value(value.clone())
+        .map_err(|e| format!("Failed to parse spec: {}", e))?;
 
-    let base_url = value
-        .get("host")
-        .and_then(|h| h.as_str())
-        .map(|host| {
-            let scheme = value
-                .get("schemes")
-                .and_then(|s| s.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|s| s.as_str())
-                .unwrap_or("https");
-            let base_path = value
-                .get("basePath")
-                .and_then(|bp| bp.as_str())
-                .unwrap_or("/");
-            format!("{}://{}{}", scheme, host, base_path)
-        });
+    let base_url = value.get("host").and_then(|h| h.as_str()).map(|host| {
+        let scheme = value
+            .get("schemes")
+            .and_then(|s| s.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|s| s.as_str())
+            .unwrap_or("https");
+        let base_path = value
+            .get("basePath")
+            .and_then(|bp| bp.as_str())
+            .unwrap_or("/");
+        format!("{}://{}{}", scheme, host, base_path)
+    });
 
     let mut endpoints = Vec::new();
 
@@ -144,7 +137,10 @@ fn build_endpoint(
             location: p.location.clone(),
             required: p.required,
             description: p.description.clone(),
-            example: p.example.as_ref().and_then(|v| v.as_str().map(|s| s.to_string())),
+            example: p
+                .example
+                .as_ref()
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
         })
         .collect();
 
@@ -169,18 +165,16 @@ fn build_endpoint(
         .or(operation.responses.get("201"))
         .or(operation.responses.values().next())
         .and_then(|resp| {
-            resp.content
-                .get("application/json")
-                .and_then(|mt| {
-                    mt.example
-                        .as_ref()
-                        .and_then(|v| serde_json::to_string_pretty(v).ok())
-                        .or_else(|| {
-                            mt.schema
-                                .as_ref()
-                                .and_then(|s| generate_example_from_schema(s, schemas))
-                        })
-                })
+            resp.content.get("application/json").and_then(|mt| {
+                mt.example
+                    .as_ref()
+                    .and_then(|v| serde_json::to_string_pretty(v).ok())
+                    .or_else(|| {
+                        mt.schema
+                            .as_ref()
+                            .and_then(|s| generate_example_from_schema(s, schemas))
+                    })
+            })
         });
 
     ParsedEndpoint {
@@ -206,7 +200,7 @@ fn generate_example_from_schema(
     }
 
     if let Some(ref r#ref) = schema.r#ref {
-        let ref_name = r#ref.split('/').last()?;
+        let ref_name = r#ref.split('/').next_back()?;
         if let Some(schemas) = schemas {
             if let Some(resolved) = schemas.get(ref_name) {
                 return generate_example_from_schema(resolved, &Some(schemas.clone()));
@@ -231,8 +225,7 @@ fn generate_example_from_schema(
         Some("array") => {
             if let Some(ref items) = schema.items {
                 if let Some(item_example) = generate_example_from_schema(items, schemas) {
-                    let parsed: serde_json::Value =
-                        serde_json::from_str(&item_example).ok()?;
+                    let parsed: serde_json::Value = serde_json::from_str(&item_example).ok()?;
                     serde_json::Value::Array(vec![parsed])
                 } else {
                     serde_json::Value::Array(vec![])
@@ -259,6 +252,7 @@ fn generate_example_from_schema(
     serde_json::to_string_pretty(&value).ok()
 }
 
+#[allow(dead_code)]
 pub fn detect_format(content: &str) -> SpecFormat {
     if content.trim_start().starts_with('{') {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(content) {
@@ -271,8 +265,7 @@ pub fn detect_format(content: &str) -> SpecFormat {
         }
     }
 
-    if content.trim_start().starts_with("openapi:")
-        || content.trim_start().starts_with("swagger:")
+    if content.trim_start().starts_with("openapi:") || content.trim_start().starts_with("swagger:")
     {
         return if content.contains("openapi: 3") {
             SpecFormat::OpenApi3Yaml
@@ -285,6 +278,7 @@ pub fn detect_format(content: &str) -> SpecFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum SpecFormat {
     OpenApi3Json,
     OpenApi3Yaml,
@@ -293,6 +287,7 @@ pub enum SpecFormat {
     Unknown,
 }
 
+#[allow(dead_code)]
 impl SpecFormat {
     pub fn is_valid(&self) -> bool {
         !matches!(self, SpecFormat::Unknown)
@@ -366,7 +361,10 @@ mod tests {
         }"#;
         let spec = parse_spec(json).unwrap();
         assert_eq!(spec.title, "Pet Store");
-        assert_eq!(spec.base_url, Some("https://petstore.example.com/api".to_string()));
+        assert_eq!(
+            spec.base_url,
+            Some("https://petstore.example.com/api".to_string())
+        );
         assert_eq!(spec.endpoints.len(), 2);
     }
 
@@ -381,7 +379,10 @@ mod tests {
             "paths": {}
         }"#;
         let spec = parse_spec(json).unwrap();
-        assert_eq!(spec.base_url, Some("https://api.example.com/v1".to_string()));
+        assert_eq!(
+            spec.base_url,
+            Some("https://api.example.com/v1".to_string())
+        );
     }
 
     #[test]
@@ -566,25 +567,5 @@ mod tests {
         };
         let example = generate_example_from_schema(&url_schema, &schemas).unwrap();
         assert!(example.contains("https://"));
-    }
-}
-
-impl Default for Schema {
-    fn default() -> Self {
-        Self {
-            schema_type: None,
-            format: None,
-            title: None,
-            description: None,
-            properties: None,
-            items: None,
-            required: vec![],
-            example: None,
-            r#ref: None,
-            all_of: None,
-            one_of: None,
-            any_of: None,
-            enum_values: None,
-        }
     }
 }

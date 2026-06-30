@@ -40,10 +40,8 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: environment_manager::Message)
         }
         environment_manager::Message::ConfirmDeleteEnvironment(_env_id) => {
             if let Some(env) = &app.env_manager_view.selected_environment {
-                match crate::services::environment_service::delete_and_refresh(
-                    &app.db_conn,
-                    env.id,
-                ) {
+                match crate::services::environment_service::delete_and_refresh(&app.db_conn, env.id)
+                {
                     Ok(environments) => {
                         app.environments = environments;
                         app.env_manager_view.environments = app.environments.clone();
@@ -66,10 +64,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: environment_manager::Message)
                                     continue;
                                 }
                                 if let Some((key, value)) = trimmed_line.split_once('=') {
-                                    vars.push((
-                                        key.trim().to_string(),
-                                        value.trim().to_string(),
-                                    ));
+                                    vars.push((key.trim().to_string(), value.trim().to_string()));
                                 }
                             }
                         }

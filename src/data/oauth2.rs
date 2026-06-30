@@ -101,6 +101,7 @@ pub fn build_authorization_url(
     url
 }
 
+#[allow(dead_code)]
 pub async fn exchange_code(
     token_url: &str,
     code: &str,

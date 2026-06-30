@@ -9,8 +9,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: history_view::Message) -> Tas
             app.history_view.update(msg);
         }
         history_view::Message::ResendEntry(entry_id) => {
-            if let Some(entry) =
-                crate::services::history_service::get_by_id(&app.db_conn, entry_id)
+            if let Some(entry) = crate::services::history_service::get_by_id(&app.db_conn, entry_id)
             {
                 if let Some(new_view) =
                     crate::services::request_restoration::build_view_from_history(&entry)

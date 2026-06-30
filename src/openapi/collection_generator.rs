@@ -9,6 +9,7 @@ pub struct GeneratedCollection {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct GeneratedRequest {
     pub name: String,
     pub method: String,
@@ -68,8 +69,8 @@ pub fn generate_collection(spec: &ParsedSpec, collection_id: i32) -> GeneratedCo
 
 fn endpoint_to_request(
     endpoint: &ParsedEndpoint,
-    collection_id: i32,
-    folder_id: Option<i32>,
+    _collection_id: i32,
+    _folder_id: Option<i32>,
     base_url: &Option<String>,
 ) -> GeneratedRequest {
     let name = generate_request_name(endpoint);
@@ -153,10 +154,10 @@ fn build_url(endpoint: &ParsedEndpoint, base_url: &Option<String>) -> String {
 fn generate_headers(endpoint: &ParsedEndpoint) -> Vec<(String, String)> {
     let mut headers = vec![("Accept".to_string(), "application/json".to_string())];
 
-    if endpoint.method == "POST" || endpoint.method == "PUT" || endpoint.method == "PATCH" {
-        if endpoint.request_body_example.is_some() {
-            headers.push(("Content-Type".to_string(), "application/json".to_string()));
-        }
+    if (endpoint.method == "POST" || endpoint.method == "PUT" || endpoint.method == "PATCH")
+        && endpoint.request_body_example.is_some()
+    {
+        headers.push(("Content-Type".to_string(), "application/json".to_string()));
     }
 
     headers
@@ -167,14 +168,11 @@ fn generate_params(endpoint: &ParsedEndpoint) -> Vec<(String, String)> {
         .parameters
         .iter()
         .filter(|p| p.location == "query")
-        .filter_map(|p| {
-            p.example
-                .as_ref()
-                .map(|ex| (p.name.clone(), ex.clone()))
-        })
+        .filter_map(|p| p.example.as_ref().map(|ex| (p.name.clone(), ex.clone())))
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn to_collection_requests(
     generated: &GeneratedCollection,
 ) -> Vec<(CollectionRequest, Option<i32>)> {
@@ -183,10 +181,7 @@ pub fn to_collection_requests(
         .iter()
         .enumerate()
         .map(|(i, req)| {
-            let folder_id = generated
-                .folders
-                .first()
-                .map(|f| f.id);
+            let folder_id = generated.folders.first().map(|f| f.id);
 
             let collection_req = CollectionRequest {
                 id: (i + 1) as i32,
@@ -326,7 +321,9 @@ mod tests {
             deprecated: false,
         };
         let headers = generate_headers(&endpoint);
-        assert!(headers.iter().any(|(k, v)| k == "Content-Type" && v == "application/json"));
+        assert!(headers
+            .iter()
+            .any(|(k, v)| k == "Content-Type" && v == "application/json"));
     }
 
     #[test]

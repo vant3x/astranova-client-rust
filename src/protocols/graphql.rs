@@ -49,6 +49,7 @@ impl std::fmt::Display for GraphQLPathSegment {
     }
 }
 
+#[allow(dead_code)]
 impl GraphQLRequest {
     pub fn new(query: &str) -> Self {
         Self {
@@ -178,8 +179,8 @@ mod tests {
 
     #[test]
     fn graphql_request_with_operation_name() {
-        let req = GraphQLRequest::new("query GetUser { user { id } }")
-            .with_operation_name("GetUser");
+        let req =
+            GraphQLRequest::new("query GetUser { user { id } }").with_operation_name("GetUser");
         assert_eq!(req.operation_name, Some("GetUser".to_string()));
     }
 
@@ -243,7 +244,10 @@ mod tests {
 
     #[test]
     fn validate_query_mutation() {
-        assert!(validate_query("mutation CreateUser($name: String!) { createUser(name: $name) { id } }").is_ok());
+        assert!(validate_query(
+            "mutation CreateUser($name: String!) { createUser(name: $name) { id } }"
+        )
+        .is_ok());
     }
 
     #[test]
@@ -272,7 +276,10 @@ mod tests {
         let resp: GraphQLResponse = serde_json::from_str(json).unwrap();
         assert!(resp.data.is_none());
         assert_eq!(resp.errors.len(), 1);
-        assert_eq!(resp.errors[0].message, "Cannot query field 'invalid' on type 'User'");
+        assert_eq!(
+            resp.errors[0].message,
+            "Cannot query field 'invalid' on type 'User'"
+        );
         assert_eq!(resp.errors[0].locations[0].line, 1);
         assert_eq!(resp.errors[0].path.len(), 2);
     }

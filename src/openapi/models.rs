@@ -131,7 +131,7 @@ pub struct Components {
     pub schemas: Option<HashMap<String, Schema>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Schema {
     #[serde(default, rename = "type")]
     pub schema_type: Option<String>,
@@ -162,6 +162,7 @@ pub struct Schema {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ParsedEndpoint {
     pub path: String,
     pub method: String,
@@ -176,6 +177,7 @@ pub struct ParsedEndpoint {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ParsedParameter {
     pub name: String,
     pub location: String,
@@ -185,6 +187,7 @@ pub struct ParsedParameter {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ParsedSpec {
     pub title: String,
     pub description: Option<String>,
@@ -194,6 +197,7 @@ pub struct ParsedSpec {
     pub tags: Vec<Tag>,
 }
 
+#[allow(dead_code)]
 impl ParsedSpec {
     pub fn endpoints_by_tag(&self) -> HashMap<String, Vec<&ParsedEndpoint>> {
         let mut map: HashMap<String, Vec<&ParsedEndpoint>> = HashMap::new();

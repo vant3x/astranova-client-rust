@@ -274,9 +274,7 @@ impl AstraNovaApp {
     fn update(&mut self, message: Message) -> Task<Message> {
         self.toast_manager.clean_expired();
         match message {
-            Message::HttpRequestViewMsg(index, msg) => {
-                self.handle_http_request_msg(index, msg)
-            }
+            Message::HttpRequestViewMsg(index, msg) => self.handle_http_request_msg(index, msg),
             Message::AddRequestTab => {
                 let mut new_view = HttpRequestView::default();
                 if let Some(env) = &self.active_environment {
@@ -316,10 +314,9 @@ impl AstraNovaApp {
             }
             Message::PrevRequestTab => {
                 if !self.request_tabs.is_empty() {
-                    self.active_request_tab_index = (self.active_request_tab_index
-                        + self.request_tabs.len()
-                        - 1)
-                        % self.request_tabs.len();
+                    self.active_request_tab_index =
+                        (self.active_request_tab_index + self.request_tabs.len() - 1)
+                            % self.request_tabs.len();
                 }
                 Task::none()
             }
@@ -330,15 +327,14 @@ impl AstraNovaApp {
                 }
                 Task::none()
             }
-            Message::EnvManagerMsg(msg) => {
-                super::handlers::environment::handle_message(self, msg)
-            }
+            Message::EnvManagerMsg(msg) => super::handlers::environment::handle_message(self, msg),
             Message::EnvFileLoaded(vars) => {
                 super::handlers::environment::handle_file_loaded(self, vars)
             }
             Message::EnvFileExported(content) => {
                 if let Some(content) = content {
-                    self.toast_manager.success(format!("Exported .env file ({} bytes)", content.len()));
+                    self.toast_manager
+                        .success(format!("Exported .env file ({} bytes)", content.len()));
                 }
                 Task::none()
             }
@@ -377,10 +373,17 @@ impl AstraNovaApp {
             Message::GraphQLMsg(msg) => super::handlers::graphql::handle_message(self, msg),
             Message::WsConnected(sender, receiver_arc, shutdown_tx, write_handle, read_handle) => {
                 super::handlers::websocket::handle_ws_connected(
-                    self, sender, receiver_arc, shutdown_tx, write_handle, read_handle,
+                    self,
+                    sender,
+                    receiver_arc,
+                    shutdown_tx,
+                    write_handle,
+                    read_handle,
                 )
             }
-            Message::OAuth2StartAuth(index) => super::handlers::oauth2::handle_start_auth(self, index),
+            Message::OAuth2StartAuth(index) => {
+                super::handlers::oauth2::handle_start_auth(self, index)
+            }
             Message::OAuth2AuthComplete(index, result, pkce_verifier) => {
                 super::handlers::oauth2::handle_auth_complete(self, index, result, pkce_verifier)
             }
@@ -422,19 +425,18 @@ impl AstraNovaApp {
                 view.pending_request_data = serde_json::to_string(&request).ok();
                 view.update(http_request_view::Message::SetLoading);
 
-                let http_client = if request.config.proxy_url.is_some()
-                    || !request.config.verify_ssl
-                {
-                    match client::build_client(&request.config) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            log::error!("Failed to build custom client: {}", e);
-                            self.http_client.clone()
+                let http_client =
+                    if request.config.proxy_url.is_some() || !request.config.verify_ssl {
+                        match client::build_client(&request.config) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::error!("Failed to build custom client: {}", e);
+                                self.http_client.clone()
+                            }
                         }
-                    }
-                } else {
-                    self.http_client.clone()
-                };
+                    } else {
+                        self.http_client.clone()
+                    };
 
                 Task::perform(
                     async move { client::send_request(&http_client, request).await },
@@ -481,8 +483,7 @@ impl AstraNovaApp {
                         }
                     }
                     Err(e) => {
-                        self.toast_manager
-                            .error(format!("Request failed: {}", e));
+                        self.toast_manager.error(format!("Request failed: {}", e));
                     }
                 }
                 view.update(msg);
@@ -787,5 +788,4 @@ impl AstraNovaApp {
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
         }
     }
-
 }

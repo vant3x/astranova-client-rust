@@ -205,9 +205,9 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: websocket_view::Message) -> T
         websocket_view::Message::SendMessage(text) if !text.is_empty() => {
             if let Some(sender) = &app.ws_sender {
                 if sender.send(&text).is_ok() {
-                    app.websocket_view
-                        .messages
-                        .push(crate::protocols::websocket::WsMessage::outgoing(text.clone()));
+                    app.websocket_view.messages.push(
+                        crate::protocols::websocket::WsMessage::outgoing(text.clone()),
+                    );
                     app.websocket_view.input.clear();
                 }
             }

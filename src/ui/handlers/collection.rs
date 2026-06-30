@@ -10,10 +10,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
         collection_view::Message::CreateCollection => {
             let name = app.collection_view.new_collection_name.clone();
             if !name.is_empty() {
-                match crate::services::collection_service::create_and_refresh(
-                    &app.db_conn,
-                    &name,
-                ) {
+                match crate::services::collection_service::create_and_refresh(&app.db_conn, &name) {
                     Ok(cols) => {
                         app.collection_view.sync_collections(&cols);
                         app.collection_view.new_collection_name.clear();
@@ -23,8 +20,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
             }
         }
         collection_view::Message::SelectCollection(idx) => {
-            app.collection_view.panel_state =
-                collection_view::PanelState::CollectionDetail(idx);
+            app.collection_view.panel_state = collection_view::PanelState::CollectionDetail(idx);
             if let Some(col) = app.collection_view.collections.get(idx) {
                 let col_id = col.id;
                 let folders =
@@ -76,10 +72,8 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
         collection_view::Message::DeleteCollection(_idx) => {}
         collection_view::Message::ConfirmDeleteCollection(idx) => {
             if let Some(col) = app.collection_view.collections.get(idx) {
-                match crate::services::collection_service::delete_and_refresh(
-                    &app.db_conn,
-                    col.id,
-                ) {
+                match crate::services::collection_service::delete_and_refresh(&app.db_conn, col.id)
+                {
                     Ok(cols) => app.collection_view.sync_collections(&cols),
                     Err(e) => log::error!("Error deleting collection: {}", e),
                 }
@@ -119,9 +113,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
                     None
                 },
                 |result| {
-                    Message::CollectionMsg(
-                        collection_view::Message::ImportCollectionData(result),
-                    )
+                    Message::CollectionMsg(collection_view::Message::ImportCollectionData(result))
                 },
             );
         }
@@ -179,9 +171,8 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
                                         None,
                                     );
                                 }
-                                let cols = crate::services::collection_service::get_all(
-                                    &app.db_conn,
-                                );
+                                let cols =
+                                    crate::services::collection_service::get_all(&app.db_conn);
                                 app.collection_view.sync_collections(&cols);
                             }
                         }
@@ -209,9 +200,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
                     None
                 },
                 |result| {
-                    Message::CollectionMsg(
-                        collection_view::Message::ImportOpenApiData(result),
-                    )
+                    Message::CollectionMsg(collection_view::Message::ImportOpenApiData(result))
                 },
             );
         }
@@ -224,11 +213,14 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
 
             match parse_result {
                 Ok(spec) => {
-                    let collection_id = app.db_conn.query_row(
-                        "SELECT COALESCE(MAX(id), 0) + 1 FROM collections",
-                        [],
-                        |row| row.get::<_, i32>(0),
-                    ).unwrap_or(1);
+                    let collection_id = app
+                        .db_conn
+                        .query_row(
+                            "SELECT COALESCE(MAX(id), 0) + 1 FROM collections",
+                            [],
+                            |row| row.get::<_, i32>(0),
+                        )
+                        .unwrap_or(1);
 
                     let generated = crate::openapi::generate_collection(&spec, collection_id);
 
@@ -283,9 +275,8 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
                                         None,
                                     );
                                 }
-                                let cols = crate::services::collection_service::get_all(
-                                    &app.db_conn,
-                                );
+                                let cols =
+                                    crate::services::collection_service::get_all(&app.db_conn);
                                 app.collection_view.sync_collections(&cols);
                                 app.toast_manager.success(format!(
                                     "Imported {} endpoints from OpenAPI spec",
@@ -301,7 +292,8 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
                 }
                 Err(e) => {
                     log::error!("Error parsing OpenAPI spec: {}", e);
-                    app.toast_manager.error(format!("Invalid OpenAPI spec: {}", e));
+                    app.toast_manager
+                        .error(format!("Invalid OpenAPI spec: {}", e));
                 }
             }
         }
@@ -348,8 +340,7 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
                     match crate::services::collection_service::rename(&app.db_conn, col, &new_name)
                     {
                         Ok(()) => {
-                            let cols =
-                                crate::services::collection_service::get_all(&app.db_conn);
+                            let cols = crate::services::collection_service::get_all(&app.db_conn);
                             app.collection_view.sync_collections(&cols);
                         }
                         Err(e) => log::error!("Error renaming collection: {}", e),
@@ -414,7 +405,8 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
 }
 
 fn refresh_requests_after_rename(app: &mut AstraNovaApp) {
-    if let collection_view::PanelState::CollectionDetail(col_idx) = app.collection_view.panel_state {
+    if let collection_view::PanelState::CollectionDetail(col_idx) = app.collection_view.panel_state
+    {
         if let Some(col) = app.collection_view.collections.get(col_idx) {
             let reqs =
                 crate::services::collection_service::get_requests(&app.db_conn, col.id, None);
@@ -435,7 +427,8 @@ fn refresh_requests_after_rename(app: &mut AstraNovaApp) {
 }
 
 fn handle_delete_request(app: &mut AstraNovaApp, req_id: i32) {
-    if let collection_view::PanelState::CollectionDetail(col_idx) = app.collection_view.panel_state {
+    if let collection_view::PanelState::CollectionDetail(col_idx) = app.collection_view.panel_state
+    {
         if let Some(col) = app.collection_view.collections.get(col_idx) {
             match crate::services::collection_service::delete_request_and_refresh(
                 &app.db_conn,
@@ -485,8 +478,7 @@ fn load_collection_request(app: &mut AstraNovaApp, req_id: i32) {
         None => return,
     };
 
-    let new_view =
-        crate::services::request_restoration::build_view_from_collection_request(&req);
+    let new_view = crate::services::request_restoration::build_view_from_collection_request(&req);
     app.request_tabs.push(new_view);
     app.active_request_tab_index = app.request_tabs.len() - 1;
 }
@@ -553,8 +545,7 @@ fn save_current_to_collection(app: &mut AstraNovaApp) {
             None,
         );
 
-        let reqs =
-            crate::services::collection_service::get_requests(&app.db_conn, col_id, None);
+        let reqs = crate::services::collection_service::get_requests(&app.db_conn, col_id, None);
         app.collection_view.sync_requests(&reqs);
     }
 }
