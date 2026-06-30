@@ -192,6 +192,120 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: collection_view::Message) -> 
             }
         }
         collection_view::Message::ImportCollectionData(None) => {}
+        collection_view::Message::ImportOpenApi => {
+            app.collection_view.update(msg);
+            return Task::perform(
+                async move {
+                    let file = rfd::AsyncFileDialog::new()
+                        .add_filter("OpenAPI / Swagger", &["json", "yaml", "yml"])
+                        .pick_file()
+                        .await;
+                    if let Some(file_handle) = file {
+                        let data = file_handle.read().await;
+                        if let Ok(content) = std::str::from_utf8(&data) {
+                            return Some(content.to_string());
+                        }
+                    }
+                    None
+                },
+                |result| {
+                    Message::CollectionMsg(
+                        collection_view::Message::ImportOpenApiData(result),
+                    )
+                },
+            );
+        }
+        collection_view::Message::ImportOpenApiData(Some(content)) => {
+            let parse_result = if content.trim_start().starts_with('{') {
+                crate::openapi::parse_spec(&content)
+            } else {
+                crate::openapi::parse_spec_from_yaml(&content)
+            };
+
+            match parse_result {
+                Ok(spec) => {
+                    let collection_id = app.db_conn.query_row(
+                        "SELECT COALESCE(MAX(id), 0) + 1 FROM collections",
+                        [],
+                        |row| row.get::<_, i32>(0),
+                    ).unwrap_or(1);
+
+                    let generated = crate::openapi::generate_collection(&spec, collection_id);
+
+                    match crate::services::collection_service::create_and_refresh(
+                        &app.db_conn,
+                        &generated.collection.name,
+                    ) {
+                        Ok(cols) => {
+                            if let Some(new_col) = cols.last() {
+                                for folder in &generated.folders {
+                                    match crate::services::collection_service::create_folder(
+                                        &app.db_conn,
+                                        new_col.id,
+                                        &folder.name,
+                                    ) {
+                                        Ok(created_folder) => {
+                                            for req in &generated.requests {
+                                                let _ = crate::services::collection_service::save_request(
+                                                    &app.db_conn,
+                                                    new_col.id,
+                                                    Some(created_folder.id),
+                                                    &req.name,
+                                                    &req.method,
+                                                    &req.url,
+                                                    &req.headers,
+                                                    req.body.as_deref(),
+                                                    "text",
+                                                    "none",
+                                                    None,
+                                                    &req.params,
+                                                    None,
+                                                );
+                                            }
+                                        }
+                                        Err(e) => log::error!("Error creating folder: {}", e),
+                                    }
+                                }
+                                for req in &generated.requests {
+                                    let _ = crate::services::collection_service::save_request(
+                                        &app.db_conn,
+                                        new_col.id,
+                                        None,
+                                        &req.name,
+                                        &req.method,
+                                        &req.url,
+                                        &req.headers,
+                                        req.body.as_deref(),
+                                        "text",
+                                        "none",
+                                        None,
+                                        &req.params,
+                                        None,
+                                    );
+                                }
+                                let cols = crate::services::collection_service::get_all(
+                                    &app.db_conn,
+                                );
+                                app.collection_view.sync_collections(&cols);
+                                app.toast_manager.success(format!(
+                                    "Imported {} endpoints from OpenAPI spec",
+                                    generated.requests.len()
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Error creating collection: {}", e);
+                            app.toast_manager.error(format!("Import failed: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error parsing OpenAPI spec: {}", e);
+                    app.toast_manager.error(format!("Invalid OpenAPI spec: {}", e));
+                }
+            }
+        }
+        collection_view::Message::ImportOpenApiData(None) => {}
         collection_view::Message::ExportCollection(idx) => {
             if let Some(col) = app.collection_view.collections.get(idx) {
                 let folders =

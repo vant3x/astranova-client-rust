@@ -25,6 +25,8 @@ pub enum Message {
     CancelDeleteCollection,
     ImportCollection,
     ImportCollectionData(Option<String>),
+    ImportOpenApi,
+    ImportOpenApiData(Option<String>),
     ExportCollection(usize),
     ExportCollectionData(String),
     NewFolderNameChanged(i32, String),
@@ -188,6 +190,8 @@ impl CollectionView {
             }
             Message::ImportCollection => None,
             Message::ImportCollectionData(_) => None,
+            Message::ImportOpenApi => None,
+            Message::ImportOpenApiData(_) => None,
             Message::ExportCollection(_) => None,
             Message::ExportCollectionData(_) => None,
             Message::LoadRequest(req_id) => Some(req_id),
@@ -310,6 +314,8 @@ impl CollectionView {
             button(lucide::plus().size(14)).on_press(Message::CreateCollection),
             button(row![lucide::upload().size(14), text(" Import")].spacing(4))
                 .on_press(Message::ImportCollection),
+            button(row![lucide::file_code().size(14), text(" OpenAPI")].spacing(4))
+                .on_press(Message::ImportOpenApi),
         ]
         .spacing(10)
         .align_y(Alignment::Center);

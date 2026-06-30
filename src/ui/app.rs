@@ -127,6 +127,7 @@ pub enum Message {
     NextRequestTab,
     EnvManagerMsg(environment_manager::Message),
     EnvFileLoaded(Option<Vec<(String, String)>>),
+    EnvFileExported(Option<String>),
     SelectEnvironment(i32),
     SwitchView(View),
     HistoryMsg(history_view::Message),
@@ -176,6 +177,7 @@ impl Clone for Message {
             Self::NextRequestTab => Self::NextRequestTab,
             Self::EnvManagerMsg(m) => Self::EnvManagerMsg(m.clone()),
             Self::EnvFileLoaded(v) => Self::EnvFileLoaded(v.clone()),
+            Self::EnvFileExported(v) => Self::EnvFileExported(v.clone()),
             Self::SelectEnvironment(i) => Self::SelectEnvironment(*i),
             Self::SwitchView(v) => Self::SwitchView(*v),
             Self::HistoryMsg(m) => Self::HistoryMsg(m.clone()),
@@ -333,6 +335,12 @@ impl AstraNovaApp {
             }
             Message::EnvFileLoaded(vars) => {
                 super::handlers::environment::handle_file_loaded(self, vars)
+            }
+            Message::EnvFileExported(content) => {
+                if let Some(content) = content {
+                    self.toast_manager.success(format!("Exported .env file ({} bytes)", content.len()));
+                }
+                Task::none()
             }
             Message::SelectEnvironment(id) => {
                 self.active_environment = self.environments.iter().find(|e| e.id == id).cloned();

@@ -21,6 +21,7 @@ pub enum Message {
     ConfirmDeleteEnvironment(i32),
     CancelDeleteEnvironment,
     LoadEnvFile,
+    ExportEnvFile,
     Close,
 }
 
@@ -120,6 +121,9 @@ impl EnvironmentManagerView {
             Message::LoadEnvFile => {
                 // This message is handled in app.rs
             }
+            Message::ExportEnvFile => {
+                // This message is handled in app.rs
+            }
             Message::Close => {}
         }
     }
@@ -151,8 +155,11 @@ impl EnvironmentManagerView {
                     let save_btn = button(row![lucide::save().size(14), text(" Save")].spacing(4))
                         .on_press(Message::SaveEnvironment);
                     let load_btn =
-                        button(row![lucide::upload().size(14), text(" Load from .env")].spacing(4))
+                        button(row![lucide::upload().size(14), text(" Load .env")].spacing(4))
                             .on_press(Message::LoadEnvFile);
+                    let export_btn =
+                        button(row![lucide::download().size(14), text(" Export .env")].spacing(4))
+                            .on_press(Message::ExportEnvFile);
 
                     let delete_section = if self.pending_delete_environment == Some(selected_env.id)
                     {
@@ -173,7 +180,7 @@ impl EnvironmentManagerView {
                         ]
                     };
 
-                    row![save_btn, delete_section, load_btn]
+                    row![save_btn, delete_section, load_btn, export_btn]
                         .spacing(10)
                         .padding(iced::Padding::from([5, 0]))
                 });

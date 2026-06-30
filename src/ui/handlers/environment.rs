@@ -81,6 +81,39 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: environment_manager::Message)
                 Message::EnvFileLoaded,
             );
         }
+        environment_manager::Message::ExportEnvFile => {
+            if let Some(env) = &app.env_manager_view.selected_environment {
+                let mut content = String::new();
+                content.push_str(&format!("# Environment: {}\n", env.name));
+                if let Some(endpoint) = &env.default_endpoint {
+                    content.push_str(&format!("BASE_URL={}\n", endpoint));
+                }
+                content.push('\n');
+                for (key, value) in &env.variables {
+                    content.push_str(&format!("{}={}\n", key, value));
+                }
+                let env_name = env.name.clone();
+                let content_clone = content.clone();
+                return Task::perform(
+                    async move {
+                        let file = rfd::AsyncFileDialog::new()
+                            .add_filter("Env file", &["env"])
+                            .set_file_name(&format!("{}.env", env_name))
+                            .save_file()
+                            .await;
+                        if let Some(file_handle) = file {
+                            let path = file_handle.path().to_path_buf();
+                            let _ = tokio::fs::write(&path, content_clone.as_bytes()).await;
+                            Some(content_clone)
+                        } else {
+                            None
+                        }
+                    },
+                    Message::EnvFileExported,
+                );
+            }
+            return Task::none();
+        }
         environment_manager::Message::Close => {
             app.current_view = crate::ui::app::View::Main;
         }
