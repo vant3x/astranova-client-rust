@@ -41,17 +41,6 @@ pub enum ResponseTab {
     Headers,
 }
 
-type GraphQLResponseResult = Result<
-    (
-        GraphQLResponse,
-        u16,
-        Vec<(String, String)>,
-        std::time::Duration,
-        u64,
-    ),
-    String,
->;
-
 #[derive(Debug, Clone)]
 pub enum Message {
     UrlInputChanged(String),
@@ -66,6 +55,7 @@ pub enum Message {
     SendRequest,
     SetLoading,
     ResponseReceived(
+        #[allow(clippy::type_complexity)]
         Result<
             (
                 GraphQLResponse,

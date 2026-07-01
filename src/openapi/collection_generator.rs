@@ -208,6 +208,7 @@ pub fn to_collection_requests(
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     fn make_spec(title: &str) -> ParsedSpec {
         ParsedSpec {
             title: title.to_string(),

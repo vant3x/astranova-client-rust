@@ -1742,10 +1742,11 @@ mod tests {
     use crate::ui::components::key_value_editor::KeyValueEntry;
 
     fn make_view(url: &str, method: &str) -> HttpRequestView {
-        let mut view = HttpRequestView::default();
-        view.url_input = url.to_string();
-        view.method = method.to_string();
-        view
+        HttpRequestView {
+            url_input: url.to_string(),
+            method: method.to_string(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1756,7 +1757,7 @@ mod tests {
         assert_eq!(req.method, "GET");
         assert_eq!(req.url, "https://example.com/api");
         // body_input.text() returns "" or "\n" for empty content — body should be None or trimmed
-        assert!(req.body.as_ref().map_or(true, |b| b.trim().is_empty()));
+        assert!(req.body.as_ref().is_none_or(|b| b.trim().is_empty()));
     }
 
     #[test]
@@ -1798,7 +1799,6 @@ mod tests {
             assert!(!rest[1..].contains('?'));
         } else {
             // No query part – nothing to parse
-            return;
         }
     }
 
@@ -2220,7 +2220,10 @@ mod tests {
             location: crate::data::auth::ApiKeyLocation::Header,
         };
         let req = view.build_request();
-        assert!(!req.headers.iter().any(|(k, _)| k == "X-API-Key" || k == ""));
+        assert!(!req
+            .headers
+            .iter()
+            .any(|(k, _)| k == "X-API-Key" || k.is_empty()));
     }
 
     #[test]
@@ -2238,8 +2241,10 @@ mod tests {
     #[test]
     fn build_request_oauth2_auth() {
         let mut view = make_view("https://example.com", "GET");
-        let mut config = crate::data::auth::OAuth2Config::default();
-        config.access_token = "my-oauth-token".to_string();
+        let config = crate::data::auth::OAuth2Config {
+            access_token: "my-oauth-token".to_string(),
+            ..Default::default()
+        };
         view.auth = Auth::OAuth2(Box::new(config));
         let req = view.build_request();
         assert!(req
@@ -2272,8 +2277,10 @@ mod tests {
     #[test]
     fn apply_environment_replaces_oauth2_device_auth_url() {
         let mut view = make_view("https://example.com", "GET");
-        let mut config = crate::data::auth::OAuth2Config::default();
-        config.device_auth_url = "{{DEVICE_AUTH}}".to_string();
+        let config = crate::data::auth::OAuth2Config {
+            device_auth_url: "{{DEVICE_AUTH}}".to_string(),
+            ..Default::default()
+        };
         view.auth = Auth::OAuth2(Box::new(config));
         let env = Environment {
             id: 1,
