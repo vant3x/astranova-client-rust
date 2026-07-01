@@ -1,14 +1,21 @@
 # AstraNova Client
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Commercial License](https://img.shields.io/badge/License-Commercial-green.svg)](LICENSING.md)
 
 <img src="assets/astra-bg.png" alt="AstraNova Logo" width="300">
-
-
 
 [Web](https://astranova-client.vercel.app/) -
 [Download installer](https://astranova-client.vercel.app/) -
 
 AstraNova Client is a desktop application built with Rust and Iced, designed to provide a user-friendly interface for making HTTP requests. It allows users to specify URLs, HTTP methods, headers, and request bodies, and then displays the response.
+
+## License
+
+This project is **dual-licensed**:
+
+- **MIT** — Free for individual developers and small teams. See [LICENSE](LICENSE).
+- **Commercial** — Required for enterprise features like team collections, cloud sync, and priority support. See [LICENSING.md](LICENSING.md).
 
 ## Getting Started
 
