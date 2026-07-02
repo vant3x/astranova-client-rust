@@ -25,6 +25,8 @@ pub enum Message {
     ToggleAutoReconnect,
     ReconnectDelayChanged(String),
     MaxRetriesChanged(String),
+    SearchChanged(String),
+    SubprotocolChanged(String),
 }
 
 #[derive(Debug)]
@@ -42,6 +44,8 @@ pub struct WebSocketView {
     pub max_retries: u32,
     pub current_retries: u32,
     pub ws_sender: Option<WsSender>,
+    pub search_query: String,
+    pub subprotocol: String,
 }
 
 impl Clone for WebSocketView {
@@ -60,6 +64,8 @@ impl Clone for WebSocketView {
             max_retries: self.max_retries,
             current_retries: self.current_retries,
             ws_sender: self.ws_sender.clone(),
+            search_query: self.search_query.clone(),
+            subprotocol: self.subprotocol.clone(),
         }
     }
 }
@@ -80,6 +86,8 @@ impl Default for WebSocketView {
             max_retries: 5,
             current_retries: 0,
             ws_sender: None,
+            search_query: String::new(),
+            subprotocol: String::new(),
         }
     }
 }
@@ -117,6 +125,10 @@ impl WebSocketView {
             text_input("wss://echo.websocket.org", &self.url)
                 .on_input(Message::UrlChanged)
                 .padding(8),
+            text_input("Subprotocol", &self.subprotocol)
+                .on_input(Message::SubprotocolChanged)
+                .padding(8)
+                .width(Length::Fixed(150.0)),
             connect_button,
             status_text.size(13),
         ]
@@ -214,8 +226,29 @@ impl WebSocketView {
             column![]
         };
 
+        let search_input = text_input("Search messages...", &self.search_query)
+            .on_input(Message::SearchChanged)
+            .padding(5);
+
+        let filtered_messages: Vec<_> = if self.search_query.is_empty() {
+            self.messages.clone()
+        } else {
+            let query = self.search_query.to_lowercase();
+            self.messages
+                .iter()
+                .filter(|m| {
+                    m.data.to_lowercase().contains(&query)
+                        || m.direction.to_lowercase().contains(&query)
+                        || format!("{:?}", m.message_type)
+                            .to_lowercase()
+                            .contains(&query)
+                })
+                .cloned()
+                .collect()
+        };
+
         let mut message_list = column![].spacing(4);
-        for msg in &self.messages {
+        for msg in &filtered_messages {
             let dir_color = if msg.direction == ">" {
                 Color::from_rgb(0.2, 0.4, 0.8)
             } else {
@@ -230,22 +263,37 @@ impl WebSocketView {
                 WsMessageType::Close => "CLOSE",
             };
 
-            let data_display: String = msg.data.chars().take(200).collect();
-            let truncated = if msg.data.len() > 200 {
+            let formatted = msg.formatted_data();
+            let data_display: String = formatted.chars().take(200).collect();
+            let truncated = if formatted.len() > 200 {
                 format!("{}...", data_display)
             } else {
                 data_display
             };
 
+            let timestamp = msg.timestamp.clone();
+            let time_display = if timestamp.len() >= 10 {
+                format!("{}:{}", &timestamp[..timestamp.len()-4], &timestamp[timestamp.len()-2..])
+            } else {
+                timestamp.clone()
+            };
+
+            let dir_clone = msg.direction.clone();
             message_list = message_list.push(
-                row![
-                    text(&msg.direction).size(13).color(dir_color),
-                    text(type_label)
-                        .size(11)
-                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                    text(truncated).size(13),
+                column![
+                    row![
+                        text(dir_clone).size(13).color(dir_color),
+                        text(type_label)
+                            .size(11)
+                            .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                        text(truncated).size(13),
+                    ]
+                    .spacing(6),
+                    text(format!("  {}", time_display))
+                        .size(10)
+                        .color(Color::from_rgb(0.4, 0.4, 0.4)),
                 ]
-                .spacing(6),
+                .spacing(2),
             );
         }
 
@@ -289,6 +337,7 @@ impl WebSocketView {
                 header,
                 url_row,
                 headers_section,
+                search_input,
                 scrollable(message_list).height(Length::Fill),
                 input_row,
             ]

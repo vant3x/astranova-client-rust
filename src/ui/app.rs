@@ -11,7 +11,6 @@ use iced::{
 };
 use iced_aw::{TabLabel, Tabs};
 use iced_fonts::lucide;
-use reqwest;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -25,6 +24,7 @@ use iced_futures::subscription::{from_recipe, EventStream, Recipe};
 
 struct WsRecipe {
     receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<WsEvent>>>>,
+    connection_id: u64,
 }
 
 impl Recipe for WsRecipe {
@@ -33,6 +33,7 @@ impl Recipe for WsRecipe {
     fn hash(&self, state: &mut iced_futures::subscription::Hasher) {
         use std::hash::Hash;
         std::any::TypeId::of::<WsRecipe>().hash(state);
+        self.connection_id.hash(state);
     }
 
     fn stream(self: Box<Self>, _input: EventStream) -> BoxStream<'static, Message> {
@@ -86,6 +87,7 @@ pub fn main() -> iced::Result {
     iced::application(AstraNovaApp::new, AstraNovaApp::update, AstraNovaApp::view)
         .title("AstraNova Client")
         .subscription(AstraNovaApp::subscription)
+        .theme(AstraNovaApp::theme)
         .font(iced_fonts::LUCIDE_FONT_BYTES)
         .run()
 }
@@ -93,7 +95,7 @@ pub fn main() -> iced::Result {
 pub(crate) struct AstraNovaApp {
     pub(crate) request_tabs: Vec<HttpRequestView>,
     pub(crate) active_request_tab_index: usize,
-    pub(crate) http_client: reqwest::Client,
+    pub(crate) http_client: Arc<reqwest::Client>,
     pub(crate) db_conn: rusqlite::Connection,
     pub(crate) environments: Vec<Environment>,
     pub(crate) active_environment: Option<Environment>,
@@ -112,7 +114,9 @@ pub(crate) struct AstraNovaApp {
     pub(crate) ws_shutdown: Option<mpsc::UnboundedSender<()>>,
     pub(crate) ws_write_handle: Option<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>>,
     pub(crate) ws_read_handle: Option<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>>,
+    pub(crate) ws_connection_id: u64,
     pub(crate) toast_manager: ToastManager,
+    pub(crate) dark_mode: bool,
 }
 
 #[derive(Debug)]
@@ -135,6 +139,7 @@ pub enum Message {
     CollectionMsg(collection_view::Message),
     ToggleCollections,
     ToggleEnvInfo,
+    ToggleTheme,
     WebSocketMsg(websocket_view::Message),
     GraphQLMsg(graphql_view::Message),
     WsEvent(crate::protocols::websocket::WsEvent),
@@ -185,6 +190,7 @@ impl Clone for Message {
             Self::CollectionMsg(m) => Self::CollectionMsg(m.clone()),
             Self::ToggleCollections => Self::ToggleCollections,
             Self::ToggleEnvInfo => Self::ToggleEnvInfo,
+            Self::ToggleTheme => Self::ToggleTheme,
             Self::WebSocketMsg(m) => Self::WebSocketMsg(m.clone()),
             Self::GraphQLMsg(m) => Self::GraphQLMsg(m.clone()),
             Self::WsEvent(e) => Self::WsEvent(e.clone()),
@@ -243,7 +249,7 @@ impl AstraNovaApp {
         let app = Self {
             request_tabs: vec![HttpRequestView::default()],
             active_request_tab_index: 0,
-            http_client: reqwest::Client::new(),
+            http_client: Arc::new(reqwest::Client::new()),
             db_conn,
             environments: environments.clone(),
             active_environment: None,
@@ -266,7 +272,9 @@ impl AstraNovaApp {
             ws_shutdown: None,
             ws_write_handle: None,
             ws_read_handle: None,
+            ws_connection_id: 0,
             toast_manager: ToastManager::new(),
+            dark_mode: true,
         };
         (app, Task::none())
     }
@@ -362,6 +370,10 @@ impl AstraNovaApp {
                 self.show_env_info = !self.show_env_info;
                 Task::none()
             }
+            Message::ToggleTheme => {
+                self.dark_mode = !self.dark_mode;
+                Task::none()
+            }
             Message::CollectionMsg(msg) => super::handlers::collection::handle_message(self, msg),
             Message::HistoryMsg(msg) => super::handlers::history::handle_message(self, msg),
             Message::SelectProtocol(protocol) => {
@@ -428,14 +440,14 @@ impl AstraNovaApp {
                 let http_client =
                     if request.config.proxy_url.is_some() || !request.config.verify_ssl {
                         match client::build_client(&request.config) {
-                            Ok(c) => c,
+                            Ok(c) => Arc::new(c),
                             Err(e) => {
                                 log::error!("Failed to build custom client: {}", e);
-                                self.http_client.clone()
+                                Arc::clone(&self.http_client)
                             }
                         }
                     } else {
-                        self.http_client.clone()
+                        Arc::clone(&self.http_client)
                     };
 
                 Task::perform(
@@ -526,6 +538,7 @@ impl AstraNovaApp {
         let ws_subscription = if let Some(receiver_arc) = &self.ws_receiver {
             from_recipe(WsRecipe {
                 receiver: receiver_arc.clone(),
+                connection_id: self.ws_connection_id,
             })
         } else {
             Subscription::none()
@@ -543,6 +556,9 @@ impl AstraNovaApp {
                         }
                         iced::keyboard::Key::Character(ref c) if c.as_ref() == "t" => {
                             Message::AddRequestTab
+                        }
+                        iced::keyboard::Key::Character(ref c) if c.as_ref() == "d" => {
+                            Message::ToggleTheme
                         }
                         iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
                             Message::PrevRequestTab
@@ -577,6 +593,112 @@ impl AstraNovaApp {
         Subscription::batch(vec![ws_subscription, keyboard_subscription])
     }
 
+    fn theme(&self) -> iced::Theme {
+        if self.dark_mode {
+            iced::Theme::Dark
+        } else {
+            iced::Theme::Light
+        }
+    }
+
+    fn create_toolbar(&self) -> (Element<'_, Message>, Element<'_, Message>) {
+        let add_tab_button =
+            button(lucide::plus().size(16)).on_press(Message::AddRequestTab);
+        let close_tab_button = if self.request_tabs.len() > 1 {
+            button(lucide::x().size(16))
+                .on_press(Message::CloseRequestTab(self.active_request_tab_index))
+        } else {
+            button(lucide::x().size(16))
+        };
+
+        let history_button =
+            button(row![lucide::history().size(14), text(" History")].spacing(4))
+                .on_press(Message::ToggleHistory);
+
+        let collections_button =
+            button(row![lucide::folder().size(14), text(" Collections")].spacing(4))
+                .on_press(Message::ToggleCollections);
+
+        let theme_button = if self.dark_mode {
+            button(row![lucide::sun().size(14), text(" Light")].spacing(4))
+                .on_press(Message::ToggleTheme)
+        } else {
+            button(row![lucide::moon().size(14), text(" Dark")].spacing(4))
+                .on_press(Message::ToggleTheme)
+        };
+
+        let protocol_selector = pick_list(
+            &Protocol::ALL[..],
+            Some(self.active_protocol),
+            Message::SelectProtocol,
+        );
+
+        let env_selector = pick_list(
+            &self.environments[..],
+            self.active_environment.clone(),
+            |env| Message::SelectEnvironment(env.id),
+        )
+        .placeholder("No Environment");
+
+        let mut env_controls = row![
+            history_button,
+            collections_button,
+            theme_button,
+            protocol_selector,
+            env_selector,
+            button(
+                row![lucide::settings().size(14), text(" Manage Environments")].spacing(4)
+            )
+            .on_press(Message::SwitchView(View::EnvironmentManager))
+        ]
+        .spacing(10);
+
+        if self.active_environment.is_some() {
+            let chevron = if self.show_env_info {
+                lucide::chevron_down().size(12)
+            } else {
+                lucide::chevron_right().size(12)
+            };
+            env_controls = env_controls.push(
+                button(row![chevron, text(" Help").size(12)].spacing(4))
+                    .on_press(Message::ToggleEnvInfo),
+            );
+        }
+
+        let toolbar = row![add_tab_button, close_tab_button, env_controls]
+            .spacing(10)
+            .padding(10)
+            .align_y(Alignment::Center);
+
+        let env_help_section: Element<Message> =
+            if let Some(active_env) = &self.active_environment {
+                if self.show_env_info {
+                    let variables_text = if active_env.variables.is_empty() {
+                        "This environment has no variables.".to_string()
+                    } else {
+                        let keys: Vec<_> = active_env
+                            .variables
+                            .iter()
+                            .map(|(k, _)| k.as_str())
+                            .collect();
+                        format!("Available: {}", keys.join(", "))
+                    };
+                    column![
+                        text("Use {{variable}} in URL, Headers, or Body.").size(12),
+                        text(variables_text).size(12)
+                    ]
+                    .spacing(5)
+                    .into()
+                } else {
+                    column![].into()
+                }
+            } else {
+                column![].into()
+            };
+
+        (toolbar.into(), env_help_section)
+    }
+
     fn view(&self) -> Element<'_, Message> {
         match self.current_view {
             View::Main => {
@@ -609,113 +731,26 @@ impl AstraNovaApp {
                     .width(Length::Fill)
                     .height(Length::Fill);
 
-                let add_tab_button =
-                    button(lucide::plus().size(16)).on_press(Message::AddRequestTab);
-                let close_tab_button = if self.request_tabs.len() > 1 {
-                    button(lucide::x().size(16))
-                        .on_press(Message::CloseRequestTab(self.active_request_tab_index))
-                } else {
-                    button(lucide::x().size(16))
-                };
-
-                let history_button =
-                    button(row![lucide::history().size(14), text(" History")].spacing(4))
-                        .on_press(Message::ToggleHistory);
-
-                let collections_button =
-                    button(row![lucide::folder().size(14), text(" Collections")].spacing(4))
-                        .on_press(Message::ToggleCollections);
-
-                let protocol_selector = pick_list(
-                    &Protocol::ALL[..],
-                    Some(self.active_protocol),
-                    Message::SelectProtocol,
-                );
-
-                let env_selector = pick_list(
-                    &self.environments[..],
-                    self.active_environment.clone(),
-                    |env| Message::SelectEnvironment(env.id),
-                )
-                .placeholder("No Environment");
-
-                let mut env_controls = row![
-                    history_button,
-                    collections_button,
-                    protocol_selector,
-                    env_selector,
-                    button(
-                        row![lucide::settings().size(14), text(" Manage Environments")].spacing(4)
-                    )
-                    .on_press(Message::SwitchView(View::EnvironmentManager))
-                ]
-                .spacing(10);
-
-                if self.active_environment.is_some() {
-                    let chevron = if self.show_env_info {
-                        lucide::chevron_down().size(12)
-                    } else {
-                        lucide::chevron_right().size(12)
-                    };
-                    env_controls = env_controls.push(
-                        button(row![chevron, text(" Help").size(12)].spacing(4))
-                            .on_press(Message::ToggleEnvInfo),
-                    );
-                }
-
-                let env_help_section: Element<Message> =
-                    if let Some(active_env) = &self.active_environment {
-                        if self.show_env_info {
-                            let variables_text = if active_env.variables.is_empty() {
-                                "This environment has no variables.".to_string()
-                            } else {
-                                let keys: Vec<_> = active_env
-                                    .variables
-                                    .iter()
-                                    .map(|(k, _)| k.as_str())
-                                    .collect();
-                                format!("Available: {}", keys.join(", "))
-                            };
-                            column![
-                                text("Use {{variable}} in URL, Headers, or Body.").size(12),
-                                text(variables_text).size(12)
-                            ]
-                            .spacing(5)
-                            .into()
-                        } else {
-                            column![].into()
-                        }
-                    } else {
-                        column![].into()
-                    };
+                let (toolbar, env_help_section) = self.create_toolbar();
 
                 let main_content = match self.active_protocol {
                     Protocol::Http => {
                         column![
-                            row![add_tab_button, close_tab_button, env_controls,]
-                                .spacing(10)
-                                .padding(10)
-                                .align_y(Alignment::Center),
+                            toolbar,
                             env_help_section,
                             tabs_widget,
                         ]
                     }
                     Protocol::WebSocket => {
                         column![
-                            row![add_tab_button, close_tab_button, env_controls,]
-                                .spacing(10)
-                                .padding(10)
-                                .align_y(Alignment::Center),
+                            toolbar,
                             env_help_section,
                             self.websocket_view.view().map(Message::WebSocketMsg),
                         ]
                     }
                     Protocol::GraphQL => {
                         column![
-                            row![add_tab_button, close_tab_button, env_controls,]
-                                .spacing(10)
-                                .padding(10)
-                                .align_y(Alignment::Center),
+                            toolbar,
                             env_help_section,
                             self.graphql_view.view().map(Message::GraphQLMsg),
                         ]

@@ -1,14 +1,16 @@
 use crate::data::auth::Auth;
 use crate::data::auth::AuthType;
+use crate::data::auth_input::AuthInput;
 use crate::http_client::config::RequestConfig;
 use crate::protocols::graphql::{GraphQLRequest, GraphQLResponse};
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
+use crate::ui::request_status::{status_color, RequestStatus};
 use crate::ui::theme::method_color;
 use base64::{engine::general_purpose, Engine as _};
 use iced::highlighter;
 use iced::widget::text_editor;
 use iced::{
-    widget::{button, column, container, pick_list, row, rule, scrollable, text, text_input},
+    widget::{button, column, container, row, rule, scrollable, text, text_input},
     Alignment, Color, Element, Length, Renderer, Theme,
 };
 use iced_aw::{ContextMenu, TabLabel, Tabs};
@@ -77,48 +79,6 @@ pub enum Message {
     ValidateQuery,
     #[allow(dead_code)]
     QueryValidated(Result<(), String>),
-}
-
-#[derive(Debug, Clone)]
-pub enum AuthInput {
-    BearerToken(String),
-    BasicUser(String),
-    BasicPass(String),
-    ApiKeyKey(String),
-    ApiKeyValue(String),
-    ApiKeyLocation(crate::data::auth::ApiKeyLocation),
-    DigestUser(String),
-    DigestPass(String),
-}
-
-#[derive(Debug, Default)]
-pub enum RequestStatus {
-    #[default]
-    Idle,
-    Loading,
-    Success,
-    Error(String),
-}
-
-impl Clone for RequestStatus {
-    fn clone(&self) -> Self {
-        match self {
-            RequestStatus::Idle => RequestStatus::Idle,
-            RequestStatus::Loading => RequestStatus::Loading,
-            RequestStatus::Success => RequestStatus::Success,
-            RequestStatus::Error(s) => RequestStatus::Error(s.clone()),
-        }
-    }
-}
-
-fn status_color(status: u16) -> Color {
-    match status {
-        200..=299 => Color::from_rgb(0.2, 0.7, 0.3),
-        300..=399 => Color::from_rgb(0.2, 0.5, 0.8),
-        400..=499 => Color::from_rgb(0.8, 0.5, 0.1),
-        500..=599 => Color::from_rgb(0.8, 0.2, 0.2),
-        _ => Color::from_rgb(0.5, 0.5, 0.5),
-    }
 }
 
 #[derive(Debug)]
@@ -365,33 +325,9 @@ impl GraphQLView {
                     AuthType::OAuth2 => Auth::OAuth2(Box::default()),
                 };
             }
-            Message::AuthInputChanged(input) => match (&mut self.auth, input) {
-                (Auth::BearerToken(token), AuthInput::BearerToken(new_token)) => {
-                    *token = new_token;
-                }
-                (Auth::Basic { user, .. }, AuthInput::BasicUser(new_user)) => {
-                    *user = new_user;
-                }
-                (Auth::Basic { pass, .. }, AuthInput::BasicPass(new_pass)) => {
-                    *pass = new_pass;
-                }
-                (Auth::ApiKey { key, .. }, AuthInput::ApiKeyKey(new_key)) => {
-                    *key = new_key;
-                }
-                (Auth::ApiKey { value, .. }, AuthInput::ApiKeyValue(new_value)) => {
-                    *value = new_value;
-                }
-                (Auth::ApiKey { location, .. }, AuthInput::ApiKeyLocation(new_location)) => {
-                    *location = new_location;
-                }
-                (Auth::Digest { user, .. }, AuthInput::DigestUser(new_user)) => {
-                    *user = new_user;
-                }
-                (Auth::Digest { pass, .. }, AuthInput::DigestPass(new_pass)) => {
-                    *pass = new_pass;
-                }
-                _ => {}
-            },
+            Message::AuthInputChanged(input) => {
+                self.auth.apply_input(input);
+            }
             Message::SendRequest => {}
             Message::SetLoading => {
                 self.request_status = RequestStatus::Loading;
@@ -764,76 +700,26 @@ impl GraphQLView {
     }
 
     fn create_auth_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
-        let current_auth_type = self.auth.auth_type();
-
-        let auth_type_selector = pick_list(
-            &AuthType::ALL[..],
-            Some(current_auth_type),
-            Message::AuthTypeSelected,
-        )
-        .padding(10);
-
-        let auth_inputs = match &self.auth {
-            Auth::BearerToken(token) => column![text_input("Bearer Token", token)
-                .on_input(|t| Message::AuthInputChanged(AuthInput::BearerToken(t)))
-                .padding(10)
-                .secure(true),]
-            .spacing(10),
-            Auth::Basic { user, pass } => column![
-                text_input("Username", user)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::BasicUser(u)))
-                    .padding(10),
-                text_input("Password", pass)
-                    .on_input(|p| Message::AuthInputChanged(AuthInput::BasicPass(p)))
-                    .padding(10)
-                    .secure(true),
-            ]
-            .spacing(10),
-            Auth::ApiKey {
-                key,
-                value,
-                location,
-            } => column![
-                text_input("Key Name", key)
-                    .on_input(|k| Message::AuthInputChanged(AuthInput::ApiKeyKey(k)))
-                    .padding(10),
-                text_input("Value", value)
-                    .on_input(|v| Message::AuthInputChanged(AuthInput::ApiKeyValue(v)))
-                    .padding(10),
-                pick_list(
-                    &crate::data::auth::ApiKeyLocation::ALL[..],
-                    Some(*location),
-                    |loc| Message::AuthInputChanged(AuthInput::ApiKeyLocation(loc)),
-                )
-                .padding(10),
-            ]
-            .spacing(10),
-            Auth::Digest { user, pass } => column![
-                text("Digest Authentication").size(14),
-                text_input("Username", user)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::DigestUser(u)))
-                    .padding(10),
-                text_input("Password", pass)
-                    .on_input(|p| Message::AuthInputChanged(AuthInput::DigestPass(p)))
-                    .padding(10)
-                    .secure(true),
-            ]
-            .spacing(10),
-            Auth::OAuth2(_) => column![
-                text("OAuth2 not fully supported for GraphQL yet").size(12),
-                text("Use Bearer token or manually configure").size(12),
-            ]
-            .spacing(10),
-            Auth::None => column![text("No authentication configured").size(14)].spacing(10),
-        };
-
-        column![
-            text("Authentication Type:").size(14),
-            auth_type_selector,
-            auth_inputs,
+        let oauth2_content = column![
+            text("OAuth2 not fully supported for GraphQL yet").size(12),
+            text("Use Bearer token or manually configure").size(12),
         ]
         .spacing(10)
-        .into()
+        .into();
+
+        crate::ui::components::auth_panel::auth_panel(
+            &self.auth,
+            Message::AuthTypeSelected,
+            |t| Message::AuthInputChanged(AuthInput::BearerToken(t)),
+            |u| Message::AuthInputChanged(AuthInput::BasicUser(u)),
+            |p| Message::AuthInputChanged(AuthInput::BasicPass(p)),
+            |k| Message::AuthInputChanged(AuthInput::ApiKeyKey(k)),
+            |v| Message::AuthInputChanged(AuthInput::ApiKeyValue(v)),
+            |loc| Message::AuthInputChanged(AuthInput::ApiKeyLocation(loc)),
+            |u| Message::AuthInputChanged(AuthInput::DigestUser(u)),
+            |p| Message::AuthInputChanged(AuthInput::DigestPass(p)),
+            oauth2_content,
+        )
     }
 
     fn create_response_data_view(&self) -> Element<'_, Message, Theme, Renderer> {

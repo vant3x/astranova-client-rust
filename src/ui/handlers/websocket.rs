@@ -1,4 +1,4 @@
-use crate::protocols::websocket::{WsEvent, WsSender};
+use crate::protocols::websocket::{WsEvent, WsSender, WS_MAX_MESSAGES};
 use crate::ui::app::{AstraNovaApp, Message};
 use crate::ui::views::websocket_view;
 use iced::Task;
@@ -12,6 +12,10 @@ pub fn handle_ws_event(app: &mut AstraNovaApp, event: WsEvent) -> Task<Message> 
         }
         WsEvent::Message(msg) => {
             app.websocket_view.messages.push(msg);
+            if app.websocket_view.messages.len() > WS_MAX_MESSAGES {
+                let drain_count = app.websocket_view.messages.len() - WS_MAX_MESSAGES;
+                app.websocket_view.messages.drain(..drain_count);
+            }
         }
         WsEvent::Disconnected(reason) => {
             app.websocket_view.status = crate::protocols::websocket::WsStatus::Disconnected;
@@ -30,11 +34,20 @@ pub fn handle_ws_event(app: &mut AstraNovaApp, event: WsEvent) -> Task<Message> 
 pub fn handle_connect(app: &mut AstraNovaApp) -> Task<Message> {
     let url = app.websocket_view.url.clone();
     let headers = app.websocket_view.headers.clone();
+    let subprotocol = if app.websocket_view.subprotocol.is_empty() {
+        None
+    } else {
+        Some(app.websocket_view.subprotocol.clone())
+    };
     app.websocket_view.status = crate::protocols::websocket::WsStatus::Connecting;
 
     Task::perform(
         async move {
-            let request = crate::protocols::websocket::WsRequest { url, headers };
+            let request = crate::protocols::websocket::WsRequest {
+                url,
+                headers,
+                subprotocol,
+            };
             crate::protocols::websocket::connect_ws(&request).await
         },
         |result| match result {
@@ -91,6 +104,11 @@ pub fn handle_disconnected(app: &mut AstraNovaApp, reason: String) -> Task<Messa
 
         let url = app.websocket_view.url.clone();
         let headers = app.websocket_view.headers.clone();
+        let subprotocol = if app.websocket_view.subprotocol.is_empty() {
+            None
+        } else {
+            Some(app.websocket_view.subprotocol.clone())
+        };
         let delay = app.websocket_view.reconnect_delay_ms;
 
         log::info!(
@@ -103,7 +121,11 @@ pub fn handle_disconnected(app: &mut AstraNovaApp, reason: String) -> Task<Messa
         Task::perform(
             async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                let request = crate::protocols::websocket::WsRequest { url, headers };
+                let request = crate::protocols::websocket::WsRequest {
+                    url,
+                    headers,
+                    subprotocol,
+                };
                 crate::protocols::websocket::connect_ws(&request).await
             },
             |result| match result {
@@ -137,6 +159,7 @@ pub fn handle_ws_connected(
     app.ws_shutdown = shutdown_tx;
     app.ws_write_handle = Some(write_handle);
     app.ws_read_handle = Some(read_handle);
+    app.ws_connection_id = crate::protocols::websocket::next_ws_connection_id();
     app.websocket_view.status = crate::protocols::websocket::WsStatus::Connected;
     app.websocket_view.current_retries = 0;
     Task::none()
@@ -202,12 +225,24 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: websocket_view::Message) -> T
             app.websocket_view.input = input;
             Task::none()
         }
+        websocket_view::Message::SearchChanged(query) => {
+            app.websocket_view.search_query = query;
+            Task::none()
+        }
+        websocket_view::Message::SubprotocolChanged(subprotocol) => {
+            app.websocket_view.subprotocol = subprotocol;
+            Task::none()
+        }
         websocket_view::Message::SendMessage(text) if !text.is_empty() => {
             if let Some(sender) = &app.ws_sender {
                 if sender.send(&text).is_ok() {
                     app.websocket_view.messages.push(
                         crate::protocols::websocket::WsMessage::outgoing(text.clone()),
                     );
+                    if app.websocket_view.messages.len() > WS_MAX_MESSAGES {
+                        let drain_count = app.websocket_view.messages.len() - WS_MAX_MESSAGES;
+                        app.websocket_view.messages.drain(..drain_count);
+                    }
                     app.websocket_view.input.clear();
                 }
             }

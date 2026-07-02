@@ -19,14 +19,14 @@ pub fn handle_message(app: &mut AstraNovaApp, msg: graphql_view::Message) -> Tas
                         || !http_request.config.verify_ssl
                     {
                         match crate::http_client::client::build_client(&http_request.config) {
-                            Ok(c) => c,
+                            Ok(c) => std::sync::Arc::new(c),
                             Err(e) => {
                                 log::error!("Failed to build custom client: {}", e);
-                                app.http_client.clone()
+                                std::sync::Arc::clone(&app.http_client)
                             }
                         }
                     } else {
-                        app.http_client.clone()
+                        std::sync::Arc::clone(&app.http_client)
                     };
 
                     Task::perform(

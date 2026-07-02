@@ -1,9 +1,11 @@
 use crate::data::auth::{Auth, AuthType};
+use crate::data::auth_input::AuthInput;
 use crate::http_client::config::RequestConfig;
 use crate::http_client::response::HttpResponse;
 use crate::http_client::snippets::{self, SnippetFormat};
 use crate::persistence::database::Environment;
 use crate::ui::components::key_value_editor::{self, KeyValueEditor};
+use crate::ui::request_status::{status_color, RequestStatus};
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use iced::highlighter;
@@ -169,60 +171,7 @@ pub enum ResponseTab {
     Timeline,
 }
 
-#[derive(Debug, Clone)]
-pub enum AuthInput {
-    BearerToken(String),
-    BasicUser(String),
-    BasicPass(String),
-    ApiKeyKey(String),
-    ApiKeyValue(String),
-    ApiKeyLocation(crate::data::auth::ApiKeyLocation),
-    DigestUser(String),
-    DigestPass(String),
-    OAuth2GrantType(crate::data::auth::OAuth2GrantType),
-    OAuth2AuthUrl(String),
-    OAuth2TokenUrl(String),
-    OAuth2DeviceAuthUrl(String),
-    OAuth2ClientId(String),
-    OAuth2ClientSecret(String),
-    OAuth2Scopes(String),
-    OAuth2RedirectUri(String),
-    OAuth2PkceEnabled(bool),
-    OAuth2AccessToken(String),
-    OAuth2RefreshToken(String),
-}
-
-#[derive(Debug, Default)]
-pub enum RequestStatus {
-    #[default]
-    Idle,
-    Loading,
-    Success,
-    Error(String),
-}
-
-impl Clone for RequestStatus {
-    fn clone(&self) -> Self {
-        match self {
-            RequestStatus::Idle => RequestStatus::Idle,
-            RequestStatus::Loading => RequestStatus::Loading,
-            RequestStatus::Success => RequestStatus::Success,
-            RequestStatus::Error(s) => RequestStatus::Error(s.clone()),
-        }
-    }
-}
-
 pub use crate::ui::theme::method_color;
-
-fn status_color(status: u16) -> Color {
-    match status {
-        200..=299 => Color::from_rgb(0.2, 0.7, 0.3),
-        300..=399 => Color::from_rgb(0.2, 0.5, 0.8),
-        400..=499 => Color::from_rgb(0.8, 0.5, 0.1),
-        500..=599 => Color::from_rgb(0.8, 0.2, 0.2),
-        _ => Color::from_rgb(0.5, 0.5, 0.5),
-    }
-}
 
 #[derive(Debug)]
 pub struct HttpRequestView {
@@ -552,66 +501,9 @@ impl HttpRequestView {
                     AuthType::OAuth2 => Auth::OAuth2(Box::default()),
                 };
             }
-            Message::AuthInputChanged(input) => match (&mut self.auth, input) {
-                (Auth::BearerToken(token), AuthInput::BearerToken(new_token)) => {
-                    *token = new_token;
-                }
-                (Auth::Basic { user, .. }, AuthInput::BasicUser(new_user)) => {
-                    *user = new_user;
-                }
-                (Auth::Basic { pass, .. }, AuthInput::BasicPass(new_pass)) => {
-                    *pass = new_pass;
-                }
-                (Auth::ApiKey { key, .. }, AuthInput::ApiKeyKey(new_key)) => {
-                    *key = new_key;
-                }
-                (Auth::ApiKey { value, .. }, AuthInput::ApiKeyValue(new_value)) => {
-                    *value = new_value;
-                }
-                (Auth::ApiKey { location, .. }, AuthInput::ApiKeyLocation(new_location)) => {
-                    *location = new_location;
-                }
-                (Auth::Digest { user, .. }, AuthInput::DigestUser(new_user)) => {
-                    *user = new_user;
-                }
-                (Auth::Digest { pass, .. }, AuthInput::DigestPass(new_pass)) => {
-                    *pass = new_pass;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2GrantType(grant_type)) => {
-                    config.grant_type = grant_type;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2AuthUrl(url)) => {
-                    config.auth_url = url;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2TokenUrl(url)) => {
-                    config.token_url = url;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2ClientId(id)) => {
-                    config.client_id = id;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2ClientSecret(secret)) => {
-                    config.client_secret = secret;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2Scopes(scopes)) => {
-                    config.scopes = scopes;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2RedirectUri(uri)) => {
-                    config.redirect_uri = uri;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2PkceEnabled(enabled)) => {
-                    config.pkce_enabled = enabled;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2AccessToken(token)) => {
-                    config.access_token = token;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2RefreshToken(token)) => {
-                    config.refresh_token = token;
-                }
-                (Auth::OAuth2(config), AuthInput::OAuth2DeviceAuthUrl(url)) => {
-                    config.device_auth_url = url;
-                }
-                _ => {}
-            },
+            Message::AuthInputChanged(input) => {
+                self.auth.apply_input(input);
+            }
             Message::HeadersEditor(msg) => self.headers_editor.update(msg),
             Message::ParamsEditor(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(action) => self.body_input.perform(action),
@@ -1211,61 +1103,7 @@ impl HttpRequestView {
     }
 
     fn create_auth_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
-        let current_auth_type = self.auth.auth_type();
-
-        let auth_type_selector = pick_list(
-            &AuthType::ALL[..],
-            Some(current_auth_type),
-            Message::AuthTypeSelected,
-        )
-        .padding(10);
-
-        let auth_inputs = match &self.auth {
-            Auth::BearerToken(token) => column![text_input("Bearer Token", token)
-                .on_input(|t| Message::AuthInputChanged(AuthInput::BearerToken(t)))
-                .padding(10)
-                .secure(true),]
-            .spacing(10),
-            Auth::Basic { user, pass } => column![
-                text_input("Username", user)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::BasicUser(u)))
-                    .padding(10),
-                text_input("Password", pass)
-                    .on_input(|p| Message::AuthInputChanged(AuthInput::BasicPass(p)))
-                    .padding(10)
-                    .secure(true),
-            ]
-            .spacing(10),
-            Auth::ApiKey {
-                key,
-                value,
-                location,
-            } => column![
-                text_input("Key Name", key)
-                    .on_input(|k| Message::AuthInputChanged(AuthInput::ApiKeyKey(k)))
-                    .padding(10),
-                text_input("Value", value)
-                    .on_input(|v| Message::AuthInputChanged(AuthInput::ApiKeyValue(v)))
-                    .padding(10),
-                pick_list(
-                    &crate::data::auth::ApiKeyLocation::ALL[..],
-                    Some(*location),
-                    |loc| Message::AuthInputChanged(AuthInput::ApiKeyLocation(loc)),
-                )
-                .padding(10),
-            ]
-            .spacing(10),
-            Auth::Digest { user, pass } => column![
-                text("Digest Authentication").size(14),
-                text_input("Username", user)
-                    .on_input(|u| Message::AuthInputChanged(AuthInput::DigestUser(u)))
-                    .padding(10),
-                text_input("Password", pass)
-                    .on_input(|p| Message::AuthInputChanged(AuthInput::DigestPass(p)))
-                    .padding(10)
-                    .secure(true),
-            ]
-            .spacing(10),
+        let oauth2_content: Element<'_, Message, Theme, Renderer> = match &self.auth {
             Auth::OAuth2(config) => {
                 let grant_type_fields = match config.grant_type {
                     crate::data::auth::OAuth2GrantType::AuthorizationCode => column![
@@ -1444,22 +1282,29 @@ impl HttpRequestView {
                     },
                 ]
                 .spacing(10)
+                .into()
             }
-            Auth::None => column![text("No authentication required.").size(14),].spacing(10),
+            _ => column![].into(),
         };
 
-        container(scrollable(
-            column![
-                text("Authentication Type").size(16),
-                auth_type_selector,
-                auth_inputs
-            ]
-            .spacing(15)
-            .padding(20),
-        ))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        let panel = crate::ui::components::auth_panel::auth_panel(
+            &self.auth,
+            Message::AuthTypeSelected,
+            |t| Message::AuthInputChanged(AuthInput::BearerToken(t)),
+            |u| Message::AuthInputChanged(AuthInput::BasicUser(u)),
+            |p| Message::AuthInputChanged(AuthInput::BasicPass(p)),
+            |k| Message::AuthInputChanged(AuthInput::ApiKeyKey(k)),
+            |v| Message::AuthInputChanged(AuthInput::ApiKeyValue(v)),
+            |loc| Message::AuthInputChanged(AuthInput::ApiKeyLocation(loc)),
+            |u| Message::AuthInputChanged(AuthInput::DigestUser(u)),
+            |p| Message::AuthInputChanged(AuthInput::DigestPass(p)),
+            oauth2_content,
+        );
+
+        container(scrollable(panel))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn create_body_tab_content(&self) -> Element<'_, Message, Theme, Renderer> {
