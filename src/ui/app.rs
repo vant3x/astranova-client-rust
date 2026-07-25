@@ -71,15 +71,22 @@ impl Recipe for MenuEventRecipe {
     fn stream(self: Box<Self>, _input: EventStream) -> BoxStream<'static, Message> {
         use std::time::Duration;
 
-        futures::stream::unfold((), |()| async {
+        futures::stream::unfold(0u64, |tick| async move {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            let msg = muda::MenuEvent::receiver()
+            let next_tick = tick + 1;
+            let msg = if next_tick % 5 == 0 {
+                Message::PollMockServerLogs
+            } else if let Some(msg) = muda::MenuEvent::receiver()
                 .try_recv()
                 .ok()
-                .and_then(|event| crate::ui::menu::handle_menu_event(&event));
-            Some((msg, ()))
+                .and_then(|event| crate::ui::menu::handle_menu_event(&event))
+            {
+                msg
+            } else {
+                return Some((Message::PollMockServerLogs, next_tick));
+            };
+            Some((msg, next_tick))
         })
-        .filter_map(|msg| async { msg })
         .boxed()
     }
 }
@@ -141,6 +148,7 @@ pub enum Protocol {
     Http,
     WebSocket,
     GraphQL,
+    MockServer,
 }
 
 impl std::fmt::Display for Protocol {
@@ -149,12 +157,18 @@ impl std::fmt::Display for Protocol {
             Protocol::Http => write!(f, "HTTP"),
             Protocol::WebSocket => write!(f, "WebSocket"),
             Protocol::GraphQL => write!(f, "GraphQL"),
+            Protocol::MockServer => write!(f, "Mock Server"),
         }
     }
 }
 
 impl Protocol {
-    pub const ALL: [Protocol; 3] = [Protocol::Http, Protocol::WebSocket, Protocol::GraphQL];
+    pub const ALL: [Protocol; 4] = [
+        Protocol::Http,
+        Protocol::WebSocket,
+        Protocol::GraphQL,
+        Protocol::MockServer,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +200,9 @@ pub(crate) struct AstraioApp {
     pub(crate) collection_view: CollectionView,
     pub(crate) websocket_view: WebSocketView,
     pub(crate) graphql_view: GraphQLView,
+    pub(crate) mock_server_view: crate::ui::views::mock_server_view::MockServerView,
+    pub(crate) mock_server_handles:
+        std::collections::HashMap<i32, crate::protocols::mock_server::MockServerHandle>,
     pub(crate) active_protocol: Protocol,
     pub(crate) current_view: View,
     pub(crate) show_history: bool,
@@ -285,6 +302,10 @@ pub enum Message {
     ShowAbout,
     Quit,
     WindowOpened(iced::window::Id),
+    MockServerMsg(crate::ui::views::mock_server_view::Message),
+    MockServerStarted(i32, crate::protocols::mock_server::MockServerHandle, u16),
+    MockServerStartError(i32, String),
+    PollMockServerLogs,
 }
 
 impl AstraioApp {
@@ -322,6 +343,12 @@ impl AstraioApp {
 
         let mut cv = CollectionView::new();
         cv.sync_collections(&collections);
+
+        let mock_servers =
+            crate::services::mock_server_service::get_all(&db_conn).unwrap_or_else(|e| {
+                log::warn!("Failed to load mock servers: {}", e);
+                Vec::new()
+            });
 
         let secret_store = crate::services::secret_store::SecretStore::new();
         match crate::services::secret_store::migrate_plaintext_tokens_to_keyring(
@@ -380,6 +407,12 @@ impl AstraioApp {
             collection_view: cv,
             websocket_view: WebSocketView::new(),
             graphql_view: GraphQLView::default(),
+            mock_server_view: {
+                let mut mv = crate::ui::views::mock_server_view::MockServerView::default();
+                mv.sync_servers(&mock_servers);
+                mv
+            },
+            mock_server_handles: std::collections::HashMap::new(),
             active_protocol: Protocol::Http,
             current_view: View::Main,
             show_history: false,
@@ -433,6 +466,11 @@ impl AstraioApp {
             if let Err(e) = crate::persistence::database::save_cookies(&self.db_conn, &jar) {
                 log::warn!("Failed to persist cookies on shutdown: {}", e);
             }
+        }
+        // Shutdown mock servers
+        for (id, handle) in self.mock_server_handles.drain() {
+            crate::protocols::mock_server::stop_mock_server(handle);
+            log::info!("[Mock] Stopped mock server id={}", id);
         }
         log::info!("Astraio cleanup complete");
     }
@@ -581,6 +619,36 @@ impl AstraioApp {
             Message::WsEvent(event) => super::handlers::websocket::handle_ws_event(self, event),
             Message::WebSocketMsg(msg) => super::handlers::websocket::handle_message(self, msg),
             Message::GraphQLMsg(msg) => super::handlers::graphql::handle_message(self, msg),
+            Message::MockServerMsg(msg) => super::handlers::mock_server::handle_message(self, msg),
+            Message::MockServerStarted(id, handle, actual_port) => {
+                self.mock_server_handles.insert(id, handle);
+                self.mock_server_view.statuses.insert(
+                    id,
+                    crate::protocols::mock_server::MockServerStatus::Running { actual_port },
+                );
+                self.toast_manager
+                    .success(format!("Mock server running on port {}", actual_port));
+                Task::none()
+            }
+            Message::MockServerStartError(id, error) => {
+                self.mock_server_view.statuses.insert(
+                    id,
+                    crate::protocols::mock_server::MockServerStatus::Error(error.clone()),
+                );
+                self.toast_manager
+                    .error(format!("Mock server error: {}", error));
+                Task::none()
+            }
+            Message::PollMockServerLogs => {
+                for handle in self.mock_server_handles.values() {
+                    if let Ok(mut rx) = handle.log_rx.try_lock() {
+                        while let Ok(log) = rx.try_recv() {
+                            self.mock_server_view.logs.push(log);
+                        }
+                    }
+                }
+                Task::none()
+            }
             Message::WsConnected(
                 sender,
                 receiver_arc,
@@ -652,6 +720,7 @@ impl AstraioApp {
                             http_request_view::Message::SendRequest,
                         );
                     }
+                    Protocol::MockServer => {}
                 }
                 Task::none()
             }
@@ -1265,6 +1334,13 @@ impl AstraioApp {
                             toolbar,
                             env_help_section,
                             self.graphql_view.view().map(Message::GraphQLMsg),
+                        ]
+                    }
+                    Protocol::MockServer => {
+                        column![
+                            toolbar,
+                            env_help_section,
+                            self.mock_server_view.view().map(Message::MockServerMsg),
                         ]
                     }
                 };
