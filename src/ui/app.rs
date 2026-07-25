@@ -467,6 +467,7 @@ impl AstraioApp {
                     if self.active_request_tab_index >= self.request_tabs.len() {
                         self.active_request_tab_index = self.request_tabs.len() - 1;
                     }
+                    self.sync_cookie_data_to_tabs();
                 }
                 Task::none()
             }
@@ -477,12 +478,14 @@ impl AstraioApp {
                     if self.active_request_tab_index >= self.request_tabs.len() {
                         self.active_request_tab_index = self.request_tabs.len() - 1;
                     }
+                    self.sync_cookie_data_to_tabs();
                 }
                 Task::none()
             }
             Message::NoOp => Task::none(),
             Message::SelectRequestTab(index) => {
                 self.active_request_tab_index = index;
+                self.sync_cookie_data_to_tabs();
                 Task::none()
             }
             Message::PrevRequestTab => {
@@ -490,6 +493,7 @@ impl AstraioApp {
                     self.active_request_tab_index =
                         (self.active_request_tab_index + self.request_tabs.len() - 1)
                             % self.request_tabs.len();
+                    self.sync_cookie_data_to_tabs();
                 }
                 Task::none()
             }
@@ -497,6 +501,7 @@ impl AstraioApp {
                 if !self.request_tabs.is_empty() {
                     self.active_request_tab_index =
                         (self.active_request_tab_index + 1) % self.request_tabs.len();
+                    self.sync_cookie_data_to_tabs();
                 }
                 Task::none()
             }
@@ -946,10 +951,11 @@ impl AstraioApp {
             for (i, tab) in self.request_tabs.iter_mut().enumerate() {
                 tab.cookie_count = total;
                 tab.cookie_domain_count = domain_count;
-                tab.cookie_domains = domains.clone();
                 if i == active_idx {
+                    tab.cookie_domains = domains.clone();
                     tab.cookie_domain_cookies = cookies.clone();
                 } else {
+                    tab.cookie_domains.clear();
                     tab.cookie_domain_cookies.clear();
                 }
             }
@@ -1222,13 +1228,18 @@ impl AstraioApp {
                         TabLabel::Text(format!("{} {}", request_tab.method, truncated_url))
                     };
 
-                    tabs = tabs.push(
-                        index,
-                        tab_label,
+                    let tab_content = if index == self.active_request_tab_index {
                         request_tab
                             .view()
-                            .map(move |msg| Message::HttpRequestViewMsg(index, msg)),
-                    );
+                            .map(move |msg| Message::HttpRequestViewMsg(index, msg))
+                    } else {
+                        container(text(""))
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .into()
+                    };
+
+                    tabs = tabs.push(index, tab_label, tab_content);
                 }
 
                 let tabs_widget = tabs
