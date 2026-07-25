@@ -468,16 +468,12 @@ pub fn parse_ws_message(msg: Message) -> Option<WsMessage> {
     match msg {
         Message::Text(text) => Some(WsMessage::incoming(WsMessageType::Text, text)),
         Message::Binary(data) => {
-            let hex = data
+            let hex_display = data
                 .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>();
-            let preview = if data.len() <= 32 {
-                hex.clone()
-            } else {
-                format!("{}... ({} bytes)", &hex[..64], data.len())
-            };
-            Some(WsMessage::incoming(WsMessageType::Binary, preview))
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ");
+            Some(WsMessage::incoming(WsMessageType::Binary, hex_display))
         }
         Message::Ping(data) => Some(WsMessage::incoming(
             WsMessageType::Ping,

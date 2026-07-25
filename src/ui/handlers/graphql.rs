@@ -53,6 +53,16 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                             *last_used = std::time::Instant::now();
                             std::sync::Arc::clone(cached)
                         } else {
+                            if app.custom_clients.len() >= 20 {
+                                if let Some(oldest_key) = app
+                                    .custom_clients
+                                    .iter()
+                                    .min_by_key(|(_, (_, t))| *t)
+                                    .map(|(k, _)| k.clone())
+                                {
+                                    app.custom_clients.remove(&oldest_key);
+                                }
+                            }
                             match crate::http_client::client::build_client(&http_request.config) {
                                 Ok(c) => {
                                     let c = std::sync::Arc::new(c);
@@ -355,17 +365,17 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                             captured_cookies = true;
                         }
                     }
-                } else {
-                    log::error!("Failed to acquire cookie_jar lock for GraphQL Set-Cookie capture");
-                }
-                if captured_cookies {
-                    if let Ok(jar) = app.cookie_jar.lock() {
+                    if captured_cookies {
                         if let Err(e) =
                             crate::persistence::database::save_cookies(&app.db_conn, &jar)
                         {
                             log::warn!("Failed to persist GraphQL cookies: {}", e);
                         }
                     }
+                } else {
+                    log::error!("Failed to acquire cookie_jar lock for GraphQL Set-Cookie capture");
+                }
+                if captured_cookies {
                     app.sync_cookie_data_to_tabs();
                 }
             }

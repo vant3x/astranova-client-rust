@@ -33,6 +33,7 @@ pub enum Message {
     SearchChanged(String),
     SubprotocolChanged(String),
     ClearMessages,
+    ClearHistory,
     ConnectTimeoutChanged(String),
     PingIntervalChanged(String),
     ToggleSkipVerify,
@@ -484,23 +485,36 @@ impl WebSocketView {
                     }
                 };
 
-                let byte_size = msg.data.len();
+                let byte_size = match msg.message_type {
+                    WsMessageType::Binary => {
+                        // msg.data is space-separated hex bytes, so count them
+                        msg.data
+                            .split_whitespace()
+                            .filter(|s| !s.is_empty())
+                            .count()
+                    }
+                    _ => msg.data.len(),
+                };
                 let size_label = if byte_size >= 1024 {
                     format!("{:.1}KB", byte_size as f64 / 1024.0)
                 } else {
                     format!("{}B", byte_size)
                 };
 
-                let timestamp = msg.timestamp.clone();
-                let time_display = if timestamp.len() >= 10 {
-                    format!(
-                        "{}:{}",
-                        &timestamp[..timestamp.len() - 4],
-                        &timestamp[timestamp.len() - 2..]
-                    )
-                } else {
-                    timestamp.clone()
-                };
+                let time_display = msg
+                    .timestamp
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|secs| {
+                        let dt = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+                        Some(format!(
+                            "{:02}:{:02}:{:02}",
+                            (dt.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() / 3600) % 24,
+                            (dt.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() / 60) % 60,
+                            dt.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() % 60,
+                        ))
+                    })
+                    .unwrap_or_else(|| msg.timestamp.clone());
 
                 let dir_clone = msg.direction.clone();
                 let expand_icon: Element<'_, Message, Theme, Renderer> = if is_expanded {
@@ -627,10 +641,11 @@ impl WebSocketView {
         .align_y(Alignment::Center);
 
         let clear_button = if self.messages.is_empty() {
-            button(row![lucide::trash().size(14), text(" Clear")].spacing(4))
+            Element::from(row![])
         } else {
             button(row![lucide::trash().size(14), text(" Clear")].spacing(4))
                 .on_press(Message::ClearMessages)
+                .into()
         };
 
         let header = column![

@@ -83,13 +83,15 @@ pub fn handle_message(app: &mut AstraioApp, message: websocket_view::Message) ->
         }
         websocket_view::Message::SendPing => {
             if let Some(sender) = &app.websocket_view.ws_sender {
-                let ping_data = b"ping".to_vec();
-                let _ = sender.send_ping(ping_data);
+                let ping_ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis()
+                    .to_string();
+                let _ = sender.send_ping(ping_ts.as_bytes().to_vec());
                 app.websocket_view.stats.messages_sent += 1;
                 app.websocket_view.add_message(
-                    crate::protocols::websocket::WsMessage::outgoing_ping(
-                        "manual ping".to_string(),
-                    ),
+                    crate::protocols::websocket::WsMessage::outgoing_ping(ping_ts),
                 );
             }
             Task::none()
@@ -163,6 +165,10 @@ pub fn handle_message(app: &mut AstraioApp, message: websocket_view::Message) ->
             Task::none()
         }
         websocket_view::Message::ClearMessages => {
+            app.websocket_view.messages.clear();
+            Task::none()
+        }
+        websocket_view::Message::ClearHistory => {
             app.websocket_view.messages.clear();
             Task::none()
         }
@@ -283,11 +289,6 @@ fn handle_disconnect(app: &mut AstraioApp) -> Task<Message> {
 }
 
 fn handle_disconnected(app: &mut AstraioApp, reason: String) -> Task<Message> {
-    if reason == "cleared" {
-        app.websocket_view.messages.clear();
-        return Task::none();
-    }
-
     if !app.websocket_view.messages.is_empty() {
         let url = app.websocket_view.url.clone();
         let messages = app.websocket_view.messages.clone();

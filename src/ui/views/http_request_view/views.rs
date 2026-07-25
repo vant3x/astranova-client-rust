@@ -139,7 +139,7 @@ impl HttpRequestView {
             .spacing(10)
             .padding(iced::Padding::from([16, 10])),
             http_warning,
-            tabs.height(Length::Fixed(280.0)),
+            tabs.height(Length::Fixed(300.0)),
             rule::horizontal(10),
             column![
                 row![

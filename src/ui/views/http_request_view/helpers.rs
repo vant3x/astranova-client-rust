@@ -19,6 +19,14 @@ pub(super) fn response_content_type_to_syntax(ct: &str) -> &str {
         "html"
     } else if ct.contains("xml") {
         "xml"
+    } else if ct.contains("javascript") || ct.contains("ecmascript") {
+        "javascript"
+    } else if ct.contains("css") {
+        "css"
+    } else if ct.contains("yaml") || ct.contains("yml") {
+        "yaml"
+    } else if ct.contains("markdown") {
+        "markdown"
     } else {
         "text"
     }

@@ -522,11 +522,7 @@ impl GraphQLView {
                     self.status_code = Some(status);
                     self.response_duration = Some(duration);
                     self.response_size = Some(size);
-                    self.response_headers = headers
-                        .iter()
-                        .filter(|(k, _)| !k.eq_ignore_ascii_case("content-type"))
-                        .cloned()
-                        .collect();
+                    self.response_headers = headers.to_vec();
                     let ct = headers
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
@@ -877,7 +873,7 @@ impl GraphQLView {
             )
             .set_active_tab(&self.active_tab)
             .width(Length::Fill)
-            .height(Length::Fixed(250.0));
+            .height(Length::Fixed(300.0));
 
         let response_area: Element<Message> = match &self.request_status {
             RequestStatus::Idle => {
