@@ -44,6 +44,7 @@ sha2 = "0.10"
 hmac = "0.12"
 rand = "0.8"
 regex = "1"
+rquickjs = { version = "0.12", features = ["futures", "macro"] }
 open = "5"
 iced_fonts = { version = "0.3.0", features = ["lucide"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
