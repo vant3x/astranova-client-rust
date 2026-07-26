@@ -41,12 +41,12 @@ impl HttpRequestView {
         let editor_content: Element<'_, Message> = match self.active_script_tab {
             ScriptTab::PreRequest => text_editor(&self.pre_request_script_editor)
                 .on_action(Message::PreRequestScriptChanged)
-                .highlight("json", self.highlighter_theme)
+                .highlight("javascript", self.highlighter_theme)
                 .height(Length::Fill)
                 .into(),
             ScriptTab::PostResponse => text_editor(&self.post_response_script_editor)
                 .on_action(Message::PostResponseScriptChanged)
-                .highlight("json", self.highlighter_theme)
+                .highlight("javascript", self.highlighter_theme)
                 .height(Length::Fill)
                 .into(),
             ScriptTab::Output => {
@@ -87,6 +87,21 @@ impl HttpRequestView {
                     }
                     output_text.push('\n');
                 }
+                if !self.script_output.test_results.is_empty() {
+                    output_text.push_str("=== Test Results ===\n");
+                    let passed = self.script_output.test_results.iter().filter(|t| t.passed).count();
+                    let total = self.script_output.test_results.len();
+                    output_text.push_str(&format!("  {}/{} passed\n\n", passed, total));
+                    for test in &self.script_output.test_results {
+                        let icon = if test.passed { "PASS" } else { "FAIL" };
+                        output_text.push_str(&format!("  [{}] {}", icon, test.name));
+                        if let Some(msg) = &test.message {
+                            output_text.push_str(&format!(" - {}", msg));
+                        }
+                        output_text.push('\n');
+                    }
+                    output_text.push('\n');
+                }
                 if output_text.is_empty() {
                     output_text =
                         "No script output yet. Send a request to see results.".to_string();
@@ -97,7 +112,7 @@ impl HttpRequestView {
             }
         };
 
-        let help_text = text("Actions: set_variable, set_header, remove_header, set_body, set_body_json, set_url, set_method, set_query, assert_status, assert_header, assert_body, assert_json_path, extract_json, extract_regex, extract_header, log, delay, transform_to_upper, transform_to_lower, transform_trim, encode_base64, decode_base64, hash_sha256, hmac_sha256, if_status. Tokens: {{$timestamp}} {{$uuid}} {{$randomInt}} {{$isoNow}}. Paths: items[0].id bracket notation.")
+        let help_text = text("JavaScript API: pm.environment.get/set(name, value), pm.request.getUrl/setUrl/setMethod/setBody/setHeader/getHeader/removeHeader, pm.response.status/body/headers/json/url/method/responseTime/size, pm.log(...), pm.test(name, fn), pm.expect(value).toBe/toBeTruthy/toContain/toBeGreaterThan/toBeLessThan/toHaveLength. Tokens: Date.now(), Math.*, JSON.*, String.*, Array methods.")
             .size(11)
             .color(Color::from_rgb(0.5, 0.5, 0.5));
 

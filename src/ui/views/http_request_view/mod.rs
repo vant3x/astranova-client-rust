@@ -261,6 +261,15 @@ pub struct ScriptOutput {
     pub post_logs: Vec<String>,
     pub post_errors: Vec<String>,
     pub extracted_vars: Vec<(String, String)>,
+    #[serde(default)]
+    pub test_results: Vec<TestResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestResult {
+    pub name: String,
+    pub passed: bool,
+    pub message: Option<String>,
 }
 
 pub use crate::ui::theme::method_color;
@@ -1260,20 +1269,30 @@ impl HttpRequestView {
 
     pub fn load_scripts(&mut self, scripts: &RequestScripts) {
         self.scripts = scripts.clone();
-        if let Ok(json) = scripts.pre_request.to_json() {
-            self.pre_request_script_editor = text_editor::Content::with_text(&json);
-        }
-        if let Ok(json) = scripts.post_response.to_json() {
-            self.post_response_script_editor = text_editor::Content::with_text(&json);
-        }
+        let pre_text = if !scripts.js_pre_request.trim().is_empty() {
+            scripts.js_pre_request.clone()
+        } else {
+            scripts.pre_request.to_json().unwrap_or_default()
+        };
+        let post_text = if !scripts.js_post_response.trim().is_empty() {
+            scripts.js_post_response.clone()
+        } else {
+            scripts.post_response.to_json().unwrap_or_default()
+        };
+        self.pre_request_script_editor = text_editor::Content::with_text(&pre_text);
+        self.post_response_script_editor = text_editor::Content::with_text(&post_text);
     }
 
     pub fn parse_scripts_from_editors(&self) -> Result<RequestScripts, crate::error::AppError> {
-        let pre_json = self.pre_request_script_editor.text();
-        let post_json = self.post_response_script_editor.text();
+        let pre_text = self.pre_request_script_editor.text();
+        let post_text = self.post_response_script_editor.text();
+        let pre_json = crate::protocols::scripts::Script::from_json(&pre_text).unwrap_or_default();
+        let post_json = crate::protocols::scripts::Script::from_json(&post_text).unwrap_or_default();
         Ok(RequestScripts {
-            pre_request: crate::protocols::scripts::Script::from_json(&pre_json)?,
-            post_response: crate::protocols::scripts::Script::from_json(&post_json)?,
+            pre_request: pre_json,
+            post_response: post_json,
+            js_pre_request: pre_text,
+            js_post_response: post_text,
         })
     }
 }

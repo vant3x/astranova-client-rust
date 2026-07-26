@@ -253,6 +253,10 @@ pub struct RequestScripts {
     pub pre_request: Script,
     #[serde(default)]
     pub post_response: Script,
+    #[serde(default)]
+    pub js_pre_request: String,
+    #[serde(default)]
+    pub js_post_response: String,
 }
 
 impl RequestScripts {
@@ -1303,6 +1307,7 @@ mod tests {
             post_response: Script {
                 actions: vec![ScriptAction::AssertStatus { expected: 200 }],
             },
+            ..Default::default()
         };
 
         let json = scripts.to_json().unwrap();

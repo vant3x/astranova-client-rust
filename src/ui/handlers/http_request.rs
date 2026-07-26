@@ -1,5 +1,6 @@
 use crate::http_client::client;
 use crate::http_client::config::RequestConfig;
+use crate::protocols::script_engine::ScriptEngineV2;
 use crate::protocols::scripts::{ScriptContext, ScriptEngine};
 use crate::ui::app::{AstraioApp, Message};
 use crate::ui::views::http_request_view;
@@ -216,9 +217,37 @@ pub fn handle_http_request_msg(
             }
 
             let pre_request_script = temp_view.scripts.pre_request.clone();
+            let pre_request_js = temp_view.scripts.js_pre_request.clone();
             let mut delay_ms: Option<u64> = None;
             let mut script_output = http_request_view::ScriptOutput::default();
-            if !pre_request_script.actions.is_empty() {
+
+            // Detect if content is JS code or old JSON DSL
+            let is_js_code = !pre_request_js.trim().is_empty()
+                && serde_json::from_str::<crate::protocols::scripts::Script>(&pre_request_js).is_err();
+
+            if is_js_code {
+                // QuickJS engine path
+                let mut variables = script_context.variables.clone();
+                match ScriptEngineV2::execute_pre_request(&pre_request_js, &mut request, &mut variables) {
+                    Ok(output) => {
+                        script_output.pre_logs = output.logs;
+                        script_output.pre_errors = output.errors;
+                        script_output.extracted_vars = output.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                        script_output.test_results = output.test_results.iter().map(|t| {
+                            http_request_view::TestResult {
+                                name: t.name.clone(),
+                                passed: t.passed,
+                                message: t.message.clone(),
+                            }
+                        }).collect();
+                        script_context.variables = variables;
+                    }
+                    Err(e) => {
+                        script_output.pre_errors.push(e.to_string());
+                    }
+                }
+            } else if !pre_request_script.actions.is_empty() {
+                // Legacy JSON DSL engine path
                 for action in &pre_request_script.actions {
                     if let crate::protocols::scripts::ScriptAction::Delay { ms } = action {
                         delay_ms = Some(ms.saturating_add(delay_ms.unwrap_or(0)));
@@ -233,9 +262,10 @@ pub fn handle_http_request_msg(
                 }
                 script_output.pre_logs.append(&mut script_context.logs);
                 script_output.pre_errors.append(&mut script_context.errors);
-                for log in &script_output.pre_logs {
-                    app.toast_manager.info(format!("[Pre-request] {}", log));
-                }
+            }
+
+            for log in &script_output.pre_logs {
+                app.toast_manager.info(format!("[Pre-request] {}", log));
             }
 
             let request_url = request.url.clone();
@@ -295,6 +325,10 @@ pub fn handle_http_request_msg(
             };
 
             let post_response_script = view.scripts.post_response.clone();
+            let post_response_js = view.scripts.js_post_response.clone();
+            let is_post_js = !post_response_js.trim().is_empty()
+                && serde_json::from_str::<crate::protocols::scripts::Script>(&post_response_js).is_err();
+
             let (task, handle) = Task::perform(
                 async move {
                     if let Some(ms) = delay_ms {
@@ -307,18 +341,47 @@ pub fn handle_http_request_msg(
                         Ok(mut resp) => {
                             let mut warnings: Vec<String> = Vec::new();
                             let mut post_ctx = script_context;
-                            if let Err(e) = ScriptEngine::execute_post_response(
-                                &post_response_script,
-                                &resp,
-                                &mut post_ctx,
-                            ) {
-                                warnings.push(format!("Post-response script error: {}", e));
+
+                            if is_post_js {
+                                // QuickJS engine path
+                                let mut variables = post_ctx.variables.clone();
+                                match ScriptEngineV2::execute_post_response(
+                                    &post_response_js,
+                                    &resp,
+                                    &mut variables,
+                                ) {
+                                    Ok(output) => {
+                                        script_output.post_logs = output.logs;
+                                        script_output.post_errors = output.errors;
+                                        script_output.extracted_vars = output.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                        script_output.test_results = output.test_results.iter().map(|t| {
+                                            http_request_view::TestResult {
+                                                name: t.name.clone(),
+                                                passed: t.passed,
+                                                message: t.message.clone(),
+                                            }
+                                        }).collect();
+                                    }
+                                    Err(e) => {
+                                        warnings.push(format!("Post-response script error: {}", e));
+                                    }
+                                }
+                            } else {
+                                // Legacy JSON DSL engine path
+                                if let Err(e) = ScriptEngine::execute_post_response(
+                                    &post_response_script,
+                                    &resp,
+                                    &mut post_ctx,
+                                ) {
+                                    warnings.push(format!("Post-response script error: {}", e));
+                                }
+                                script_output.post_logs.append(&mut post_ctx.logs);
+                                script_output.post_errors.append(&mut post_ctx.errors);
+                                for (k, v) in &post_ctx.variables {
+                                    script_output.extracted_vars.push((k.clone(), v.clone()));
+                                }
                             }
-                            script_output.post_logs.append(&mut post_ctx.logs);
-                            script_output.post_errors.append(&mut post_ctx.errors);
-                            for (k, v) in &post_ctx.variables {
-                                script_output.extracted_vars.push((k.clone(), v.clone()));
-                            }
+
                             for log in &script_output.post_logs {
                                 warnings.push(log.clone());
                             }
