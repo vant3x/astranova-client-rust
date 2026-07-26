@@ -1,5 +1,7 @@
 use crate::protocols::mock_server::{MockServerConfig, MockServerLog, MockServerStatus};
+use crate::ui::components::key_value_editor::{self, KeyValueEditor};
 use iced::widget::rule;
+use iced::widget::text_editor;
 
 use iced::{
     widget::{button, column, container, pick_list, row, scrollable, text, text_input},
@@ -23,9 +25,9 @@ pub enum Message {
     EndpointMethodSelected(String),
     EndpointPathChanged(String),
     EndpointStatusChanged(String),
-    EndpointBodyChanged(String),
-
+    EndpointBodyAction(text_editor::Action),
     EndpointDelayChanged(String),
+    EndpointHeadersEditor(key_value_editor::Message),
     SaveEndpoint,
     CancelEndpointEdit,
     DeleteEndpoint(i32, i32),
@@ -33,15 +35,16 @@ pub enum Message {
     ClearLogs,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EndpointEditState {
     pub mock_server_id: i32,
     pub endpoint_id: Option<i32>,
     pub method: String,
     pub path: String,
     pub status: String,
-    pub body: String,
+    pub body: text_editor::Content,
     pub delay_ms: String,
+    pub headers: KeyValueEditor,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -240,7 +243,7 @@ impl MockServerView {
             .spacing(8)
             .align_y(Alignment::Center);
 
-        let mut endpoints_list = column![].spacing(4);
+        let mut endpoints_list = column![].spacing(2);
 
         let search_lower = self.endpoint_search.to_lowercase();
         let mut has_endpoints = false;
@@ -320,18 +323,23 @@ impl MockServerView {
         }
 
         let endpoint_form = if let Some(ref edit) = self.endpoint_edit {
-            self.render_endpoint_form(edit)
+            container(self.render_endpoint_form(edit))
         } else {
-            column![].into()
+            container(column![])
         };
 
-        column![
-            header_row.padding(10),
-            scrollable(endpoints_list.padding(10)).height(Length::FillPortion(2)),
-            endpoint_form,
-        ]
-        .spacing(8)
-        .into()
+        if self.endpoint_edit.is_some() {
+            column![header_row.padding(10), endpoint_form.height(Length::Fill),]
+                .spacing(0)
+                .into()
+        } else {
+            column![
+                header_row.padding(10),
+                scrollable(endpoints_list.padding(8)).height(Length::Fill),
+            ]
+            .spacing(0)
+            .into()
+        }
     }
 
     fn render_endpoint_form<'a>(
@@ -365,9 +373,10 @@ impl MockServerView {
             .padding(10)
             .width(Length::Fixed(120.0));
 
-        let body_input = text_input("Response body (JSON, text, etc.)", &edit.body)
-            .on_input(Message::EndpointBodyChanged)
-            .padding(10);
+        let body_editor = text_editor(&edit.body)
+            .on_action(Message::EndpointBodyAction)
+            .padding(10)
+            .height(Length::Fixed(120.0));
 
         let save_btn = button(row![lucide::check().size(14), text(" Save").size(13)].spacing(4))
             .on_press(Message::SaveEndpoint)
@@ -379,51 +388,59 @@ impl MockServerView {
 
         container(
             column![
-                rule::horizontal(1),
                 container(
                     row![lucide::pencil().size(16), text(title).size(15),]
                         .spacing(8)
                         .align_y(Alignment::Center),
                 )
-                .padding(iced::Padding::from([12, 16])),
-                column![
+                .padding(iced::Padding::from([8, 16])),
+                scrollable(
                     column![
-                        text("Method & Path")
-                            .size(12)
-                            .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                        row![method_selector, path_input]
+                        column![
+                            text("Method & Path")
+                                .size(12)
+                                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                            row![method_selector, path_input]
+                                .spacing(8)
+                                .align_y(Alignment::Center),
+                        ]
+                        .spacing(4),
+                        column![
+                            text("Status Code")
+                                .size(12)
+                                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                            row![
+                                status_input,
+                                text("Delay").size(12).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                                delay_input,
+                                text("ms").size(12).color(Color::from_rgb(0.5, 0.5, 0.5)),
+                            ]
                             .spacing(8)
                             .align_y(Alignment::Center),
-                    ]
-                    .spacing(4),
-                    column![
-                        text("Status Code")
-                            .size(12)
-                            .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                        row![
-                            status_input,
-                            text("Delay").size(12).color(Color::from_rgb(0.5, 0.5, 0.5)),
-                            delay_input,
-                            text("ms").size(12).color(Color::from_rgb(0.5, 0.5, 0.5)),
                         ]
-                        .spacing(8)
-                        .align_y(Alignment::Center),
+                        .spacing(4),
+                        column![
+                            text("Response Body")
+                                .size(12)
+                                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                            body_editor,
+                        ]
+                        .spacing(4),
+                        column![
+                            text("Response Headers")
+                                .size(12)
+                                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                            edit.headers.view().map(Message::EndpointHeadersEditor),
+                        ]
+                        .spacing(4),
+                        row![save_btn, cancel_btn]
+                            .spacing(12)
+                            .align_y(Alignment::Center),
                     ]
-                    .spacing(4),
-                    column![
-                        text("Response Body")
-                            .size(12)
-                            .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                        body_input,
-                    ]
-                    .spacing(4),
-                    row![save_btn, cancel_btn]
-                        .spacing(12)
-                        .align_y(Alignment::Center),
-                ]
-                .spacing(16)
-                .padding(iced::Padding::from([0, 16])),
-                container(text("")).height(iced::Length::Fixed(16.0)),
+                    .spacing(12)
+                    .padding(iced::Padding::from([0, 16])),
+                )
+                .height(Length::Fill),
             ]
             .spacing(0),
         )

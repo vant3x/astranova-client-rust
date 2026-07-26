@@ -89,7 +89,12 @@ impl HttpRequestView {
                 }
                 if !self.script_output.test_results.is_empty() {
                     output_text.push_str("=== Test Results ===\n");
-                    let passed = self.script_output.test_results.iter().filter(|t| t.passed).count();
+                    let passed = self
+                        .script_output
+                        .test_results
+                        .iter()
+                        .filter(|t| t.passed)
+                        .count();
                     let total = self.script_output.test_results.len();
                     output_text.push_str(&format!("  {}/{} passed\n\n", passed, total));
                     for test in &self.script_output.test_results {

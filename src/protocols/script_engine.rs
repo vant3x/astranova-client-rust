@@ -102,12 +102,10 @@ impl ScriptEngineV2 {
 
         let state = Arc::new(Mutex::new(EngineState::new_for_request(request, variables)));
 
-        let rt = Runtime::new().map_err(|e| {
-            AppError::Http(format!("Failed to create QuickJS runtime: {}", e))
-        })?;
-        let ctx = Context::full(&rt).map_err(|e| {
-            AppError::Http(format!("Failed to create QuickJS context: {}", e))
-        })?;
+        let rt = Runtime::new()
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {}", e)))?;
+        let ctx = Context::full(&rt)
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {}", e)))?;
 
         let exec_result = ctx.with(|ctx| {
             setup_pm_api(&ctx, state.clone(), false, None)?;
@@ -147,14 +145,14 @@ impl ScriptEngineV2 {
             });
         }
 
-        let state = Arc::new(Mutex::new(EngineState::new_for_response(response, variables)));
+        let state = Arc::new(Mutex::new(EngineState::new_for_response(
+            response, variables,
+        )));
 
-        let rt = Runtime::new().map_err(|e| {
-            AppError::Http(format!("Failed to create QuickJS runtime: {}", e))
-        })?;
-        let ctx = Context::full(&rt).map_err(|e| {
-            AppError::Http(format!("Failed to create QuickJS context: {}", e))
-        })?;
+        let rt = Runtime::new()
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {}", e)))?;
+        let ctx = Context::full(&rt)
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {}", e)))?;
 
         let exec_result = ctx.with(|ctx| {
             setup_pm_api(&ctx, state.clone(), true, Some(response))?;
@@ -180,13 +178,9 @@ impl ScriptEngineV2 {
     }
 }
 
-fn execute_user_code(
-    ctx: &rquickjs::Ctx<'_>,
-    js_code: &str,
-) -> Result<(), AppError> {
-    ctx.eval::<(), _>(js_code).map_err(|e| {
-        AppError::Validation(format!("Script error: {}", e))
-    })
+fn execute_user_code(ctx: &rquickjs::Ctx<'_>, js_code: &str) -> Result<(), AppError> {
+    ctx.eval::<(), _>(js_code)
+        .map_err(|e| AppError::Validation(format!("Script error: {}", e)))
 }
 
 fn setup_pm_api(
@@ -196,122 +190,157 @@ fn setup_pm_api(
     response: Option<&HttpResponse>,
 ) -> Result<(), AppError> {
     let globals = ctx.globals();
-    let pm = Object::new(ctx.clone()).map_err(|e| {
-        AppError::Http(format!("Failed to create pm: {}", e))
-    })?;
+    let pm = Object::new(ctx.clone())
+        .map_err(|e| AppError::Http(format!("Failed to create pm: {}", e)))?;
 
     // ---- pm.environment ----
     {
-        let env = Object::new(ctx.clone()).map_err(|e| {
-            AppError::Http(format!("Failed to create env: {}", e))
-        })?;
+        let env = Object::new(ctx.clone())
+            .map_err(|e| AppError::Http(format!("Failed to create env: {}", e)))?;
 
         let s = state.clone();
         let get_fn = Function::new(ctx.clone(), move |name: String| -> String {
-            s.lock().unwrap().variables.get(&name).cloned().unwrap_or_default()
-        }).map_err(|e| AppError::Http(format!("env.get: {}", e)))?;
+            s.lock()
+                .unwrap()
+                .variables
+                .get(&name)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .map_err(|e| AppError::Http(format!("env.get: {}", e)))?;
 
         let s = state.clone();
         let set_fn = Function::new(ctx.clone(), move |name: String, value: String| {
             s.lock().unwrap().variables.insert(name, value);
-        }).map_err(|e| AppError::Http(format!("env.set: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("env.set: {}", e)))?;
 
-        env.set("get", get_fn).map_err(|e| AppError::Http(format!("env.get set: {}", e)))?;
-        env.set("set", set_fn).map_err(|e| AppError::Http(format!("env.set set: {}", e)))?;
-        pm.set("environment", env).map_err(|e| AppError::Http(format!("pm.environment: {}", e)))?;
+        env.set("get", get_fn)
+            .map_err(|e| AppError::Http(format!("env.get set: {}", e)))?;
+        env.set("set", set_fn)
+            .map_err(|e| AppError::Http(format!("env.set set: {}", e)))?;
+        pm.set("environment", env)
+            .map_err(|e| AppError::Http(format!("pm.environment: {}", e)))?;
     }
 
     // ---- pm.request ----
     {
-        let req = Object::new(ctx.clone()).map_err(|e| {
-            AppError::Http(format!("Failed to create req: {}", e))
-        })?;
+        let req = Object::new(ctx.clone())
+            .map_err(|e| AppError::Http(format!("Failed to create req: {}", e)))?;
 
         let s = state.clone();
         let set_url = Function::new(ctx.clone(), move |url: String| {
             s.lock().unwrap().request_url = url;
-        }).map_err(|e| AppError::Http(format!("set_url: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("set_url: {}", e)))?;
 
         let s = state.clone();
         let set_method = Function::new(ctx.clone(), move |method: String| {
             s.lock().unwrap().request_method = method;
-        }).map_err(|e| AppError::Http(format!("set_method: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("set_method: {}", e)))?;
 
         let s = state.clone();
         let set_body = Function::new(ctx.clone(), move |body: String| {
             s.lock().unwrap().request_body = Some(body);
-        }).map_err(|e| AppError::Http(format!("set_body: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("set_body: {}", e)))?;
 
         let s = state.clone();
         let set_header = Function::new(ctx.clone(), move |key: String, value: String| {
             let mut st = s.lock().unwrap();
-            st.request_headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
+            st.request_headers
+                .retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
             st.request_headers.push((key, value));
-        }).map_err(|e| AppError::Http(format!("set_header: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("set_header: {}", e)))?;
 
         let s = state.clone();
         let get_header = Function::new(ctx.clone(), move |key: String| -> String {
             let st = s.lock().unwrap();
-            st.request_headers.iter()
+            st.request_headers
+                .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case(&key))
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default()
-        }).map_err(|e| AppError::Http(format!("get_header: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("get_header: {}", e)))?;
 
         let s = state.clone();
         let remove_header = Function::new(ctx.clone(), move |key: String| {
-            s.lock().unwrap().request_headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
-        }).map_err(|e| AppError::Http(format!("remove_header: {}", e)))?;
+            s.lock()
+                .unwrap()
+                .request_headers
+                .retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
+        })
+        .map_err(|e| AppError::Http(format!("remove_header: {}", e)))?;
 
         let s = state.clone();
         let get_url = Function::new(ctx.clone(), move || -> String {
             s.lock().unwrap().request_url.clone()
-        }).map_err(|e| AppError::Http(format!("get_url: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("get_url: {}", e)))?;
 
         let s = state.clone();
         let get_method = Function::new(ctx.clone(), move || -> String {
             s.lock().unwrap().request_method.clone()
-        }).map_err(|e| AppError::Http(format!("get_method: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("get_method: {}", e)))?;
 
         let s = state.clone();
         let get_body = Function::new(ctx.clone(), move || -> String {
             s.lock().unwrap().request_body.clone().unwrap_or_default()
-        }).map_err(|e| AppError::Http(format!("get_body: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("get_body: {}", e)))?;
 
-        req.set("setUrl", set_url).map_err(|e| AppError::Http(format!("req.setUrl: {}", e)))?;
-        req.set("setMethod", set_method).map_err(|e| AppError::Http(format!("req.setMethod: {}", e)))?;
-        req.set("setBody", set_body).map_err(|e| AppError::Http(format!("req.setBody: {}", e)))?;
-        req.set("setHeader", set_header).map_err(|e| AppError::Http(format!("req.setHeader: {}", e)))?;
-        req.set("getHeader", get_header).map_err(|e| AppError::Http(format!("req.getHeader: {}", e)))?;
-        req.set("removeHeader", remove_header).map_err(|e| AppError::Http(format!("req.removeHeader: {}", e)))?;
-        req.set("getUrl", get_url).map_err(|e| AppError::Http(format!("req.getUrl: {}", e)))?;
-        req.set("getMethod", get_method).map_err(|e| AppError::Http(format!("req.getMethod: {}", e)))?;
-        req.set("getBody", get_body).map_err(|e| AppError::Http(format!("req.getBody: {}", e)))?;
-        pm.set("request", req).map_err(|e| AppError::Http(format!("pm.request: {}", e)))?;
+        req.set("setUrl", set_url)
+            .map_err(|e| AppError::Http(format!("req.setUrl: {}", e)))?;
+        req.set("setMethod", set_method)
+            .map_err(|e| AppError::Http(format!("req.setMethod: {}", e)))?;
+        req.set("setBody", set_body)
+            .map_err(|e| AppError::Http(format!("req.setBody: {}", e)))?;
+        req.set("setHeader", set_header)
+            .map_err(|e| AppError::Http(format!("req.setHeader: {}", e)))?;
+        req.set("getHeader", get_header)
+            .map_err(|e| AppError::Http(format!("req.getHeader: {}", e)))?;
+        req.set("removeHeader", remove_header)
+            .map_err(|e| AppError::Http(format!("req.removeHeader: {}", e)))?;
+        req.set("getUrl", get_url)
+            .map_err(|e| AppError::Http(format!("req.getUrl: {}", e)))?;
+        req.set("getMethod", get_method)
+            .map_err(|e| AppError::Http(format!("req.getMethod: {}", e)))?;
+        req.set("getBody", get_body)
+            .map_err(|e| AppError::Http(format!("req.getBody: {}", e)))?;
+        pm.set("request", req)
+            .map_err(|e| AppError::Http(format!("pm.request: {}", e)))?;
     }
 
     // ---- pm.response ----
     if has_response {
         if let Some(resp) = response {
-            let res = Object::new(ctx.clone()).map_err(|e| {
-                AppError::Http(format!("Failed to create res: {}", e))
-            })?;
+            let res = Object::new(ctx.clone())
+                .map_err(|e| AppError::Http(format!("Failed to create res: {}", e)))?;
 
-            res.set("status", resp.status).map_err(|e| AppError::Http(format!("res.status: {}", e)))?;
-            res.set("body", resp.body.clone()).map_err(|e| AppError::Http(format!("res.body: {}", e)))?;
-            res.set("url", resp.url.clone()).map_err(|e| AppError::Http(format!("res.url: {}", e)))?;
-            res.set("method", format!("{}", resp.method)).map_err(|e| AppError::Http(format!("res.method: {}", e)))?;
+            res.set("status", resp.status)
+                .map_err(|e| AppError::Http(format!("res.status: {}", e)))?;
+            res.set("body", resp.body.clone())
+                .map_err(|e| AppError::Http(format!("res.body: {}", e)))?;
+            res.set("url", resp.url.clone())
+                .map_err(|e| AppError::Http(format!("res.url: {}", e)))?;
+            res.set("method", format!("{}", resp.method))
+                .map_err(|e| AppError::Http(format!("res.method: {}", e)))?;
             res.set("responseTime", resp.duration.as_millis() as u64)
                 .map_err(|e| AppError::Http(format!("res.responseTime: {}", e)))?;
-            res.set("size", resp.size).map_err(|e| AppError::Http(format!("res.size: {}", e)))?;
+            res.set("size", resp.size)
+                .map_err(|e| AppError::Http(format!("res.size: {}", e)))?;
 
-            let headers = Object::new(ctx.clone()).map_err(|e| {
-                AppError::Http(format!("Failed to create res.headers: {}", e))
-            })?;
+            let headers = Object::new(ctx.clone())
+                .map_err(|e| AppError::Http(format!("Failed to create res.headers: {}", e)))?;
             for (k, v) in &resp.headers {
                 headers.set(k.as_str(), v.as_str()).ok();
             }
-            res.set("headers", headers).map_err(|e| AppError::Http(format!("res.headers: {}", e)))?;
+            res.set("headers", headers)
+                .map_err(|e| AppError::Http(format!("res.headers: {}", e)))?;
 
             if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&resp.body) {
                 let json_str = serde_json::to_string(&json_val).unwrap_or_default();
@@ -320,38 +349,55 @@ fn setup_pm_api(
                 }
             }
 
-            pm.set("response", res).map_err(|e| AppError::Http(format!("pm.response: {}", e)))?;
+            pm.set("response", res)
+                .map_err(|e| AppError::Http(format!("pm.response: {}", e)))?;
         }
     }
 
     // ---- pm.log ----
     {
         let s = state.clone();
-        let log_fn = Function::new(ctx.clone(), move |args: rquickjs::function::Rest<Value<'_>>| {
-            let parts: Vec<String> = args.0.into_iter().map(|v| {
-                v.as_string().and_then(|s| s.to_string().ok()).unwrap_or_default()
-            }).collect();
-            s.lock().unwrap().logs.push(parts.join(" "));
-        }).map_err(|e| AppError::Http(format!("pm.log: {}", e)))?;
-        pm.set("log", log_fn).map_err(|e| AppError::Http(format!("pm.log set: {}", e)))?;
+        let log_fn = Function::new(
+            ctx.clone(),
+            move |args: rquickjs::function::Rest<Value<'_>>| {
+                let parts: Vec<String> = args
+                    .0
+                    .into_iter()
+                    .map(|v| {
+                        v.as_string()
+                            .and_then(|s| s.to_string().ok())
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                s.lock().unwrap().logs.push(parts.join(" "));
+            },
+        )
+        .map_err(|e| AppError::Http(format!("pm.log: {}", e)))?;
+        pm.set("log", log_fn)
+            .map_err(|e| AppError::Http(format!("pm.log set: {}", e)))?;
     }
 
     // ---- pm.test ----
     {
         let s = state.clone();
-        let test_fn = Function::new(ctx.clone(), move |name: String, test_fn_val: Function<'_>| {
-            let mut result = TestResult {
-                name,
-                passed: false,
-                message: None,
-            };
-            match test_fn_val.call::<(), ()>(()) {
-                Ok(_) => result.passed = true,
-                Err(e) => result.message = Some(format!("{}", e)),
-            }
-            s.lock().unwrap().test_results.push(result);
-        }).map_err(|e| AppError::Http(format!("pm.test: {}", e)))?;
-        pm.set("test", test_fn).map_err(|e| AppError::Http(format!("pm.test set: {}", e)))?;
+        let test_fn = Function::new(
+            ctx.clone(),
+            move |name: String, test_fn_val: Function<'_>| {
+                let mut result = TestResult {
+                    name,
+                    passed: false,
+                    message: None,
+                };
+                match test_fn_val.call::<(), ()>(()) {
+                    Ok(_) => result.passed = true,
+                    Err(e) => result.message = Some(format!("{}", e)),
+                }
+                s.lock().unwrap().test_results.push(result);
+            },
+        )
+        .map_err(|e| AppError::Http(format!("pm.test: {}", e)))?;
+        pm.set("test", test_fn)
+            .map_err(|e| AppError::Http(format!("pm.test set: {}", e)))?;
     }
 
     // ---- pm.expect (defined via JS to avoid lifetime issues) ----
@@ -359,12 +405,16 @@ fn setup_pm_api(
         let s2 = state.clone();
         let collect_error = Function::new(ctx.clone(), move |msg: String| {
             s2.lock().unwrap().errors.push(msg);
-        }).map_err(|e| AppError::Http(format!("collect_error: {}", e)))?;
-        pm.set("__collectError", collect_error).map_err(|e| AppError::Http(format!("pm.__collectError: {}", e)))?;
+        })
+        .map_err(|e| AppError::Http(format!("collect_error: {}", e)))?;
+        pm.set("__collectError", collect_error)
+            .map_err(|e| AppError::Http(format!("pm.__collectError: {}", e)))?;
     }
 
     // Set pm on globals BEFORE defining pm.expect via JS eval
-    globals.set("pm", pm).map_err(|e| AppError::Http(format!("Failed to set global pm: {}", e)))?;
+    globals
+        .set("pm", pm)
+        .map_err(|e| AppError::Http(format!("Failed to set global pm: {}", e)))?;
 
     // ---- pm.expect (defined via JS to avoid lifetime issues) ----
     ctx.eval::<(), _>(r#"
@@ -467,7 +517,12 @@ mod tests {
     fn test_pm_log() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        let result = ScriptEngineV2::execute_pre_request(r#"pm.log("hello", "world");"#, &mut req, &mut vars).unwrap();
+        let result = ScriptEngineV2::execute_pre_request(
+            r#"pm.log("hello", "world");"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert_eq!(result.logs.len(), 1);
         assert!(result.logs[0].contains("hello"));
     }
@@ -489,7 +544,12 @@ mod tests {
     fn test_request_set_url() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        ScriptEngineV2::execute_pre_request(r#"pm.request.setUrl("https://api.example.com/products");"#, &mut req, &mut vars).unwrap();
+        ScriptEngineV2::execute_pre_request(
+            r#"pm.request.setUrl("https://api.example.com/products");"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert_eq!(req.url, "https://api.example.com/products");
     }
 
@@ -497,7 +557,12 @@ mod tests {
     fn test_request_set_method() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        ScriptEngineV2::execute_pre_request(r#"pm.request.setMethod("POST");"#, &mut req, &mut vars).unwrap();
+        ScriptEngineV2::execute_pre_request(
+            r#"pm.request.setMethod("POST");"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert_eq!(format!("{}", req.method), "POST");
     }
 
@@ -505,7 +570,12 @@ mod tests {
     fn test_request_set_body() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        ScriptEngineV2::execute_pre_request(r#"pm.request.setBody('{"name":"test"}');"#, &mut req, &mut vars).unwrap();
+        ScriptEngineV2::execute_pre_request(
+            r#"pm.request.setBody('{"name":"test"}');"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert_eq!(req.body.unwrap(), r#"{"name":"test"}"#);
     }
 
@@ -513,15 +583,28 @@ mod tests {
     fn test_request_set_header() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        ScriptEngineV2::execute_pre_request(r#"pm.request.setHeader("Authorization", "Bearer tok123");"#, &mut req, &mut vars).unwrap();
-        assert!(req.headers.iter().any(|(k, v)| k == "Authorization" && v == "Bearer tok123"));
+        ScriptEngineV2::execute_pre_request(
+            r#"pm.request.setHeader("Authorization", "Bearer tok123");"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Bearer tok123"));
     }
 
     #[test]
     fn test_request_remove_header() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        ScriptEngineV2::execute_pre_request(r#"pm.request.removeHeader("Accept");"#, &mut req, &mut vars).unwrap();
+        ScriptEngineV2::execute_pre_request(
+            r#"pm.request.removeHeader("Accept");"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert!(!req.headers.iter().any(|(k, _)| k == "Accept"));
     }
 
@@ -622,7 +705,12 @@ mod tests {
     fn test_pm_test_passing() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        let result = ScriptEngineV2::execute_pre_request(r#"pm.test("basic", function() {});"#, &mut req, &mut vars).unwrap();
+        let result = ScriptEngineV2::execute_pre_request(
+            r#"pm.test("basic", function() {});"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert_eq!(result.test_results.len(), 1);
         assert!(result.test_results[0].passed);
     }
@@ -631,7 +719,12 @@ mod tests {
     fn test_pm_test_failing() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        let result = ScriptEngineV2::execute_pre_request(r#"pm.test("fail", function() { throw new Error("nope"); });"#, &mut req, &mut vars).unwrap();
+        let result = ScriptEngineV2::execute_pre_request(
+            r#"pm.test("fail", function() { throw new Error("nope"); });"#,
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert!(!result.test_results[0].passed);
     }
 
@@ -641,8 +734,10 @@ mod tests {
         let mut vars = HashMap::new();
         let result = ScriptEngineV2::execute_pre_request(
             r#"pm.test("match", function() { pm.expect("hello").toBe("hello"); });"#,
-            &mut req, &mut vars,
-        ).unwrap();
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert!(result.test_results[0].passed);
     }
 
@@ -652,8 +747,10 @@ mod tests {
         let mut vars = HashMap::new();
         let result = ScriptEngineV2::execute_pre_request(
             r#"pm.test("contain", function() { pm.expect("hello world").toContain("world"); });"#,
-            &mut req, &mut vars,
-        ).unwrap();
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert!(result.test_results[0].passed);
     }
 
@@ -663,8 +760,10 @@ mod tests {
         let mut vars = HashMap::new();
         let result = ScriptEngineV2::execute_pre_request(
             r#"pm.test("fail", function() { pm.expect("hello").toBe("world"); });"#,
-            &mut req, &mut vars,
-        ).unwrap();
+            &mut req,
+            &mut vars,
+        )
+        .unwrap();
         assert!(!result.test_results[0].passed);
     }
 
@@ -733,7 +832,10 @@ mod tests {
         "#;
         let result = ScriptEngineV2::execute_pre_request(code, &mut req, &mut vars).unwrap();
         assert!(req.headers.iter().any(|(k, _)| k == "X-Request-Id"));
-        assert!(req.headers.iter().any(|(k, v)| k == "Content-Type" && v == "application/json"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Content-Type" && v == "application/json"));
         assert_eq!(format!("{}", req.method), "POST");
         assert_eq!(result.variables.get("price").unwrap(), "$42.50");
         assert_eq!(result.variables.get("filtered").unwrap(), "3");
@@ -743,13 +845,18 @@ mod tests {
     fn test_syntax_error() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        assert!(ScriptEngineV2::execute_pre_request(r#"invalid @@@"#, &mut req, &mut vars).is_err());
+        assert!(
+            ScriptEngineV2::execute_pre_request(r#"invalid @@@"#, &mut req, &mut vars).is_err()
+        );
     }
 
     #[test]
     fn test_runtime_error() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        assert!(ScriptEngineV2::execute_pre_request(r#"undefinedVar.foo;"#, &mut req, &mut vars).is_err());
+        assert!(
+            ScriptEngineV2::execute_pre_request(r#"undefinedVar.foo;"#, &mut req, &mut vars)
+                .is_err()
+        );
     }
 }

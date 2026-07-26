@@ -676,9 +676,67 @@ fn load_collection_request(app: &mut AstraioApp, req_id: i32) {
         None => return,
     };
 
+    if req.body_type == crate::persistence::database::CollectionBodyType::Graphql {
+        load_graphql_from_collection(app, &req);
+        return;
+    }
+
     let new_view = crate::services::request_restoration::build_view_from_collection_request(&req);
     app.request_tabs.push(new_view);
     app.active_request_tab_index = app.request_tabs.len() - 1;
+}
+
+fn load_graphql_from_collection(
+    app: &mut AstraioApp,
+    req: &crate::persistence::database::CollectionRequest,
+) {
+    app.graphql_view.url_input = req.url.clone();
+
+    let mut headers_editor = crate::ui::components::key_value_editor::KeyValueEditor::default();
+    let entries: Vec<crate::ui::components::key_value_editor::KeyValueEntry> = req
+        .headers
+        .iter()
+        .enumerate()
+        .map(
+            |(i, (k, v))| crate::ui::components::key_value_editor::KeyValueEntry {
+                id: i,
+                key: k.clone(),
+                value: v.clone(),
+                secret: false,
+            },
+        )
+        .collect();
+    headers_editor.entries = entries;
+    app.graphql_view.headers_editor = headers_editor;
+
+    if let Some(body) = &req.body {
+        if let Ok(graphql_request) =
+            serde_json::from_str::<crate::protocols::graphql::GraphQLRequest>(body)
+        {
+            app.graphql_view.query_input =
+                iced::widget::text_editor::Content::with_text(&graphql_request.query);
+            if let Some(variables) = &graphql_request.variables {
+                let vars_str = serde_json::to_string_pretty(variables).unwrap_or_default();
+                app.graphql_view.variables_input =
+                    iced::widget::text_editor::Content::with_text(&vars_str);
+            }
+            if let Some(op_name) = &graphql_request.operation_name {
+                app.graphql_view.operation_name = op_name.clone();
+            }
+        } else {
+            app.graphql_view.query_input = iced::widget::text_editor::Content::with_text(body);
+        }
+    }
+
+    if let Some(data) = &req.auth_data {
+        if data.starts_with('{') {
+            if let Ok(auth) = serde_json::from_str::<crate::data::auth::Auth>(data) {
+                app.graphql_view.auth = auth;
+            }
+        }
+    }
+
+    app.active_protocol = crate::ui::app::Protocol::GraphQL;
 }
 
 fn save_current_to_collection(app: &mut AstraioApp) {

@@ -47,9 +47,20 @@ pub fn add_endpoint(
     method: &str,
     path: &str,
     status: u16,
+    headers: &[(String, String)],
     body: Option<&str>,
+    delay_ms: u64,
 ) -> Result<MockServerConfig, AppError> {
-    database::create_mock_endpoint(conn, mock_server_id, method, path, status, &[], body, 0)?;
+    database::create_mock_endpoint(
+        conn,
+        mock_server_id,
+        method,
+        path,
+        status,
+        headers,
+        body,
+        delay_ms,
+    )?;
     Ok(database::get_mock_server(conn, mock_server_id)?)
 }
 
@@ -60,9 +71,20 @@ pub fn update_endpoint(
     method: &str,
     path: &str,
     status: u16,
+    headers: &[(String, String)],
     body: Option<&str>,
+    delay_ms: u64,
 ) -> Result<MockServerConfig, AppError> {
-    database::update_mock_endpoint(conn, endpoint_id, method, path, status, &[], body, 0)?;
+    database::update_mock_endpoint(
+        conn,
+        endpoint_id,
+        method,
+        path,
+        status,
+        headers,
+        body,
+        delay_ms,
+    )?;
     Ok(database::get_mock_server(conn, mock_server_id)?)
 }
 

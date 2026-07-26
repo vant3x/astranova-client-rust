@@ -223,23 +223,34 @@ pub fn handle_http_request_msg(
 
             // Detect if content is JS code or old JSON DSL
             let is_js_code = !pre_request_js.trim().is_empty()
-                && serde_json::from_str::<crate::protocols::scripts::Script>(&pre_request_js).is_err();
+                && serde_json::from_str::<crate::protocols::scripts::Script>(&pre_request_js)
+                    .is_err();
 
             if is_js_code {
                 // QuickJS engine path
                 let mut variables = script_context.variables.clone();
-                match ScriptEngineV2::execute_pre_request(&pre_request_js, &mut request, &mut variables) {
+                match ScriptEngineV2::execute_pre_request(
+                    &pre_request_js,
+                    &mut request,
+                    &mut variables,
+                ) {
                     Ok(output) => {
                         script_output.pre_logs = output.logs;
                         script_output.pre_errors = output.errors;
-                        script_output.extracted_vars = output.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                        script_output.test_results = output.test_results.iter().map(|t| {
-                            http_request_view::TestResult {
+                        script_output.extracted_vars = output
+                            .variables
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
+                        script_output.test_results = output
+                            .test_results
+                            .iter()
+                            .map(|t| http_request_view::TestResult {
                                 name: t.name.clone(),
                                 passed: t.passed,
                                 message: t.message.clone(),
-                            }
-                        }).collect();
+                            })
+                            .collect();
                         script_context.variables = variables;
                     }
                     Err(e) => {
@@ -327,7 +338,8 @@ pub fn handle_http_request_msg(
             let post_response_script = view.scripts.post_response.clone();
             let post_response_js = view.scripts.js_post_response.clone();
             let is_post_js = !post_response_js.trim().is_empty()
-                && serde_json::from_str::<crate::protocols::scripts::Script>(&post_response_js).is_err();
+                && serde_json::from_str::<crate::protocols::scripts::Script>(&post_response_js)
+                    .is_err();
 
             let (task, handle) = Task::perform(
                 async move {
@@ -353,14 +365,20 @@ pub fn handle_http_request_msg(
                                     Ok(output) => {
                                         script_output.post_logs = output.logs;
                                         script_output.post_errors = output.errors;
-                                        script_output.extracted_vars = output.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                        script_output.test_results = output.test_results.iter().map(|t| {
-                                            http_request_view::TestResult {
+                                        script_output.extracted_vars = output
+                                            .variables
+                                            .iter()
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect();
+                                        script_output.test_results = output
+                                            .test_results
+                                            .iter()
+                                            .map(|t| http_request_view::TestResult {
                                                 name: t.name.clone(),
                                                 passed: t.passed,
                                                 message: t.message.clone(),
-                                            }
-                                        }).collect();
+                                            })
+                                            .collect();
                                     }
                                     Err(e) => {
                                         warnings.push(format!("Post-response script error: {}", e));

@@ -106,8 +106,11 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                 method: "GET".to_string(),
                 path: "/".to_string(),
                 status: "200".to_string(),
-                body: body.clone(),
+                body: iced::widget::text_editor::Content::with_text(&body),
                 delay_ms: "0".to_string(),
+                headers: crate::ui::components::key_value_editor::KeyValueEditor::new(
+                    "Add Header".to_string(),
+                ),
             });
         }
         mock_server_view::Message::EditEndpoint(endpoint_id) => {
@@ -119,7 +122,20 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                 .find(|s| s.id == server_id)
             {
                 if let Some(ep) = server.endpoints.iter().find(|e| e.id == endpoint_id) {
-                    let body = ep.body.clone().unwrap_or_default();
+                    let body_text = ep.body.clone().unwrap_or_default();
+                    let headers_entries = ep
+                        .headers
+                        .iter()
+                        .enumerate()
+                        .map(
+                            |(i, (k, v))| crate::ui::components::key_value_editor::KeyValueEntry {
+                                id: i,
+                                key: k.clone(),
+                                value: v.clone(),
+                                secret: false,
+                            },
+                        )
+                        .collect();
                     app.mock_server_view.endpoint_edit =
                         Some(mock_server_view::EndpointEditState {
                             mock_server_id: server_id,
@@ -127,8 +143,16 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                             method: ep.method.clone(),
                             path: ep.path.clone(),
                             status: ep.status.to_string(),
-                            body: body.clone(),
+                            body: iced::widget::text_editor::Content::with_text(&body_text),
                             delay_ms: ep.delay_ms.to_string(),
+                            headers: {
+                                let mut editor =
+                                    crate::ui::components::key_value_editor::KeyValueEditor::new(
+                                        "Add Header".to_string(),
+                                    );
+                                editor.entries = headers_entries;
+                                editor
+                            },
                         });
                 }
             }
@@ -148,9 +172,9 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                 edit.status = status;
             }
         }
-        mock_server_view::Message::EndpointBodyChanged(body) => {
+        mock_server_view::Message::EndpointBodyAction(action) => {
             if let Some(ref mut edit) = app.mock_server_view.endpoint_edit {
-                edit.body = body;
+                edit.body.perform(action);
             }
         }
         mock_server_view::Message::EndpointDelayChanged(delay) => {
@@ -158,14 +182,28 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                 edit.delay_ms = delay;
             }
         }
+        mock_server_view::Message::EndpointHeadersEditor(msg) => {
+            if let Some(ref mut edit) = app.mock_server_view.endpoint_edit {
+                edit.headers.update(msg);
+            }
+        }
         mock_server_view::Message::SaveEndpoint => {
             if let Some(edit) = app.mock_server_view.endpoint_edit.take() {
                 let status_code: u16 = edit.status.parse().unwrap_or(200);
-                let body_opt = if edit.body.is_empty() {
+                let body_text = edit.body.text();
+                let body_opt = if body_text.is_empty() {
                     None
                 } else {
-                    Some(edit.body.as_str())
+                    Some(body_text.as_str())
                 };
+                let delay_ms: u64 = edit.delay_ms.parse().unwrap_or(0);
+                let headers: Vec<(String, String)> = edit
+                    .headers
+                    .entries
+                    .iter()
+                    .filter(|h| !h.key.is_empty())
+                    .map(|h| (h.key.clone(), h.value.clone()))
+                    .collect();
 
                 let result = if let Some(ep_id) = edit.endpoint_id {
                     crate::services::mock_server_service::update_endpoint(
@@ -175,7 +213,9 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                         &edit.method,
                         &edit.path,
                         status_code,
+                        &headers,
                         body_opt,
+                        delay_ms,
                     )
                 } else {
                     crate::services::mock_server_service::add_endpoint(
@@ -184,7 +224,9 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                         &edit.method,
                         &edit.path,
                         status_code,
+                        &headers,
                         body_opt,
+                        delay_ms,
                     )
                 };
 

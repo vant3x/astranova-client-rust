@@ -382,6 +382,20 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
             app.graphql_view.update(msg);
             Task::none()
         }
+        graphql_view::Message::OAuth2StartAuth => {
+            Task::perform(async {}, |_| Message::GraphQLOAuth2StartAuth)
+        }
+        graphql_view::Message::OAuth2RefreshToken => {
+            Task::perform(async {}, |_| Message::GraphQLOAuth2RefreshToken)
+        }
+        graphql_view::Message::OAuth2StartDeviceAuth => {
+            Task::perform(async {}, |_| Message::GraphQLOAuth2StartDeviceAuth)
+        }
+        graphql_view::Message::OAuth2AutoPollToggle(enabled) => {
+            Task::perform(async move {}, move |_| {
+                Message::GraphQLOAuth2AutoPollToggle(enabled)
+            })
+        }
         other => {
             app.graphql_view.update(other);
             Task::none()

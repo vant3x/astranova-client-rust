@@ -1287,7 +1287,8 @@ impl HttpRequestView {
         let pre_text = self.pre_request_script_editor.text();
         let post_text = self.post_response_script_editor.text();
         let pre_json = crate::protocols::scripts::Script::from_json(&pre_text).unwrap_or_default();
-        let post_json = crate::protocols::scripts::Script::from_json(&post_text).unwrap_or_default();
+        let post_json =
+            crate::protocols::scripts::Script::from_json(&post_text).unwrap_or_default();
         Ok(RequestScripts {
             pre_request: pre_json,
             post_response: post_json,

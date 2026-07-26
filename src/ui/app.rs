@@ -306,6 +306,20 @@ pub enum Message {
     MockServerStarted(i32, crate::protocols::mock_server::MockServerHandle, u16),
     MockServerStartError(i32, String),
     PollMockServerLogs,
+    GraphQLOAuth2StartAuth,
+    GraphQLOAuth2AuthComplete(Result<String, crate::error::AppError>, Option<String>),
+    GraphQLOAuth2TokenReceived(
+        Result<crate::data::oauth2::OAuth2TokenResponse, crate::error::AppError>,
+    ),
+    GraphQLOAuth2RefreshToken,
+    GraphQLOAuth2StartDeviceAuth,
+    GraphQLOAuth2DeviceAuthReceived(
+        Result<crate::data::oauth2::DeviceAuthorizationResponse, crate::error::AppError>,
+    ),
+    GraphQLOAuth2DeviceTokenPoll(
+        Result<crate::data::oauth2::DeviceTokenResponse, crate::error::AppError>,
+    ),
+    GraphQLOAuth2AutoPollToggle(bool),
 }
 
 impl AstraioApp {
@@ -648,6 +662,34 @@ impl AstraioApp {
                     }
                 }
                 Task::none()
+            }
+            Message::GraphQLOAuth2StartAuth => {
+                return super::handlers::oauth2::handle_graphql_start_auth(self);
+            }
+            Message::GraphQLOAuth2AuthComplete(result, pkce_verifier) => {
+                return super::handlers::oauth2::handle_graphql_auth_complete(
+                    self,
+                    result,
+                    pkce_verifier,
+                );
+            }
+            Message::GraphQLOAuth2TokenReceived(result) => {
+                return super::handlers::oauth2::handle_graphql_token_received(self, result);
+            }
+            Message::GraphQLOAuth2RefreshToken => {
+                return super::handlers::oauth2::handle_graphql_refresh_token(self);
+            }
+            Message::GraphQLOAuth2StartDeviceAuth => {
+                return super::handlers::oauth2::handle_graphql_start_device_auth(self);
+            }
+            Message::GraphQLOAuth2DeviceAuthReceived(result) => {
+                return super::handlers::oauth2::handle_graphql_device_auth_received(self, result);
+            }
+            Message::GraphQLOAuth2DeviceTokenPoll(result) => {
+                return super::handlers::oauth2::handle_graphql_device_token_poll(self, result);
+            }
+            Message::GraphQLOAuth2AutoPollToggle(enabled) => {
+                return super::handlers::oauth2::handle_graphql_auto_poll_toggle(self, enabled);
             }
             Message::WsConnected(
                 sender,
