@@ -667,11 +667,7 @@ impl AstraioApp {
                 super::handlers::oauth2::handle_graphql_start_auth(self)
             }
             Message::GraphQLOAuth2AuthComplete(result, pkce_verifier) => {
-                super::handlers::oauth2::handle_graphql_auth_complete(
-                    self,
-                    result,
-                    pkce_verifier,
-                )
+                super::handlers::oauth2::handle_graphql_auth_complete(self, result, pkce_verifier)
             }
             Message::GraphQLOAuth2TokenReceived(result) => {
                 super::handlers::oauth2::handle_graphql_token_received(self, result)

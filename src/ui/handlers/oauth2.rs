@@ -487,7 +487,7 @@ pub fn handle_graphql_refresh_token(app: &mut AstraioApp) -> Task<Message> {
                     )
                     .await
                 },
-                    Message::GraphQLOAuth2DeviceTokenPoll,
+                Message::GraphQLOAuth2DeviceTokenPoll,
             );
         } else if config.refresh_token.is_empty() {
             app.toast_manager
@@ -536,7 +536,7 @@ pub fn handle_graphql_start_device_auth(app: &AstraioApp) -> Task<Message> {
                     )
                     .await
                 },
-                    Message::GraphQLOAuth2DeviceAuthReceived,
+                Message::GraphQLOAuth2DeviceAuthReceived,
             );
         }
     }
