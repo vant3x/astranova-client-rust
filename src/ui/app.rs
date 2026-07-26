@@ -990,7 +990,7 @@ impl AstraioApp {
                 Task::none()
             }
             Message::ShowAbout => {
-                self.toast_manager.info("Astraio Client v0.4.0");
+                self.toast_manager.info("Astraio Client v0.5.0");
                 Task::none()
             }
             Message::Quit => {
