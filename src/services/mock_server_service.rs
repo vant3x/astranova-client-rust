@@ -41,6 +41,7 @@ pub fn delete_and_refresh(conn: &Connection, id: i32) -> Result<Vec<MockServerCo
     get_all(conn)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn add_endpoint(
     conn: &Connection,
     mock_server_id: i32,
@@ -64,6 +65,7 @@ pub fn add_endpoint(
     Ok(database::get_mock_server(conn, mock_server_id)?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_endpoint(
     conn: &Connection,
     endpoint_id: i32,

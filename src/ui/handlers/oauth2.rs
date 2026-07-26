@@ -414,7 +414,7 @@ pub fn handle_graphql_auth_complete(
                         )
                         .await
                     },
-                    move |result| Message::GraphQLOAuth2TokenReceived(result),
+                    Message::GraphQLOAuth2TokenReceived,
                 );
             }
             app.toast_manager
@@ -487,7 +487,7 @@ pub fn handle_graphql_refresh_token(app: &mut AstraioApp) -> Task<Message> {
                     )
                     .await
                 },
-                move |result| Message::GraphQLOAuth2DeviceTokenPoll(result),
+                    Message::GraphQLOAuth2DeviceTokenPoll,
             );
         } else if config.refresh_token.is_empty() {
             app.toast_manager
@@ -509,7 +509,7 @@ pub fn handle_graphql_refresh_token(app: &mut AstraioApp) -> Task<Message> {
                     )
                     .await
                 },
-                move |result| Message::GraphQLOAuth2TokenReceived(result),
+                Message::GraphQLOAuth2TokenReceived,
             );
         }
     }
@@ -536,7 +536,7 @@ pub fn handle_graphql_start_device_auth(app: &AstraioApp) -> Task<Message> {
                     )
                     .await
                 },
-                move |result| Message::GraphQLOAuth2DeviceAuthReceived(result),
+                    Message::GraphQLOAuth2DeviceAuthReceived,
             );
         }
     }
