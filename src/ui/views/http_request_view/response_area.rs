@@ -353,7 +353,18 @@ impl HttpRequestView {
                     text("Duration:")
                         .size(14)
                         .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                    text(format!("{:.2?}", response.duration)).size(14),
+                    text(if response.duration.as_millis() > 0 {
+                        format!("{:.2?}", response.duration)
+                    } else if let Some(started) = match &self.request_status {
+                        crate::ui::request_status::RequestStatus::Loading { started_at } => Some(*started_at),
+                        _ => None,
+                    } {
+                        let elapsed = started.elapsed();
+                        format!("{:.2?}", elapsed)
+                    } else {
+                        "N/A".to_string()
+                    })
+                    .size(14),
                 ]
                 .spacing(8),
             );

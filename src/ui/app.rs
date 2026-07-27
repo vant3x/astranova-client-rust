@@ -16,6 +16,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+type HttpStreamReceiver = Arc<Mutex<Option<mpsc::UnboundedReceiver<crate::http_client::response::HttpStreamEvent>>>>;
+
 use super::views::graphql_view::{self, GraphQLView};
 use super::views::http_request_view::CookieSnapshot;
 use super::views::http_request_view::{self, HttpRequestView};
@@ -53,6 +55,39 @@ impl Recipe for WsRecipe {
                 *guard = Some(receiver);
             }
             Some((Message::WsEvent(event), arc))
+        })
+        .boxed()
+    }
+}
+
+struct HttpStreamRecipe {
+    receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<crate::http_client::response::HttpStreamEvent>>>>,
+    tab_index: usize,
+    stream_id: u64,
+}
+
+impl Recipe for HttpStreamRecipe {
+    type Output = Message;
+
+    fn hash(&self, state: &mut iced_futures::subscription::Hasher) {
+        use std::hash::Hash;
+        std::any::TypeId::of::<HttpStreamRecipe>().hash(state);
+        self.stream_id.hash(state);
+    }
+
+    fn stream(self: Box<Self>, _input: EventStream) -> BoxStream<'static, Message> {
+        let receiver_arc = self.receiver;
+        let tab_index = self.tab_index;
+        futures::stream::unfold(receiver_arc, move |arc| async move {
+            let mut receiver = {
+                let mut guard = arc.lock().ok()?;
+                guard.take()?
+            };
+            let event = receiver.recv().await?;
+            if let Ok(mut guard) = arc.lock() {
+                *guard = Some(receiver);
+            }
+            Some((Message::HttpStreamChunk(tab_index, event), arc))
         })
         .boxed()
     }
@@ -215,6 +250,8 @@ pub(crate) struct AstraioApp {
     pub(crate) ws_read_handle: Option<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>>,
     pub(crate) ws_ping_handle: Option<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>>,
     pub(crate) ws_connection_id: u64,
+    pub(crate) http_stream_receivers: HashMap<usize, (u64, HttpStreamReceiver)>,
+    pub(crate) http_stream_id: u64,
     pub(crate) toast_manager: ToastManager,
     pub(crate) dark_mode: bool,
     pub(crate) secret_store: crate::services::secret_store::SecretStore,
@@ -320,6 +357,7 @@ pub enum Message {
         Result<crate::data::oauth2::DeviceTokenResponse, crate::error::AppError>,
     ),
     GraphQLOAuth2AutoPollToggle(bool),
+    HttpStreamChunk(usize, crate::http_client::response::HttpStreamEvent),
 }
 
 impl AstraioApp {
@@ -439,6 +477,8 @@ impl AstraioApp {
             ws_read_handle: None,
             ws_ping_handle: None,
             ws_connection_id: 0,
+            http_stream_receivers: HashMap::new(),
+            http_stream_id: 0,
             toast_manager: ToastManager::new(),
             dark_mode,
             secret_store,
@@ -495,6 +535,17 @@ impl AstraioApp {
             Message::HttpRequestViewMsg(index, msg) => {
                 super::handlers::http_request::handle_http_request_msg(self, index, msg)
             }
+            Message::HttpStreamChunk(tab_index, event) => {
+                use crate::http_client::response::HttpStreamEvent;
+                if let Some(view) = self.request_tabs.get_mut(tab_index) {
+                    view.update(http_request_view::Message::StreamEvent(tab_index, event.clone()));
+
+                    if matches!(event, HttpStreamEvent::StreamComplete { .. } | HttpStreamEvent::StreamError(_)) {
+                        self.http_stream_receivers.remove(&tab_index);
+                    }
+                }
+                Task::none()
+            }
             Message::AddRequestTab => {
                 let mut new_view = HttpRequestView {
                     request_config: self.global_config.request_config.clone(),
@@ -516,6 +567,7 @@ impl AstraioApp {
             Message::CloseRequestTab(index) => {
                 if self.request_tabs.len() > 1 {
                     self.request_tabs.remove(index);
+                    self.http_stream_receivers.remove(&index);
                     if self.active_request_tab_index >= self.request_tabs.len() {
                         self.active_request_tab_index = self.request_tabs.len() - 1;
                     }
@@ -527,6 +579,7 @@ impl AstraioApp {
                 if self.request_tabs.len() > 1 {
                     let index = self.active_request_tab_index;
                     self.request_tabs.remove(index);
+                    self.http_stream_receivers.remove(&index);
                     if self.active_request_tab_index >= self.request_tabs.len() {
                         self.active_request_tab_index = self.request_tabs.len() - 1;
                     }
@@ -1160,13 +1213,27 @@ impl AstraioApp {
 
         let window_opened = iced::window::open_events().map(Message::WindowOpened);
 
-        Subscription::batch(vec![
+        let http_stream_subscriptions: Vec<Subscription<Message>> = self
+            .http_stream_receivers
+            .iter()
+            .map(|(tab_index, (stream_id, receiver))| {
+                from_recipe(HttpStreamRecipe {
+                    receiver: receiver.clone(),
+                    tab_index: *tab_index,
+                    stream_id: *stream_id,
+                })
+            })
+            .collect();
+
+        let mut subs = vec![
             ws_subscription,
             keyboard_subscription,
             device_poll_subscription,
             menu_subscription,
             window_opened,
-        ])
+        ];
+        subs.extend(http_stream_subscriptions);
+        Subscription::batch(subs)
     }
 
     fn device_poll_subscription(&self) -> Subscription<Message> {

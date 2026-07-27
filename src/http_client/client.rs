@@ -1,6 +1,6 @@
 use super::config::RequestConfig;
 use super::request::{HttpRequest, MultipartField, MultipartValue};
-use super::response::{BodyEncoding, HttpResponse};
+use super::response::{BodyEncoding, HttpStreamEvent, HttpResponse};
 use crate::data::auth::Auth;
 use crate::error::AppError;
 use base64::Engine;
@@ -152,8 +152,22 @@ async fn build_multipart_form(
                     .unwrap_or("file")
                     .to_string();
 
-                let file_bytes = tokio::fs::read(file_path).await?;
-                let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name);
+                let file = tokio::fs::File::open(file_path).await.map_err(|e| {
+                    AppError::Http(format!(
+                        "Failed to open file {}: {}",
+                        file_path.display(),
+                        e
+                    ))
+                })?;
+                let stream = tokio_util::io::ReaderStream::new(file);
+                let body = reqwest::Body::wrap_stream(stream);
+                let part = reqwest::multipart::Part::stream(body)
+                    .file_name(file_name)
+                    .mime_str("application/octet-stream")
+                    .unwrap_or_else(|_| {
+                        reqwest::multipart::Part::bytes(vec![])
+                            .file_name("file")
+                    });
                 form = form.part(field.name.clone(), part);
             }
         }
@@ -473,6 +487,78 @@ pub async fn send_request(
     }
 
     Err(AppError::Http(last_error))
+}
+
+/// Stream an HTTP response, sending events as headers and body chunks arrive.
+/// This keeps the UI responsive for large responses.
+pub async fn send_request_stream(
+    client: &reqwest::Client,
+    request: HttpRequest,
+    tx: tokio::sync::mpsc::UnboundedSender<HttpStreamEvent>,
+) -> Result<(), AppError> {
+    let method_str = request.method.to_string();
+
+    let req_builder =
+        build_request_builder(client, &request, &request.url, &request.url).await?;
+
+    log::info!("Streaming {} request to: {}", method_str, request.url);
+
+    let res = req_builder.send().await.map_err(|e| {
+        let _ = tx.send(HttpStreamEvent::StreamError(e.to_string()));
+        AppError::from(e)
+    })?;
+
+    let status = res.status().as_u16();
+    let headers: Vec<(String, String)> = res
+        .headers()
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_str().unwrap_or("").to_string()))
+        .collect();
+
+    let content_type = res
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let binary = is_binary_content_type(&content_type);
+
+    let _ = tx.send(HttpStreamEvent::HeadersReceived {
+        status,
+        headers,
+        url: request.url.clone(),
+        method: method_str.clone(),
+    });
+
+    let mut total_size: u64 = 0;
+    let mut res = res;
+
+    while let Some(chunk_result) = res.chunk().await.transpose() {
+        match chunk_result {
+            Ok(chunk) => {
+                total_size += chunk.len() as u64;
+                let event = if binary {
+                    HttpStreamEvent::BodyChunkBinary(chunk.to_vec())
+                } else {
+                    HttpStreamEvent::BodyChunk(chunk.to_vec())
+                };
+                if tx.send(event).is_err() {
+                    break;
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(HttpStreamEvent::StreamError(e.to_string()));
+                return Err(AppError::Http(e.to_string()));
+            }
+        }
+    }
+
+    let _ = tx.send(HttpStreamEvent::StreamComplete {
+        total_size,
+    });
+
+    Ok(())
 }
 
 fn compute_digest_auth(

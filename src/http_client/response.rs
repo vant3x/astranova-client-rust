@@ -53,6 +53,27 @@ mod duration_millis {
     }
 }
 
+/// Events emitted during a streaming HTTP response.
+#[derive(Debug, Clone)]
+pub enum HttpStreamEvent {
+    /// Response headers received (status + headers).
+    HeadersReceived {
+        status: u16,
+        headers: Vec<(String, String)>,
+        url: String,
+        #[allow(dead_code)]
+        method: String,
+    },
+    /// A chunk of the response body arrived.
+    BodyChunk(Vec<u8>),
+    /// The response body is binary (base64-encoded in the final response).
+    BodyChunkBinary(Vec<u8>),
+    /// The stream finished successfully. Contains the total size.
+    StreamComplete { total_size: u64 },
+    /// The stream failed.
+    StreamError(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

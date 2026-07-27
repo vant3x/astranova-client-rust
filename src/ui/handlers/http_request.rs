@@ -5,7 +5,7 @@ use crate::protocols::scripts::{ScriptContext, ScriptEngine};
 use crate::ui::app::{AstraioApp, Message};
 use crate::ui::views::http_request_view;
 use iced::Task;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub(crate) fn build_client_cache_key(config: &RequestConfig) -> String {
     let proxy_part = match (&config.proxy_url, &config.proxy) {
@@ -340,91 +340,121 @@ pub fn handle_http_request_msg(
             let is_post_js = !post_response_js.trim().is_empty()
                 && serde_json::from_str::<crate::protocols::scripts::Script>(&post_response_js)
                     .is_err();
+            let has_scripts = is_post_js || !post_response_script.actions.is_empty();
 
-            let (task, handle) = Task::perform(
-                async move {
+            if has_scripts {
+                // Buffered path: scripts need the full response body
+                let (task, handle) = Task::perform(
+                    async move {
+                        if let Some(ms) = delay_ms {
+                            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                        }
+
+                        let response = client::send_request(&http_client, request).await;
+
+                        match response {
+                            Ok(mut resp) => {
+                                let mut warnings: Vec<String> = Vec::new();
+                                let mut post_ctx = script_context;
+
+                                if is_post_js {
+                                    let mut variables = post_ctx.variables.clone();
+                                    match ScriptEngineV2::execute_post_response(
+                                        &post_response_js,
+                                        &resp,
+                                        &mut variables,
+                                    ) {
+                                        Ok(output) => {
+                                            script_output.post_logs = output.logs;
+                                            script_output.post_errors = output.errors;
+                                            script_output.extracted_vars = output
+                                                .variables
+                                                .iter()
+                                                .map(|(k, v)| (k.clone(), v.clone()))
+                                                .collect();
+                                            script_output.test_results = output
+                                                .test_results
+                                                .iter()
+                                                .map(|t| http_request_view::TestResult {
+                                                    name: t.name.clone(),
+                                                    passed: t.passed,
+                                                    message: t.message.clone(),
+                                                })
+                                                .collect();
+                                        }
+                                        Err(e) => {
+                                            warnings
+                                                .push(format!("Post-response script error: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    if let Err(e) = ScriptEngine::execute_post_response(
+                                        &post_response_script,
+                                        &resp,
+                                        &mut post_ctx,
+                                    ) {
+                                        warnings.push(format!("Post-response script error: {}", e));
+                                    }
+                                    script_output.post_logs.append(&mut post_ctx.logs);
+                                    script_output.post_errors.append(&mut post_ctx.errors);
+                                    for (k, v) in &post_ctx.variables {
+                                        script_output
+                                            .extracted_vars
+                                            .push((k.clone(), v.clone()));
+                                    }
+                                }
+
+                                for log in &script_output.post_logs {
+                                    warnings.push(log.clone());
+                                }
+                                let output_json =
+                                    serde_json::to_string(&script_output).unwrap_or_default();
+                                warnings.push(format!("__SCRIPT_OUTPUT__{}", output_json));
+                                resp.url = request_url;
+                                resp.method = request_method
+                                    .parse()
+                                    .unwrap_or(crate::http_client::request::HttpMethod::Get);
+                                (Ok(resp), warnings)
+                            }
+                            Err(e) => (Err(e), Vec::new()),
+                        }
+                    },
+                    move |(result, warnings)| {
+                        Message::HttpRequestViewMsg(
+                            index,
+                            http_request_view::Message::ResponseReceived(result, warnings),
+                        )
+                    },
+                )
+                .abortable();
+                view.abort_handle = Some(handle);
+                task
+            } else {
+                // Streaming path: UI stays responsive while body downloads
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                let stream_id = app.http_stream_id;
+                app.http_stream_id += 1;
+                app.http_stream_receivers.insert(index, (stream_id, Arc::new(Mutex::new(Some(rx)))));
+
+                let http_client_clone = http_client;
+
+                let _handle = tokio::spawn(async move {
                     if let Some(ms) = delay_ms {
                         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
                     }
-
-                    let response = client::send_request(&http_client, request).await;
-
-                    match response {
-                        Ok(mut resp) => {
-                            let mut warnings: Vec<String> = Vec::new();
-                            let mut post_ctx = script_context;
-
-                            if is_post_js {
-                                // QuickJS engine path
-                                let mut variables = post_ctx.variables.clone();
-                                match ScriptEngineV2::execute_post_response(
-                                    &post_response_js,
-                                    &resp,
-                                    &mut variables,
-                                ) {
-                                    Ok(output) => {
-                                        script_output.post_logs = output.logs;
-                                        script_output.post_errors = output.errors;
-                                        script_output.extracted_vars = output
-                                            .variables
-                                            .iter()
-                                            .map(|(k, v)| (k.clone(), v.clone()))
-                                            .collect();
-                                        script_output.test_results = output
-                                            .test_results
-                                            .iter()
-                                            .map(|t| http_request_view::TestResult {
-                                                name: t.name.clone(),
-                                                passed: t.passed,
-                                                message: t.message.clone(),
-                                            })
-                                            .collect();
-                                    }
-                                    Err(e) => {
-                                        warnings.push(format!("Post-response script error: {}", e));
-                                    }
-                                }
-                            } else {
-                                // Legacy JSON DSL engine path
-                                if let Err(e) = ScriptEngine::execute_post_response(
-                                    &post_response_script,
-                                    &resp,
-                                    &mut post_ctx,
-                                ) {
-                                    warnings.push(format!("Post-response script error: {}", e));
-                                }
-                                script_output.post_logs.append(&mut post_ctx.logs);
-                                script_output.post_errors.append(&mut post_ctx.errors);
-                                for (k, v) in &post_ctx.variables {
-                                    script_output.extracted_vars.push((k.clone(), v.clone()));
-                                }
-                            }
-
-                            for log in &script_output.post_logs {
-                                warnings.push(log.clone());
-                            }
-                            let output_json =
-                                serde_json::to_string(&script_output).unwrap_or_default();
-                            warnings.push(format!("__SCRIPT_OUTPUT__{}", output_json));
-                            resp.url = request_url;
-                            resp.method = request_method
-                                .parse()
-                                .unwrap_or(crate::http_client::request::HttpMethod::Get);
-                            (Ok(resp), warnings)
-                        }
-                        Err(e) => (Err(e), Vec::new()),
+                    if let Err(e) = client::send_request_stream(
+                        &http_client_clone,
+                        request,
+                        tx.clone(),
+                    ).await {
+                        let _ = tx.send(crate::http_client::response::HttpStreamEvent::StreamError(
+                            e.to_string(),
+                        ));
                     }
-                },
-                move |(result, warnings)| {
-                    Message::HttpRequestViewMsg(
-                        index,
-                        http_request_view::Message::ResponseReceived(result, warnings),
-                    )
-                },
-            )
-            .abortable();
-            view.abort_handle = Some(handle);
-            task
+                });
+                view.abort_handle = None;
+                Task::none()
+            }
         }
         http_request_view::Message::ResponseReceived(ref result, ref warnings) => {
             let Some(view) = app.request_tabs.get_mut(index) else {
@@ -445,7 +475,20 @@ pub fn handle_http_request_msg(
             match result {
                 Ok(response) => {
                     let request_data = view.pending_request_data.take();
-                    let response_data = serde_json::to_string(response).ok();
+                    let response_data = serde_json::to_string(response)
+                        .ok()
+                        .map(|data| {
+                            let max = crate::persistence::database::MAX_HISTORY_RESPONSE_BYTES;
+                            if data.len() > max {
+                                let mut truncated: String =
+                                    String::with_capacity(max + 64);
+                                truncated.push_str(&data[..max]);
+                                truncated.push_str("...\"__truncated__\":true}");
+                                truncated
+                            } else {
+                                data
+                            }
+                        });
 
                     let (new_total, new_domains) = {
                         if let Ok(mut jar) = app.cookie_jar.lock() {
@@ -649,9 +692,10 @@ pub fn handle_http_request_msg(
             };
             if let Some(handle) = view.abort_handle.take() {
                 handle.abort();
-                view.update(http_request_view::Message::SetIdle);
-                app.toast_manager.warning("Request cancelled".to_string());
             }
+            app.http_stream_receivers.remove(&index);
+            view.update(http_request_view::Message::SetIdle);
+            app.toast_manager.warning("Request cancelled".to_string());
             Task::none()
         }
         http_request_view::Message::SaveScripts => {

@@ -219,14 +219,28 @@ impl HttpRequestView {
     }
 
     fn build_duration_text(&self) -> Element<'_, Message, Theme, iced::Renderer> {
-        text(format!(
-            "{}ms",
-            self.response_duration
-                .map(|d| d.as_millis().to_string())
-                .unwrap_or_else(|| "N/A".to_string())
-        ))
-        .size(14)
-        .into()
+        let display = match &self.request_status {
+            RequestStatus::Loading { started_at } => {
+                let elapsed = started_at.elapsed().as_millis();
+                if elapsed < 1000 {
+                    format!("{}ms", elapsed)
+                } else {
+                    format!("{:.1}s", elapsed as f64 / 1000.0)
+                }
+            }
+            _ => self
+                .response_duration
+                .map(|d| {
+                    let ms = d.as_millis();
+                    if ms < 1000 {
+                        format!("{}ms", ms)
+                    } else {
+                        format!("{:.1}s", ms as f64 / 1000.0)
+                    }
+                })
+                .unwrap_or_else(|| "N/A".to_string()),
+        };
+        text(display).size(14).into()
     }
 
     fn build_size_text(&self) -> Element<'_, Message, Theme, iced::Renderer> {

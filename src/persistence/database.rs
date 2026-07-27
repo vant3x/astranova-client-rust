@@ -830,6 +830,7 @@ pub fn delete_request_history_by_id(conn: &Connection, id: i32) -> Result<()> {
 }
 
 pub const DEFAULT_HISTORY_LIMIT: usize = 500;
+pub const MAX_HISTORY_RESPONSE_BYTES: usize = 50 * 1024;
 
 pub fn trim_request_history(conn: &Connection, max_entries: usize) -> Result<()> {
     let count: i64 =

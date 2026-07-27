@@ -200,6 +200,7 @@ pub enum Message {
     ResponseFileSaved(Result<String, String>),
     ToggleImagePreview,
     CancelRequest,
+    StreamEvent(usize, crate::http_client::response::HttpStreamEvent),
     ToggleBearerTokenVisible,
     ToggleApiKeyValueVisible,
     SetIdle,
@@ -307,6 +308,8 @@ pub struct HttpRequestView {
     pub word_wrap: bool,
     pub pending_request_data: Option<String>,
     pub(crate) logo_handle: ImageHandle,
+    pub streaming_body: String,
+    pub streaming_chunks_count: u32,
     pub show_response_search: bool,
     pub response_search_query: String,
     pub response_search_matches: Vec<(usize, usize)>,
@@ -332,6 +335,7 @@ pub struct HttpRequestView {
     pub pending_delete_session: Option<String>,
     pub renaming_session: Option<String>,
     pub rename_value: String,
+    pub last_search_instant: Option<std::time::Instant>,
 }
 
 impl Clone for HttpRequestView {
@@ -370,6 +374,8 @@ impl Clone for HttpRequestView {
             word_wrap: self.word_wrap,
             pending_request_data: self.pending_request_data.clone(),
             logo_handle: self.logo_handle.clone(),
+            streaming_body: String::new(),
+            streaming_chunks_count: 0,
             show_response_search: self.show_response_search,
             response_search_query: self.response_search_query.clone(),
             response_search_matches: self.response_search_matches.clone(),
@@ -399,6 +405,7 @@ impl Clone for HttpRequestView {
             pending_delete_session: self.pending_delete_session.clone(),
             renaming_session: self.renaming_session.clone(),
             rename_value: self.rename_value.clone(),
+            last_search_instant: None,
         }
     }
 }
@@ -438,6 +445,8 @@ impl HttpRequestView {
             word_wrap: self.word_wrap,
             pending_request_data: None,
             logo_handle: self.logo_handle.clone(),
+            streaming_body: String::new(),
+            streaming_chunks_count: 0,
             show_response_search: false,
             response_search_query: String::new(),
             response_search_matches: Vec::new(),
@@ -466,6 +475,7 @@ impl HttpRequestView {
             pending_delete_session: None,
             renaming_session: None,
             rename_value: String::new(),
+            last_search_instant: None,
         }
     }
 }
@@ -514,6 +524,8 @@ impl Default for HttpRequestView {
             word_wrap: false,
             pending_request_data: None,
             logo_handle: ImageHandle::from_bytes(bytes::Bytes::from_static(LOGO_BG_BYTES)),
+            streaming_body: String::new(),
+            streaming_chunks_count: 0,
             show_response_search: false,
             response_search_query: String::new(),
             response_search_matches: Vec::new(),
@@ -539,6 +551,7 @@ impl Default for HttpRequestView {
             pending_delete_session: None,
             renaming_session: None,
             rename_value: String::new(),
+            last_search_instant: None,
         }
     }
 }
@@ -662,6 +675,8 @@ impl HttpRequestView {
                 };
                 self.last_response = None;
                 self.response_body_editor = text_editor::Content::new();
+                self.streaming_body.clear();
+                self.streaming_chunks_count = 0;
                 self.status_code = None;
                 self.content_type = None;
                 self.response_duration = None;
@@ -671,6 +686,114 @@ impl HttpRequestView {
             }
             Message::SetIdle => {
                 self.request_status = RequestStatus::Idle;
+            }
+            Message::StreamEvent(_tab_index, event) => {
+                use crate::http_client::response::HttpStreamEvent;
+                match event {
+                    HttpStreamEvent::HeadersReceived { status, headers, url, method: _ } => {
+                        self.status_code = Some(status);
+                        let content_type = headers
+                            .iter()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        self.content_type = Some(content_type);
+                        self.streaming_body.clear();
+                        self.streaming_chunks_count = 0;
+                        self.last_response = Some(crate::http_client::response::HttpResponse {
+                            url,
+                            method: self.method.parse().unwrap_or(crate::http_client::request::HttpMethod::Get),
+                            status,
+                            headers,
+                            body: String::new(),
+                            body_encoding: crate::http_client::response::BodyEncoding::Text,
+                            duration: std::time::Duration::ZERO,
+                            size: 0,
+                            redirect_chain: Vec::new(),
+                        });
+                        self.request_status = RequestStatus::Loading {
+                            started_at: std::time::Instant::now(),
+                        };
+                    }
+                    HttpStreamEvent::BodyChunk(chunk) => {
+                        if let Ok(text) = String::from_utf8(chunk) {
+                            self.streaming_body.push_str(&text);
+                            self.streaming_chunks_count += 1;
+                            let should_update = self.streaming_chunks_count == 1
+                                || self.streaming_chunks_count.is_multiple_of(50);
+                            if should_update {
+                                let preview = if self.streaming_body.len() > 500_000 {
+                                    &self.streaming_body[self.streaming_body.len() - 500_000..]
+                                } else {
+                                    &self.streaming_body
+                                };
+                                self.response_body_editor = text_editor::Content::with_text(preview);
+                            }
+                            if self.streaming_chunks_count == 1 {
+                                self.request_status = RequestStatus::Success;
+                            }
+                        }
+                    }
+                    HttpStreamEvent::BodyChunkBinary(chunk) => {
+                        use base64::Engine;
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(&chunk);
+                        self.streaming_body.push_str(&encoded);
+                        self.streaming_chunks_count += 1;
+                        let should_update = self.streaming_chunks_count == 1
+                            || self.streaming_chunks_count.is_multiple_of(50);
+                        if should_update {
+                            let preview = if self.streaming_body.len() > 500_000 {
+                                &self.streaming_body[self.streaming_body.len() - 500_000..]
+                            } else {
+                                &self.streaming_body
+                            };
+                            self.response_body_editor = text_editor::Content::with_text(preview);
+                        }
+                        if self.streaming_chunks_count == 1 {
+                            self.request_status = RequestStatus::Success;
+                        }
+                    }
+                    HttpStreamEvent::StreamComplete { total_size } => {
+                        let duration = if let RequestStatus::Loading { started_at } = self.request_status {
+                            started_at.elapsed()
+                        } else {
+                            std::time::Duration::ZERO
+                        };
+                        let final_body = std::mem::take(&mut self.streaming_body);
+                        self.response_size = Some(total_size);
+                        self.response_duration = Some(duration);
+                        let display = if final_body.len() > 500_000 {
+                            let truncated_display = format!(
+                                "... (showing last 500KB of {} bytes total) ...\n\n{}",
+                                total_size,
+                                &final_body[final_body.len() - 500_000..]
+                            );
+                            if let Some(ref mut resp) = self.last_response {
+                                resp.body = final_body;
+                                resp.size = total_size;
+                                resp.duration = duration;
+                            }
+                            truncated_display
+                        } else {
+                            if let Some(ref mut resp) = self.last_response {
+                                resp.body = final_body.clone();
+                                resp.size = total_size;
+                                resp.duration = duration;
+                            }
+                            final_body
+                        };
+                        self.response_body_editor = text_editor::Content::with_text(&display);
+                        self.streaming_chunks_count = 0;
+                        self.request_status = RequestStatus::Success;
+                    }
+                    HttpStreamEvent::StreamError(e) => {
+                        self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                        self.last_response = None;
+                        self.streaming_body.clear();
+                        self.status_code = None;
+                        self.content_type = None;
+                    }
+                }
             }
             Message::ResponseReceived(result, _warnings) => match result {
                 Ok(response) => {
@@ -687,13 +810,12 @@ impl HttpRequestView {
 
                     let is_image = content_type.contains("image/");
                     let formatted_body = if content_type.contains("application/json")
-                        && response.body.len() < 50_000
+                        && response.body.len() < 100_000
                     {
-                        match serde_json::from_str::<serde_json::Value>(&response.body) {
-                            Ok(json_value) => serde_json::to_string_pretty(&json_value)
-                                .unwrap_or_else(|_| response.body.clone()),
-                            Err(_) => response.body.clone(),
-                        }
+                        serde_json::from_str::<serde_json::Value>(&response.body)
+                            .ok()
+                            .and_then(|json_value| serde_json::to_string_pretty(&json_value).ok())
+                            .unwrap_or_else(|| response.body.clone())
                     } else if is_image
                         && response.body_encoding
                             == crate::http_client::response::BodyEncoding::Base64
@@ -717,17 +839,7 @@ impl HttpRequestView {
                         response.body.clone()
                     };
 
-                    let display_body = if formatted_body.len() > 200_000 {
-                        let truncated: String = formatted_body.chars().take(200_000).collect();
-                        format!(
-                            "{}\n\n--- Response truncated ({} bytes total) ---",
-                            truncated, response.size
-                        )
-                    } else {
-                        formatted_body
-                    };
-
-                    self.response_body_editor = text_editor::Content::with_text(&display_body);
+                    self.response_body_editor = text_editor::Content::with_text(&formatted_body);
                     self.last_response = Some(response);
                     self.request_status = RequestStatus::Success;
                 }
@@ -1065,19 +1177,42 @@ impl HttpRequestView {
                     self.response_search_query.clear();
                     self.response_search_matches.clear();
                     self.response_search_index = 0;
+                } else {
+                    self.last_search_instant = None;
+                    self.update_search_matches();
                 }
             }
             Message::ResponseSearchChanged(query) => {
+                let query_len = query.len();
                 self.response_search_query = query;
-                self.update_search_matches();
+                let now = std::time::Instant::now();
+                let should_search = self
+                    .last_search_instant
+                    .map(|t| t.elapsed() >= std::time::Duration::from_millis(150))
+                    .unwrap_or(true)
+                    || query_len < self.response_search_matches.len();
+                if should_search {
+                    self.update_search_matches();
+                    self.last_search_instant = Some(now);
+                }
             }
             Message::SearchNext => {
+                if self.response_search_matches.is_empty() && !self.response_search_query.is_empty()
+                {
+                    self.update_search_matches();
+                    self.last_search_instant = Some(std::time::Instant::now());
+                }
                 if !self.response_search_matches.is_empty() {
                     self.response_search_index =
                         (self.response_search_index + 1) % self.response_search_matches.len();
                 }
             }
             Message::SearchPrev => {
+                if self.response_search_matches.is_empty() && !self.response_search_query.is_empty()
+                {
+                    self.update_search_matches();
+                    self.last_search_instant = Some(std::time::Instant::now());
+                }
                 if !self.response_search_matches.is_empty() {
                     self.response_search_index = if self.response_search_index == 0 {
                         self.response_search_matches.len() - 1

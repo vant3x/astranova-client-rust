@@ -13,9 +13,10 @@ iced_aw = { version = "0.13.1", features = ["tabs", "tab_bar", "context_menu", "
 
 bytes = "1.0.0"
 tokio = { version = "1.38.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
-reqwest = { version = "0.12.5", features = ["json", "multipart", "rustls-tls", "cookies"] }
+reqwest = { version = "0.12.5", features = ["json", "multipart", "rustls-tls", "cookies", "stream"] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.118"
 serde_yaml = "0.9"
