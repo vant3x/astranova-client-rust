@@ -1278,7 +1278,11 @@ impl AstraioApp {
         if let Some(sender) = &websocket_view.ws_sender {
             let input = websocket_view.input.clone();
             if !input.is_empty() && matches!(websocket_view.status, WsStatus::Connected) {
+                let bytes = input.len() as u64;
                 let _ = sender.send(&input);
+                websocket_view.stats.messages_sent += 1;
+                websocket_view.stats.bytes_sent += bytes;
+                websocket_view.last_sent_message = input.clone();
                 websocket_view.add_message(crate::protocols::websocket::WsMessage::outgoing(input));
                 websocket_view.input.clear();
             }

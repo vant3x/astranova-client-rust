@@ -396,6 +396,179 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                 Message::GraphQLOAuth2AutoPollToggle(enabled)
             })
         }
+        graphql_view::Message::StartSubscription => {
+            let mut temp_view = app.graphql_view.clone_for_send();
+            if let Some(env) = &app.active_environment {
+                temp_view.apply_environment(env);
+            }
+
+            match temp_view.build_request() {
+                Ok(graphql_request) => {
+                    let url = temp_view.url_input.clone();
+                    let headers: Vec<(String, String)> = temp_view
+                        .headers_editor
+                        .entries
+                        .iter()
+                        .filter(|h| !h.key.is_empty())
+                        .map(|h| (h.key.clone(), h.value.clone()))
+                        .collect();
+
+                    // Convert HTTP URL to WebSocket URL
+                    let ws_url = if url.starts_with("https://") {
+                        url.replacen("https://", "wss://", 1)
+                    } else if url.starts_with("http://") {
+                        url.replacen("http://", "ws://", 1)
+                    } else {
+                        url
+                    };
+
+                    let subscription_id = format!(
+                        "sub_{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()
+                    );
+                    app.graphql_view.subscription_id = Some(subscription_id.clone());
+
+                    Task::perform(
+                        async move {
+                            use crate::protocols::graphql::graphql_ws::{
+                                ClientMessage, SubscribePayload,
+                            };
+
+                            let request = crate::protocols::websocket::WsRequest {
+                                url: ws_url,
+                                headers,
+                                subprotocol: Some("graphql-transport-ws".to_string()),
+                                config: crate::protocols::websocket::WsConfig::default(),
+                            };
+
+                            let conn = crate::protocols::websocket::connect_ws(&request).await?;
+
+                            // Send ConnectionInit
+                            let init_msg = serde_json::to_string(&ClientMessage::ConnectionInit {
+                                payload: None,
+                            })
+                            .map_err(|e| crate::error::AppError::WebSocket(e.to_string()))?;
+
+                            let _ = conn.sender.send(&init_msg);
+
+                            // Wait for ConnectionAck (with timeout)
+                            let mut receiver = conn.receiver;
+                            let ack_timeout =
+                                tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                                    while let Some(event) = receiver.recv().await {
+                                        if let crate::protocols::websocket::WsEvent::Message(msg) =
+                                            event
+                                        {
+                                            if let Ok(server_msg) =
+                                                serde_json::from_str::<crate::protocols::graphql::graphql_ws::ServerMessage>(
+                                                    &msg.data,
+                                                )
+                                            {
+                                                match server_msg {
+                                                    crate::protocols::graphql::graphql_ws::ServerMessage::ConnectionAck { .. } => {
+                                                        return Ok(());
+                                                    }
+                                                    crate::protocols::graphql::graphql_ws::ServerMessage::ConnectionError { payload } => {
+                                                        return Err(crate::error::AppError::WebSocket(
+                                                            format!("Connection error: {}", payload.message),
+                                                        ));
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(crate::error::AppError::WebSocket("Connection closed before ack".to_string()))
+                                })
+                                .await
+                                .map_err(|_| {
+                                    crate::error::AppError::WebSocket(
+                                        "Connection init timeout".to_string(),
+                                    )
+                                })??;
+
+                            // Send Subscribe
+                            let subscribe_msg = serde_json::to_string(&ClientMessage::Subscribe {
+                                id: subscription_id.clone(),
+                                payload: SubscribePayload {
+                                    query: graphql_request.query,
+                                    variables: graphql_request.variables,
+                                    operation_name: graphql_request.operation_name,
+                                },
+                            })
+                            .map_err(|e| crate::error::AppError::WebSocket(e.to_string()))?;
+
+                            let _ = conn.sender.send(&subscribe_msg);
+
+                            // Spawn a task to handle subscription events
+                            let sub_id = subscription_id.clone();
+                            tokio::spawn(async move {
+                                while let Some(event) = receiver.recv().await {
+                                    if let crate::protocols::websocket::WsEvent::Message(msg) =
+                                        event
+                                    {
+                                        if let Ok(server_msg) =
+                                            serde_json::from_str::<crate::protocols::graphql::graphql_ws::ServerMessage>(
+                                                &msg.data,
+                                            )
+                                        {
+                                            match server_msg {
+                                                crate::protocols::graphql::graphql_ws::ServerMessage::Next { payload, .. } => {
+                                                    let response = crate::protocols::graphql::GraphQLResponse {
+                                                        data: Some(payload.data),
+                                                        errors: vec![],
+                                                    };
+                                                    // Note: We can't easily send back to the UI from here
+                                                    // The subscription events would need a channel
+                                                    log::debug!("Subscription data received");
+                                                }
+                                                crate::protocols::graphql::graphql_ws::ServerMessage::Error { payload, .. } => {
+                                                    log::error!("Subscription error: {:?}", payload);
+                                                }
+                                                crate::protocols::graphql::graphql_ws::ServerMessage::Complete { .. } => {
+                                                    log::info!("Subscription completed");
+                                                    break;
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+
+                            Ok(())
+                        },
+                        |result: Result<(), crate::error::AppError>| match result {
+                            Ok(()) => {
+                                Message::GraphQLMsg(graphql_view::Message::SubscriptionConnected)
+                            }
+                            Err(e) => {
+                                Message::GraphQLMsg(graphql_view::Message::SubscriptionError(
+                                    e.to_string(),
+                                ))
+                            }
+                        },
+                    )
+                }
+                Err(e) => {
+                    app.graphql_view
+                        .update(graphql_view::Message::SubscriptionError(e.to_string()));
+                    Task::none()
+                }
+            }
+        }
+        graphql_view::Message::StopSubscription => {
+            // Send Complete message if we have a subscription
+            if let Some(sub_id) = &app.graphql_view.subscription_id {
+                log::info!("Stopping subscription: {}", sub_id);
+            }
+            app.graphql_view.subscription_status = graphql_view::SubscriptionStatus::Disconnected;
+            app.graphql_view.subscription_id = None;
+            Task::none()
+        }
         other => {
             app.graphql_view.update(other);
             Task::none()

@@ -44,6 +44,7 @@ pub fn handle_message(app: &mut AstraioApp, message: websocket_view::Message) ->
                     let _ = sender.send(&text);
                     app.websocket_view.stats.messages_sent += 1;
                     app.websocket_view.stats.bytes_sent += bytes;
+                    app.websocket_view.last_sent_message = text.clone();
                     app.websocket_view
                         .add_message(crate::protocols::websocket::WsMessage::outgoing(text));
                     app.websocket_view.input.clear();
@@ -204,6 +205,26 @@ pub fn handle_message(app: &mut AstraioApp, message: websocket_view::Message) ->
                 } else {
                     Some(key)
                 };
+            Task::none()
+        }
+        websocket_view::Message::CopyMessage(data) => {
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let _ = clipboard.set_text(data);
+            }
+            Task::none()
+        }
+        websocket_view::Message::ReSendMessage(data) => {
+            if let Some(sender) = &app.websocket_view.ws_sender {
+                if !data.is_empty() && matches!(app.websocket_view.status, WsStatus::Connected) {
+                    let bytes = data.len() as u64;
+                    let _ = sender.send(&data);
+                    app.websocket_view.stats.messages_sent += 1;
+                    app.websocket_view.stats.bytes_sent += bytes;
+                    app.websocket_view.last_sent_message = data.clone();
+                    app.websocket_view
+                        .add_message(crate::protocols::websocket::WsMessage::outgoing(data));
+                }
+            }
             Task::none()
         }
     }

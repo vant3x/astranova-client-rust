@@ -108,6 +108,36 @@ pub enum Message {
     OAuth2CopyAccessToken(String),
     OAuth2CopyRefreshToken(String),
     OAuth2AutoPollToggle(bool),
+    StartSubscription,
+    StopSubscription,
+    SubscriptionConnected,
+    SubscriptionDisconnected(String),
+    SubscriptionDataReceived(Result<crate::protocols::graphql::GraphQLResponse, crate::error::AppError>),
+    SubscriptionError(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionEvent {
+    pub id: String,
+    pub data: serde_json::Value,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubscriptionStatus {
+    Disconnected,
+    Connecting,
+    Connected,
+}
+
+impl std::fmt::Display for SubscriptionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubscriptionStatus::Disconnected => write!(f, "Disconnected"),
+            SubscriptionStatus::Connecting => write!(f, "Connecting..."),
+            SubscriptionStatus::Connected => write!(f, "Connected"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -122,8 +152,12 @@ pub struct GraphQLView {
     active_tab: TabId,
     active_response_tab: ResponseTab,
     request_status: RequestStatus,
+    pub subscription_status: SubscriptionStatus,
+    pub subscription_events: Vec<SubscriptionEvent>,
+    pub subscription_id: Option<String>,
     pub last_response: Option<GraphQLResponse>,
     pub response_body_editor: text_editor::Content,
+    pub highlight_content: Option<text_editor::Content>,
     pub status_code: Option<u16>,
     pub content_type: Option<String>,
     pub response_headers: Vec<(String, String)>,
@@ -160,6 +194,9 @@ impl Clone for GraphQLView {
             response_body_editor: text_editor::Content::with_text(
                 &self.response_body_editor.text(),
             ),
+            highlight_content: self.highlight_content.as_ref().map(|c| {
+                text_editor::Content::with_text(&c.text())
+            }),
             status_code: self.status_code,
             content_type: self.content_type.clone(),
             response_headers: self.response_headers.clone(),
@@ -177,6 +214,9 @@ impl Clone for GraphQLView {
             autocomplete_suggestions: self.autocomplete_suggestions.clone(),
             show_bearer_token: self.show_bearer_token,
             show_api_key_value: self.show_api_key_value,
+            subscription_status: self.subscription_status,
+            subscription_events: self.subscription_events.clone(),
+            subscription_id: self.subscription_id.clone(),
         }
     }
 }
@@ -196,6 +236,7 @@ impl GraphQLView {
             request_status: self.request_status.clone(),
             last_response: None,
             response_body_editor: text_editor::Content::new(),
+            highlight_content: None,
             status_code: None,
             content_type: None,
             response_headers: Vec::new(),
@@ -213,6 +254,9 @@ impl GraphQLView {
             autocomplete_suggestions: Vec::new(),
             show_bearer_token: self.show_bearer_token,
             show_api_key_value: self.show_api_key_value,
+            subscription_status: self.subscription_status,
+            subscription_events: self.subscription_events.clone(),
+            subscription_id: self.subscription_id.clone(),
         }
     }
 }
@@ -240,6 +284,7 @@ impl Default for GraphQLView {
             request_status: RequestStatus::Idle,
             last_response: None,
             response_body_editor: text_editor::Content::new(),
+            highlight_content: None,
             status_code: None,
             content_type: None,
             response_headers: Vec::new(),
@@ -257,6 +302,9 @@ impl Default for GraphQLView {
             autocomplete_suggestions: Vec::new(),
             show_bearer_token: false,
             show_api_key_value: false,
+            subscription_status: SubscriptionStatus::Disconnected,
+            subscription_events: Vec::new(),
+            subscription_id: None,
         }
     }
 }
@@ -531,6 +579,7 @@ impl GraphQLView {
                 };
                 self.last_response = None;
                 self.response_body_editor = text_editor::Content::new();
+                self.highlight_content = None;
                 self.status_code = None;
                 self.content_type = None;
                 self.response_duration = None;
@@ -551,6 +600,21 @@ impl GraphQLView {
 
                     let formatted = crate::protocols::graphql::format_response(&response);
                     self.response_body_editor = text_editor::Content::with_text(&formatted);
+                    let fmt_len = formatted.len();
+                    self.highlight_content = if fmt_len > 500_000 {
+                        // Safe truncation at char boundary to avoid UTF-8 panic
+                        let truncated = if let Some(idx) = formatted.char_indices()
+                            .map(|(i, _)| i)
+                            .find(|&i| i >= 500_000)
+                        {
+                            &formatted[..idx]
+                        } else {
+                            &formatted
+                        };
+                        Some(text_editor::Content::with_text(truncated))
+                    } else {
+                        None
+                    };
                     self.last_response = Some(response);
                     self.request_status = RequestStatus::Success;
                 }
@@ -558,6 +622,7 @@ impl GraphQLView {
                     self.request_status = RequestStatus::Error(format!("Error: {}", e));
                     self.last_response = None;
                     self.response_body_editor = text_editor::Content::new();
+                    self.highlight_content = None;
                     self.status_code = None;
                     self.content_type = None;
                     self.response_duration = None;
@@ -750,6 +815,58 @@ impl GraphQLView {
             Message::OAuth2AutoPollToggle(_) => {
                 // Handled in app.rs
             }
+            Message::StartSubscription => {
+                self.subscription_status = SubscriptionStatus::Connecting;
+                self.subscription_events.clear();
+            }
+            Message::StopSubscription => {
+                self.subscription_status = SubscriptionStatus::Disconnected;
+                self.subscription_id = None;
+            }
+            Message::SubscriptionConnected => {
+                self.subscription_status = SubscriptionStatus::Connected;
+            }
+            Message::SubscriptionDisconnected(reason) => {
+                self.subscription_status = SubscriptionStatus::Disconnected;
+                self.subscription_id = None;
+                if !reason.is_empty() {
+                    log::warn!("GraphQL subscription disconnected: {}", reason);
+                }
+            }
+            Message::SubscriptionDataReceived(result) => {
+                match result {
+                    Ok(response) => {
+                        let event = SubscriptionEvent {
+                            id: format!(
+                                "evt_{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis()
+                            ),
+                            data: serde_json::to_value(&response).unwrap_or_default(),
+                            timestamp: crate::utils::timestamp_seconds(),
+                        };
+                        self.subscription_events.push(event);
+                        // Keep last 1000 events
+                        if self.subscription_events.len() > 1000 {
+                            let excess = self.subscription_events.len() - 1000;
+                            self.subscription_events.drain(..excess);
+                        }
+                        // Update response display with latest data
+                        self.last_response = Some(response.clone());
+                        let formatted = crate::protocols::graphql::format_response(&response);
+                        self.response_body_editor = text_editor::Content::with_text(&formatted);
+                    }
+                    Err(e) => {
+                        log::error!("GraphQL subscription error: {}", e);
+                    }
+                }
+            }
+            Message::SubscriptionError(e) => {
+                log::error!("GraphQL subscription error: {}", e);
+                self.subscription_status = SubscriptionStatus::Disconnected;
+            }
         }
     }
 
@@ -815,6 +932,28 @@ impl GraphQLView {
                 } else {
                     save_button
                 }
+            },
+            {
+                let (sub_label, sub_msg) = match self.subscription_status {
+                    SubscriptionStatus::Disconnected => (" Subscribe", Message::StartSubscription),
+                    SubscriptionStatus::Connecting => (" Connecting...", Message::IntrospectSchema),
+                    SubscriptionStatus::Connected => (" Unsubscribe", Message::StopSubscription),
+                };
+                let sub_button = match self.subscription_status {
+                    SubscriptionStatus::Disconnected => {
+                        button(row![lucide::radio().size(14), text(sub_label)].spacing(4))
+                            .on_press(sub_msg)
+                    }
+                    SubscriptionStatus::Connecting => {
+                        button(row![lucide::loader().size(14), text(sub_label)].spacing(4))
+                    }
+                    SubscriptionStatus::Connected => {
+                        button(row![lucide::octagon().size(14), text(sub_label)].spacing(4))
+                            .on_press(sub_msg)
+                            .style(button::danger)
+                    }
+                };
+                sub_button
             },
         ]
         .spacing(10)
@@ -979,9 +1118,45 @@ impl GraphQLView {
                             });
                             container(context_menu)
                         } else {
-                            let editor = text_editor(&self.response_body_editor)
+                            let body_len = self.response_body_editor.text().len();
+                            let is_truncated = self.highlight_content.is_some();
+                            let highlight_ref = self.highlight_content.as_ref()
+                                .unwrap_or(&self.response_body_editor);
+
+                            let editor = text_editor(highlight_ref)
                                 .on_action(Message::ResponseContentChanged)
                                 .highlight("json", self.highlighter_theme);
+
+                            let truncated_banner = if is_truncated {
+                                Some(
+                                    container(
+                                        row![
+                                            lucide::info().size(12).color(Color::from_rgb(0.3, 0.6, 0.9)),
+                                            text(format!(
+                                                "Showing first {:.0} KB of {:.0} KB with syntax highlighting. Full response available via Copy.",
+                                                500_000.0 / 1024.0,
+                                                body_len as f64 / 1024.0
+                                            ))
+                                            .size(11)
+                                            .color(Color::from_rgb(0.5, 0.6, 0.8)),
+                                        ]
+                                        .spacing(6)
+                                        .align_y(Alignment::Center),
+                                    )
+                                    .padding(iced::Padding::from([6, 10]))
+                                    .style(|_: &Theme| iced::widget::container::Style {
+                                        background: Some(Color::from_rgb(0.12, 0.15, 0.22).into()),
+                                        border: iced::Border::default()
+                                            .rounded(4)
+                                            .color(Color::from_rgb(0.2, 0.3, 0.5))
+                                            .width(1),
+                                        ..iced::widget::container::Style::default()
+                                    })
+                                )
+                            } else {
+                                None
+                            };
+
                             let context_menu = ContextMenu::new(scrollable(editor), || {
                                 column![
                                     button(
@@ -997,7 +1172,18 @@ impl GraphQLView {
                                 ]
                                 .into()
                             });
-                            container(context_menu)
+
+                            if let Some(banner) = truncated_banner {
+                                container(column![banner, context_menu])
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .into()
+                            } else {
+                                container(context_menu)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .into()
+                            }
                         }
                     })
                     .push(
@@ -1168,6 +1354,43 @@ impl GraphQLView {
             .align_y(Alignment::Center),
             tabs,
             rule::horizontal(10),
+            {
+                let sub_status_text = match self.subscription_status {
+                    SubscriptionStatus::Disconnected => text("Subscription: Disconnected")
+                        .size(12)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                    SubscriptionStatus::Connecting => text("Subscription: Connecting...")
+                        .size(12)
+                        .color(Color::from_rgb(0.8, 0.7, 0.1)),
+                    SubscriptionStatus::Connected => text(format!(
+                        "Subscription: Connected ({} events)",
+                        self.subscription_events.len()
+                    ))
+                    .size(12)
+                    .color(Color::from_rgb(0.2, 0.7, 0.3)),
+                };
+                let event_count = self.subscription_events.len();
+                let sub_events_display: Element<'_, Message, Theme, Renderer> =
+                    if event_count > 0 && matches!(self.subscription_status, SubscriptionStatus::Connected) {
+                        let mut events_list = column![].spacing(2);
+                        // Show last 10 events
+                        let start = if event_count > 10 { event_count - 10 } else { 0 };
+                        for event in &self.subscription_events[start..] {
+                            let data_str = serde_json::to_string_pretty(&event.data)
+                                .unwrap_or_else(|_| event.data.to_string());
+                            let truncated: String = data_str.chars().take(100).collect();
+                            events_list = events_list.push(
+                                text(format!("{}: {}", event.id[..8].to_string(), truncated))
+                                    .size(10)
+                                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+                            );
+                        }
+                        scrollable(events_list).height(Length::Fixed(120.0)).into()
+                    } else {
+                        column![].into()
+                    };
+                column![sub_status_text, sub_events_display].spacing(4)
+            },
             column![
                 row![
                     method_label,

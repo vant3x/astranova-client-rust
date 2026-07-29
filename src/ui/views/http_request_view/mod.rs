@@ -325,6 +325,7 @@ pub struct HttpRequestView {
     pub active_script_tab: ScriptTab,
     pub script_output: ScriptOutput,
     pub cookie_count: usize,
+    pub highlight_content: Option<text_editor::Content>,
     pub cookie_domain_count: usize,
     pub cookie_manager: crate::ui::views::cookie_manager::CookieManagerView,
     pub cookie_domains: Vec<(String, usize)>,
@@ -395,6 +396,9 @@ impl Clone for HttpRequestView {
             active_script_tab: self.active_script_tab.clone(),
             script_output: self.script_output.clone(),
             cookie_count: self.cookie_count,
+            highlight_content: self.highlight_content.as_ref().map(|c| {
+                text_editor::Content::with_text(&c.text())
+            }),
             cookie_domain_count: self.cookie_domain_count,
             cookie_manager: self.cookie_manager.clone(),
             cookie_domains: self.cookie_domains.clone(),
@@ -465,6 +469,7 @@ impl HttpRequestView {
             active_script_tab: self.active_script_tab.clone(),
             script_output: ScriptOutput::default(),
             cookie_count: 0,
+            highlight_content: None,
             cookie_domain_count: 0,
             cookie_manager: Default::default(),
             cookie_domains: Vec::new(),
@@ -541,6 +546,7 @@ impl Default for HttpRequestView {
             active_script_tab: ScriptTab::default(),
             script_output: ScriptOutput::default(),
             cookie_count: 0,
+            highlight_content: None,
             cookie_domain_count: 0,
             cookie_manager: crate::ui::views::cookie_manager::CookieManagerView::default(),
             cookie_domains: Vec::new(),
@@ -675,6 +681,7 @@ impl HttpRequestView {
                 };
                 self.last_response = None;
                 self.response_body_editor = text_editor::Content::new();
+                self.highlight_content = None;
                 self.streaming_body.clear();
                 self.streaming_chunks_count = 0;
                 self.status_code = None;
@@ -711,9 +718,7 @@ impl HttpRequestView {
                             size: 0,
                             redirect_chain: Vec::new(),
                         });
-                        self.request_status = RequestStatus::Loading {
-                            started_at: std::time::Instant::now(),
-                        };
+                        // Don't reset started_at here - preserve the original request start time
                     }
                     HttpStreamEvent::BodyChunk(chunk) => {
                         if let Ok(text) = String::from_utf8(chunk) {
@@ -729,9 +734,7 @@ impl HttpRequestView {
                                 };
                                 self.response_body_editor = text_editor::Content::with_text(preview);
                             }
-                            if self.streaming_chunks_count == 1 {
-                                self.request_status = RequestStatus::Success;
-                            }
+                            // Don't set Success here - wait for StreamComplete
                         }
                     }
                     HttpStreamEvent::BodyChunkBinary(chunk) => {
@@ -749,9 +752,7 @@ impl HttpRequestView {
                             };
                             self.response_body_editor = text_editor::Content::with_text(preview);
                         }
-                        if self.streaming_chunks_count == 1 {
-                            self.request_status = RequestStatus::Success;
-                        }
+                        // Don't set Success here - wait for StreamComplete
                     }
                     HttpStreamEvent::StreamComplete { total_size } => {
                         let duration = if let RequestStatus::Loading { started_at } = self.request_status {
@@ -783,6 +784,12 @@ impl HttpRequestView {
                             final_body
                         };
                         self.response_body_editor = text_editor::Content::with_text(&display);
+                        let display_len = display.len();
+                        self.highlight_content = if display_len > 500_000 {
+                            Some(text_editor::Content::with_text(&display[..500_000]))
+                        } else {
+                            None
+                        };
                         self.streaming_chunks_count = 0;
                         self.request_status = RequestStatus::Success;
                     }
@@ -790,6 +797,7 @@ impl HttpRequestView {
                         self.request_status = RequestStatus::Error(format!("Error: {}", e));
                         self.last_response = None;
                         self.streaming_body.clear();
+                        self.highlight_content = None;
                         self.status_code = None;
                         self.content_type = None;
                     }
@@ -840,6 +848,12 @@ impl HttpRequestView {
                     };
 
                     self.response_body_editor = text_editor::Content::with_text(&formatted_body);
+                    let body_len = formatted_body.len();
+                    self.highlight_content = if body_len > 500_000 {
+                        Some(text_editor::Content::with_text(&formatted_body[..500_000]))
+                    } else {
+                        None
+                    };
                     self.last_response = Some(response);
                     self.request_status = RequestStatus::Success;
                 }
@@ -847,6 +861,7 @@ impl HttpRequestView {
                     self.request_status = RequestStatus::Error(format!("Error: {}", e));
                     self.last_response = None;
                     self.response_body_editor = text_editor::Content::new();
+                    self.highlight_content = None;
                     self.status_code = None;
                     self.content_type = None;
                     self.response_duration = None;

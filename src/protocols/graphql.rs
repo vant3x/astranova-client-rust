@@ -181,6 +181,103 @@ pub fn format_response(response: &GraphQLResponse) -> String {
     }
 }
 
+/// GraphQL WebSocket subscription protocol types (graphql-ws)
+pub mod graphql_ws {
+    use serde::{Deserialize, Serialize};
+
+    /// Client-to-server messages
+    #[derive(Debug, Clone, Serialize)]
+    #[serde(tag = "type")]
+    pub enum ClientMessage {
+        #[serde(rename = "ConnectionInit")]
+        ConnectionInit {
+            payload: Option<serde_json::Value>,
+        },
+        #[serde(rename = "Subscribe")]
+        Subscribe {
+            id: String,
+            payload: SubscribePayload,
+        },
+        #[serde(rename = "Complete")]
+        Complete { id: String },
+        #[serde(rename = "Ping")]
+        Ping {
+            payload: Option<serde_json::Value>,
+        },
+        #[serde(rename = "Pong")]
+        Pong {
+            payload: Option<serde_json::Value>,
+        },
+    }
+
+    /// Server-to-client messages
+    #[derive(Debug, Clone, Deserialize)]
+    #[serde(tag = "type")]
+    pub enum ServerMessage {
+        #[serde(rename = "ConnectionAck")]
+        ConnectionAck {
+            payload: Option<serde_json::Value>,
+        },
+        #[serde(rename = "Next")]
+        Next {
+            id: String,
+            payload: NextPayload,
+        },
+        #[serde(rename = "Error")]
+        Error {
+            id: String,
+            payload: Vec<ErrorPayload>,
+        },
+        #[serde(rename = "Complete")]
+        Complete { id: String },
+        #[serde(rename = "Ping")]
+        Ping {
+            payload: Option<serde_json::Value>,
+        },
+        #[serde(rename = "Pong")]
+        Pong {
+            payload: Option<serde_json::Value>,
+        },
+        #[serde(rename = "ConnectionError")]
+        ConnectionError { payload: ErrorPayload },
+        #[serde(rename = "ServerInfo")]
+        ServerInfo {
+            payload: ServerInfoPayload,
+        },
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SubscribePayload {
+        pub query: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub variables: Option<serde_json::Value>,
+        #[serde(rename = "operationName", skip_serializing_if = "Option::is_none")]
+        pub operation_name: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct NextPayload {
+        pub data: serde_json::Value,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct ErrorPayload {
+        pub message: String,
+        #[serde(default)]
+        pub locations: Vec<serde_json::Value>,
+        #[serde(default)]
+        pub path: Vec<serde_json::Value>,
+        #[serde(default)]
+        pub extensions: Option<serde_json::Value>,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct ServerInfoPayload {
+        pub name: Option<String>,
+        pub version: Option<String>,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

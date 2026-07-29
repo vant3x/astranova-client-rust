@@ -40,6 +40,8 @@ pub enum Message {
     ToggleShowTls,
     ToggleShowAdvanced,
     ToggleMessageExpand(String, String),
+    CopyMessage(String),
+    ReSendMessage(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +93,7 @@ pub struct WebSocketView {
     pub show_advanced: bool,
     pub max_messages: usize,
     pub expanded_message: Option<(String, String)>,
+    pub last_sent_message: String,
 }
 
 impl Clone for WebSocketView {
@@ -120,6 +123,7 @@ impl Clone for WebSocketView {
             show_advanced: self.show_advanced,
             max_messages: self.max_messages,
             expanded_message: self.expanded_message.clone(),
+            last_sent_message: self.last_sent_message.clone(),
         }
     }
 }
@@ -151,6 +155,7 @@ impl Default for WebSocketView {
             show_advanced: false,
             max_messages: 10000,
             expanded_message: None,
+            last_sent_message: String::new(),
         }
     }
 }
@@ -549,9 +554,25 @@ impl WebSocketView {
                     ]
                     .spacing(2)
                 };
+                let msg_data_clone = msg.data.clone();
+                let copy_button = button(lucide::copy().size(10))
+                    .on_press(Message::CopyMessage(msg_data_clone))
+                    .style(button::secondary);
+
+                let re_send_button = if msg.direction == ">" && msg.message_type == WsMessageType::Text {
+                    let re_send_data = msg.data.clone();
+                    button(lucide::repeat().size(10))
+                        .on_press(Message::ReSendMessage(re_send_data))
+                        .style(button::secondary)
+                } else {
+                    button(text(""))
+                };
+
+                let actions_row = row![copy_button, re_send_button].spacing(4);
+
                 message_list = message_list.push(
                     button(
-                        row![expand_icon, content,]
+                        row![expand_icon, content, actions_row]
                             .spacing(6)
                             .align_y(Alignment::Start),
                     )

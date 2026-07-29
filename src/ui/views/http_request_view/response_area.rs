@@ -105,35 +105,79 @@ impl HttpRequestView {
                                     .align_x(Alignment::Center)
                                     .align_y(Alignment::Center)
                             }
+                        } else if self.word_wrap {
+                            let body_text = self.response_body_editor.text();
+                            let wrapped_text =
+                                text(body_text).size(13).font(iced::Font::MONOSPACE);
+                            let context_menu =
+                                ContextMenu::new(scrollable(wrapped_text), || {
+                                    column![button(
+                                        row![lucide::copy().size(12), text(" Copy Body")]
+                                            .spacing(4)
+                                    )
+                                    .on_press(Message::CopyBody)]
+                                    .into()
+                                });
+                            container(context_menu)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
                         } else {
+                            let body_len = self.response_body_editor.text().len();
                             let syntax = self
                                 .content_type
                                 .as_deref()
                                 .map(super::helpers::response_content_type_to_syntax)
                                 .unwrap_or("text");
-                            if self.word_wrap {
-                                let body_text = self.response_body_editor.text();
-                                let wrapped_text =
-                                    text(body_text).size(13).font(iced::Font::MONOSPACE);
-                                let context_menu =
-                                    ContextMenu::new(scrollable(wrapped_text), || {
-                                        column![button(
-                                            row![lucide::copy().size(12), text(" Copy Body")]
-                                                .spacing(4)
-                                        )
-                                        .on_press(Message::CopyBody),]
-                                        .into()
-                                    });
-                                container(context_menu)
+                            let is_truncated = self.highlight_content.is_some();
+                            let highlight_ref = self
+                                .highlight_content
+                                .as_ref()
+                                .unwrap_or(&self.response_body_editor);
+                            let editor = text_editor(highlight_ref)
+                                .on_action(Message::ResponseContentChanged)
+                                .highlight(syntax, self.highlighter_theme);
+                            let truncated_banner = if is_truncated {
+                                Some(
+                                    container(
+                                        row![
+                                            lucide::info()
+                                                .size(12)
+                                                .color(Color::from_rgb(0.3, 0.6, 0.9)),
+                                            text(format!(
+                                                "Showing first {:.0} KB of {:.0} KB with syntax highlighting. Full response available via Copy.",
+                                                500_000.0 / 1024.0,
+                                                body_len as f64 / 1024.0
+                                            ))
+                                            .size(11)
+                                            .color(Color::from_rgb(0.5, 0.6, 0.8)),
+                                        ]
+                                        .spacing(6)
+                                        .align_y(Alignment::Center),
+                                    )
+                                    .padding(iced::Padding::from([6, 10]))
+                                    .style(|_: &Theme| iced::widget::container::Style {
+                                        background: Some(
+                                            Color::from_rgb(0.12, 0.15, 0.22).into(),
+                                        ),
+                                        border: iced::Border::default()
+                                            .rounded(4)
+                                            .color(Color::from_rgb(0.2, 0.3, 0.5))
+                                            .width(1),
+                                        ..iced::widget::container::Style::default()
+                                    }),
+                                )
                             } else {
-                                let editor = text_editor(&self.response_body_editor)
-                                    .on_action(Message::ResponseContentChanged)
-                                    .highlight(syntax, self.highlighter_theme);
-                                let context_menu = ContextMenu::new(scrollable(editor), || {
+                                None
+                            };
+                            let context_menu =
+                                ContextMenu::new(scrollable(editor), || {
                                     column![
                                         button(
-                                            row![lucide::copy().size(12), text(" Copy Selection")]
-                                                .spacing(4)
+                                            row![
+                                                lucide::copy().size(12),
+                                                text(" Copy Selection")
+                                            ]
+                                            .spacing(4)
                                         )
                                         .on_press(Message::CopySelection),
                                         button(
@@ -144,7 +188,14 @@ impl HttpRequestView {
                                     ]
                                     .into()
                                 });
+                            if let Some(banner) = truncated_banner {
+                                container(column![banner, context_menu])
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                            } else {
                                 container(context_menu)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
                             }
                         }
                     })
