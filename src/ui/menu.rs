@@ -9,6 +9,7 @@ pub struct MenuIds {
     pub toggle_history: muda::MenuId,
     pub toggle_collections: muda::MenuId,
     pub toggle_dark_mode: muda::MenuId,
+    pub cookie_manager: muda::MenuId,
     pub about: muda::MenuId,
     pub quit: muda::MenuId,
 }
@@ -61,12 +62,12 @@ fn build_menu() -> (MenuIds, Menu) {
             &import_postman,
             &import_openapi,
         ])
-        .unwrap();
+        .expect("failed to append import submenu items");
 
     let export_submenu = Submenu::new("Export", true);
     export_submenu
         .append_items(&[&export_postman as &dyn muda::IsMenuItem, &export_har])
-        .unwrap();
+        .expect("failed to append export submenu items");
 
     let file_menu = Submenu::new("File", true);
     file_menu
@@ -83,7 +84,7 @@ fn build_menu() -> (MenuIds, Menu) {
             &PredefinedMenuItem::separator(),
             &quit,
         ])
-        .unwrap();
+        .expect("failed to append file menu items");
 
     let find = MenuItem::new("Find...", true, Some(acc(CMD_OR_CTRL, Code::KeyF)));
 
@@ -102,7 +103,7 @@ fn build_menu() -> (MenuIds, Menu) {
             &PredefinedMenuItem::separator(),
             &find,
         ])
-        .unwrap();
+        .expect("failed to append edit menu items");
 
     let toggle_sidebar = MenuItem::new("Toggle Sidebar", true, Some(acc(CMD_OR_CTRL, Code::KeyB)));
     let toggle_history = MenuItem::new("Toggle History", true, Some(acc(CMD_OR_CTRL, Code::KeyH)));
@@ -113,6 +114,11 @@ fn build_menu() -> (MenuIds, Menu) {
     );
     let toggle_dark_mode =
         MenuItem::new("Toggle Dark Mode", true, Some(acc(CMD_OR_CTRL, Code::KeyD)));
+    let cookie_manager = MenuItem::new(
+        "Cookie Manager",
+        true,
+        Some(acc(CMD_OR_CTRL | Modifiers::SHIFT, Code::KeyK)),
+    );
     let new_window = MenuItem::new(
         "New Window",
         true,
@@ -125,12 +131,13 @@ fn build_menu() -> (MenuIds, Menu) {
             &toggle_sidebar as &dyn muda::IsMenuItem,
             &toggle_history,
             &toggle_collections,
+            &cookie_manager,
             &PredefinedMenuItem::separator(),
             &toggle_dark_mode,
             &PredefinedMenuItem::separator(),
             &new_window,
         ])
-        .unwrap();
+        .expect("failed to append view menu items");
 
     let about = MenuItem::new("About Astraio", true, None);
 
@@ -141,7 +148,7 @@ fn build_menu() -> (MenuIds, Menu) {
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(None),
         ])
-        .unwrap();
+        .expect("failed to append help menu items");
 
     menu.append_items(&[
         &file_menu as &dyn muda::IsMenuItem,
@@ -149,7 +156,7 @@ fn build_menu() -> (MenuIds, Menu) {
         &view_menu,
         &help_menu,
     ])
-    .unwrap();
+    .expect("failed to append top-level menu items");
 
     #[cfg(target_os = "macos")]
     {
@@ -165,8 +172,8 @@ fn build_menu() -> (MenuIds, Menu) {
                 &PredefinedMenuItem::show_all(Some("Show All")),
                 &PredefinedMenuItem::separator(),
             ])
-            .unwrap();
-        menu.prepend(&app_menu).unwrap();
+            .expect("failed to append macOS app menu items");
+        menu.prepend(&app_menu).expect("failed to prepend macOS app menu");
     }
 
     let menu_ids = MenuIds {
@@ -177,6 +184,7 @@ fn build_menu() -> (MenuIds, Menu) {
         toggle_history: toggle_history.id().clone(),
         toggle_collections: toggle_collections.id().clone(),
         toggle_dark_mode: toggle_dark_mode.id().clone(),
+        cookie_manager: cookie_manager.id().clone(),
         about: about.id().clone(),
         quit: quit.id().clone(),
     };
@@ -228,6 +236,8 @@ pub fn handle_menu_event(event: &MenuEvent) -> Option<super::app::Message> {
         Some(Message::ToggleCollections)
     } else if event.id == i.toggle_dark_mode {
         Some(Message::ToggleTheme)
+    } else if event.id == i.cookie_manager {
+        Some(Message::ToggleCookieManager)
     } else if event.id == i.about {
         Some(Message::ShowAbout)
     } else if event.id == i.quit {

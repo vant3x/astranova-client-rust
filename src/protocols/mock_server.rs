@@ -156,7 +156,9 @@ async fn mock_handler(
             } else {
                 "text/plain"
             };
-        response_headers.insert("content-type", HeaderValue::from_str(ct).unwrap());
+        if let Ok(hv) = HeaderValue::from_str(ct) {
+            response_headers.insert("content-type", hv);
+        }
     }
 
     let elapsed = start.elapsed().as_millis() as u64;

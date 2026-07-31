@@ -201,7 +201,7 @@ impl HistoryView {
                     for (k, v) in headers {
                         headers_col = headers_col.push(
                             row![
-                                text(format!("{}", k))
+                                text(k.to_string())
                                     .size(11)
                                     .color(ThemeColors::ACCENT)
                                     .font(iced::Font {
@@ -668,20 +668,18 @@ impl HistoryView {
                 .on_press(Message::ResendEntry(entry.id));
 
             // ── View button ──
-            let view_btn = button(
-                row![lucide::eye().size(12), text(" View").size(10)].spacing(3),
-            )
-            .padding(Padding::from([4, 8]))
-            .style(|_theme, _status| button::Style {
-                background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                text_color: ThemeColors::TEXT_SECONDARY,
-                border: iced::Border::default()
-                    .rounded(4)
-                    .color(ThemeColors::BORDER)
-                    .width(1),
-                ..button::Style::default()
-            })
-            .on_press(Message::ViewResponse(entry.id));
+            let view_btn = button(lucide::eye().size(12))
+                .padding(Padding::from([4, 8]))
+                .style(|_theme, _status| button::Style {
+                    background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                    text_color: ThemeColors::TEXT_SECONDARY,
+                    border: iced::Border::default()
+                        .rounded(4)
+                        .color(ThemeColors::BORDER)
+                        .width(1),
+                    ..button::Style::default()
+                })
+                .on_press(Message::ViewResponse(entry.id));
 
             // ── Delete button (or confirmation) ──
             let delete_btn: Element<'_, Message, Theme, Renderer> =

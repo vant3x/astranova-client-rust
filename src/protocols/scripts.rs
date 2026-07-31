@@ -304,16 +304,94 @@ impl ScriptEngine {
         }
     }
 
-    fn execute_action_pre(
+    /// Execute actions shared by both pre-request and post-response scripts.
+    /// Returns `Ok(true)` if the action was handled, `Ok(false)` if the caller should handle it.
+    fn execute_shared_action(
         action: &ScriptAction,
-        request: &mut HttpRequest,
         context: &mut ScriptContext,
-    ) -> Result<(), AppError> {
+    ) -> Result<bool, AppError> {
         match action {
             ScriptAction::SetVariable { name, value } => {
                 let resolved = context.resolve_variables(value);
                 context.variables.insert(name.clone(), resolved);
             }
+            ScriptAction::Log { message } => {
+                let resolved = context.resolve_variables(message);
+                context.logs.push(resolved);
+            }
+            ScriptAction::TransformToUpper { input, variable } => {
+                let resolved_input = context.resolve_variables(input);
+                context
+                    .variables
+                    .insert(variable.clone(), resolved_input.to_uppercase());
+            }
+            ScriptAction::TransformToLower { input, variable } => {
+                let resolved_input = context.resolve_variables(input);
+                context
+                    .variables
+                    .insert(variable.clone(), resolved_input.to_lowercase());
+            }
+            ScriptAction::TransformTrim { input, variable } => {
+                let resolved_input = context.resolve_variables(input);
+                context
+                    .variables
+                    .insert(variable.clone(), resolved_input.trim().to_string());
+            }
+            ScriptAction::EncodeBase64 { input, variable } => {
+                let resolved_input = context.resolve_variables(input);
+                let encoded =
+                    base64::engine::general_purpose::STANDARD.encode(resolved_input.as_bytes());
+                context.variables.insert(variable.clone(), encoded);
+            }
+            ScriptAction::DecodeBase64 { input, variable } => {
+                let resolved_input = context.resolve_variables(input);
+                match base64::engine::general_purpose::STANDARD.decode(&resolved_input) {
+                    Ok(bytes) => {
+                        let decoded = String::from_utf8_lossy(&bytes).to_string();
+                        context.variables.insert(variable.clone(), decoded);
+                    }
+                    Err(e) => {
+                        let msg = format!("Base64 decode failed: {}", e);
+                        context.errors.push(msg.clone());
+                        return Err(AppError::Validation(msg));
+                    }
+                }
+            }
+            ScriptAction::HashSha256 { input, variable } => {
+                let resolved_input = context.resolve_variables(input);
+                let mut hasher = Sha256::new();
+                hasher.update(resolved_input.as_bytes());
+                let result = format!("{:x}", hasher.finalize());
+                context.variables.insert(variable.clone(), result);
+            }
+            ScriptAction::HmacSha256 {
+                key,
+                message,
+                variable,
+            } => {
+                let resolved_key = context.resolve_variables(key);
+                let resolved_message = context.resolve_variables(message);
+                let mut mac = HmacSha256::new_from_slice(resolved_key.as_bytes())
+                    .map_err(|e| AppError::Validation(format!("HMAC key error: {}", e)))?;
+                mac.update(resolved_message.as_bytes());
+                let result = format!("{:x}", mac.finalize().into_bytes());
+                context.variables.insert(variable.clone(), result);
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    fn execute_action_pre(
+        action: &ScriptAction,
+        request: &mut HttpRequest,
+        context: &mut ScriptContext,
+    ) -> Result<(), AppError> {
+        if Self::execute_shared_action(action, context)? {
+            return Ok(());
+        }
+
+        match action {
             ScriptAction::SetHeader { key, value } => {
                 let resolved_key = context.resolve_variables(key);
                 let resolved_value = context.resolve_variables(value);
@@ -361,68 +439,8 @@ impl ScriptEngine {
                     AppError::Validation(format!("Invalid HTTP method: {}", resolved))
                 })?;
             }
-            ScriptAction::Log { message } => {
-                let resolved = context.resolve_variables(message);
-                context.logs.push(resolved);
-            }
             ScriptAction::Delay { ms } => {
                 log::info!("Pre-request delay: {}ms (applied by request handler)", ms);
-            }
-            ScriptAction::TransformToUpper { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                context
-                    .variables
-                    .insert(variable.clone(), resolved_input.to_uppercase());
-            }
-            ScriptAction::TransformToLower { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                context
-                    .variables
-                    .insert(variable.clone(), resolved_input.to_lowercase());
-            }
-            ScriptAction::TransformTrim { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                context
-                    .variables
-                    .insert(variable.clone(), resolved_input.trim().to_string());
-            }
-            ScriptAction::EncodeBase64 { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                let encoded =
-                    base64::engine::general_purpose::STANDARD.encode(resolved_input.as_bytes());
-                context.variables.insert(variable.clone(), encoded);
-            }
-            ScriptAction::DecodeBase64 { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                match base64::engine::general_purpose::STANDARD.decode(&resolved_input) {
-                    Ok(bytes) => {
-                        let decoded = String::from_utf8_lossy(&bytes).to_string();
-                        context.variables.insert(variable.clone(), decoded);
-                    }
-                    Err(e) => {
-                        return Err(AppError::Validation(format!("Base64 decode failed: {}", e)));
-                    }
-                }
-            }
-            ScriptAction::HashSha256 { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                let mut hasher = Sha256::new();
-                hasher.update(resolved_input.as_bytes());
-                let result = format!("{:x}", hasher.finalize());
-                context.variables.insert(variable.clone(), result);
-            }
-            ScriptAction::HmacSha256 {
-                key,
-                message,
-                variable,
-            } => {
-                let resolved_key = context.resolve_variables(key);
-                let resolved_message = context.resolve_variables(message);
-                let mut mac = HmacSha256::new_from_slice(resolved_key.as_bytes())
-                    .map_err(|e| AppError::Validation(format!("HMAC key error: {}", e)))?;
-                mac.update(resolved_message.as_bytes());
-                let result = format!("{:x}", mac.finalize().into_bytes());
-                context.variables.insert(variable.clone(), result);
             }
             ScriptAction::IfStatus { .. } => {
                 log::warn!(
@@ -486,6 +504,10 @@ impl ScriptEngine {
         response: &HttpResponse,
         context: &mut ScriptContext,
     ) -> Result<(), AppError> {
+        if Self::execute_shared_action(action, context)? {
+            return Ok(());
+        }
+
         match action {
             ScriptAction::AssertStatus { expected } => {
                 if response.status != *expected {
@@ -588,72 +610,6 @@ impl ScriptEngine {
                         .errors
                         .push(format!("Header '{}' not found", resolved_header));
                 }
-            }
-            ScriptAction::Log { message } => {
-                let resolved = context.resolve_variables(message);
-                context.logs.push(resolved);
-            }
-            ScriptAction::SetVariable { name, value } => {
-                let resolved = context.resolve_variables(value);
-                context.variables.insert(name.clone(), resolved);
-            }
-            ScriptAction::TransformToUpper { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                context
-                    .variables
-                    .insert(variable.clone(), resolved_input.to_uppercase());
-            }
-            ScriptAction::TransformToLower { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                context
-                    .variables
-                    .insert(variable.clone(), resolved_input.to_lowercase());
-            }
-            ScriptAction::TransformTrim { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                context
-                    .variables
-                    .insert(variable.clone(), resolved_input.trim().to_string());
-            }
-            ScriptAction::EncodeBase64 { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                let encoded =
-                    base64::engine::general_purpose::STANDARD.encode(resolved_input.as_bytes());
-                context.variables.insert(variable.clone(), encoded);
-            }
-            ScriptAction::DecodeBase64 { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                match base64::engine::general_purpose::STANDARD.decode(&resolved_input) {
-                    Ok(bytes) => {
-                        let decoded = String::from_utf8_lossy(&bytes).to_string();
-                        context.variables.insert(variable.clone(), decoded);
-                    }
-                    Err(e) => {
-                        let msg = format!("Base64 decode failed: {}", e);
-                        context.errors.push(msg.clone());
-                        return Err(AppError::Validation(msg));
-                    }
-                }
-            }
-            ScriptAction::HashSha256 { input, variable } => {
-                let resolved_input = context.resolve_variables(input);
-                let mut hasher = Sha256::new();
-                hasher.update(resolved_input.as_bytes());
-                let result = format!("{:x}", hasher.finalize());
-                context.variables.insert(variable.clone(), result);
-            }
-            ScriptAction::HmacSha256 {
-                key,
-                message,
-                variable,
-            } => {
-                let resolved_key = context.resolve_variables(key);
-                let resolved_message = context.resolve_variables(message);
-                let mut mac = HmacSha256::new_from_slice(resolved_key.as_bytes())
-                    .map_err(|e| AppError::Validation(format!("HMAC key error: {}", e)))?;
-                mac.update(resolved_message.as_bytes());
-                let result = format!("{:x}", mac.finalize().into_bytes());
-                context.variables.insert(variable.clone(), result);
             }
             ScriptAction::IfStatus {
                 code,

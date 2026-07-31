@@ -111,7 +111,9 @@ pub enum Message {
     StartSubscription,
     StopSubscription,
     SubscriptionConnected,
+    #[allow(dead_code)]
     SubscriptionDisconnected(String),
+    #[allow(dead_code)]
     SubscriptionDataReceived(Result<crate::protocols::graphql::GraphQLResponse, crate::error::AppError>),
     SubscriptionError(String),
 }
@@ -120,6 +122,7 @@ pub enum Message {
 pub struct SubscriptionEvent {
     pub id: String,
     pub data: serde_json::Value,
+    #[allow(dead_code)]
     pub timestamp: String,
 }
 
@@ -1177,12 +1180,10 @@ impl GraphQLView {
                                 container(column![banner, context_menu])
                                     .width(Length::Fill)
                                     .height(Length::Fill)
-                                    .into()
                             } else {
                                 container(context_menu)
                                     .width(Length::Fill)
                                     .height(Length::Fill)
-                                    .into()
                             }
                         }
                     })
@@ -1374,13 +1375,13 @@ impl GraphQLView {
                     if event_count > 0 && matches!(self.subscription_status, SubscriptionStatus::Connected) {
                         let mut events_list = column![].spacing(2);
                         // Show last 10 events
-                        let start = if event_count > 10 { event_count - 10 } else { 0 };
+                        let start = event_count.saturating_sub(10);
                         for event in &self.subscription_events[start..] {
                             let data_str = serde_json::to_string_pretty(&event.data)
                                 .unwrap_or_else(|_| event.data.to_string());
                             let truncated: String = data_str.chars().take(100).collect();
                             events_list = events_list.push(
-                                text(format!("{}: {}", event.id[..8].to_string(), truncated))
+                                text(format!("{}: {}", &event.id[..8], truncated))
                                     .size(10)
                                     .color(Color::from_rgb(0.6, 0.6, 0.6)),
                             );

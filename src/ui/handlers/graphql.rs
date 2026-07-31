@@ -456,8 +456,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
 
                             // Wait for ConnectionAck (with timeout)
                             let mut receiver = conn.receiver;
-                            let ack_timeout =
-                                tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                            tokio::time::timeout(std::time::Duration::from_secs(10), async {
                                     while let Some(event) = receiver.recv().await {
                                         if let crate::protocols::websocket::WsEvent::Message(msg) =
                                             event
@@ -504,7 +503,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                             let _ = conn.sender.send(&subscribe_msg);
 
                             // Spawn a task to handle subscription events
-                            let sub_id = subscription_id.clone();
+                            let _sub_id = subscription_id.clone();
                             tokio::spawn(async move {
                                 while let Some(event) = receiver.recv().await {
                                     if let crate::protocols::websocket::WsEvent::Message(msg) =
@@ -517,7 +516,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                                         {
                                             match server_msg {
                                                 crate::protocols::graphql::graphql_ws::ServerMessage::Next { payload, .. } => {
-                                                    let response = crate::protocols::graphql::GraphQLResponse {
+                                                    let _response = crate::protocols::graphql::GraphQLResponse {
                                                         data: Some(payload.data),
                                                         errors: vec![],
                                                     };

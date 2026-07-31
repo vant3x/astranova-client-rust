@@ -5,6 +5,7 @@ use iced::{
     Alignment, Border, Color, Element, Length, Renderer, Theme,
 };
 use iced_fonts::lucide;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,23 +104,23 @@ impl Toast {
 
 #[derive(Debug)]
 pub struct ToastManager {
-    pub toasts: Vec<Toast>,
+    pub toasts: VecDeque<Toast>,
     max_toasts: usize,
 }
 
 impl ToastManager {
     pub fn new() -> Self {
         Self {
-            toasts: Vec::new(),
+            toasts: VecDeque::new(),
             max_toasts: 5,
         }
     }
 
     pub fn add(&mut self, toast: Toast) {
-        self.toasts.push(toast);
-        if self.toasts.len() > self.max_toasts {
-            self.toasts.remove(0);
+        if self.toasts.len() >= self.max_toasts {
+            self.toasts.pop_front();
         }
+        self.toasts.push_back(toast);
     }
 
     pub fn success(&mut self, message: impl Into<String>) {
@@ -252,6 +253,10 @@ mod tests {
             manager.success(format!("Toast {}", i));
         }
         assert_eq!(manager.toasts.len(), 3);
+        // Should keep the last 3 (Toast 2, 3, 4)
+        assert_eq!(manager.toasts[0].message, "Toast 2");
+        assert_eq!(manager.toasts[1].message, "Toast 3");
+        assert_eq!(manager.toasts[2].message, "Toast 4");
     }
 
     #[test]
@@ -260,5 +265,36 @@ mod tests {
         toast.duration = Duration::from_millis(10);
         std::thread::sleep(Duration::from_millis(20));
         assert!(toast.is_expired());
+    }
+
+    #[test]
+    fn toast_clean_expired() {
+        let mut manager = ToastManager::new();
+        manager.max_toasts = 10;
+        // Add a toast that expires immediately
+        let mut toast = Toast::info("Short lived");
+        toast.duration = Duration::from_millis(5);
+        manager.toasts.push_back(toast);
+        manager.success("Long lived");
+        assert_eq!(manager.toasts.len(), 2);
+        std::thread::sleep(Duration::from_millis(10));
+        manager.clean_expired();
+        assert_eq!(manager.toasts.len(), 1);
+        assert_eq!(manager.toasts[0].message, "Long lived");
+    }
+
+    #[test]
+    fn toast_manager_fifo_order() {
+        let mut manager = ToastManager::new();
+        manager.max_toasts = 3;
+        manager.success("First");
+        manager.error("Second");
+        manager.warning("Third");
+        manager.info("Fourth");
+        // "First" should be evicted, keeping Second, Third, Fourth
+        assert_eq!(manager.toasts.len(), 3);
+        assert_eq!(manager.toasts[0].message, "Second");
+        assert_eq!(manager.toasts[1].message, "Third");
+        assert_eq!(manager.toasts[2].message, "Fourth");
     }
 }

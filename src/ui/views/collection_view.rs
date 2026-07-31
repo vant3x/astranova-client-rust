@@ -467,7 +467,7 @@ impl CollectionView {
             .padding(Padding::from([4, 8]))
             .style(|_theme, _status| button::Style {
                 background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                text_color: ThemeColors::TEXT_SECONDARY,
+                text_color: ThemeColors::TEXT_PRIMARY,
                 border: iced::Border::default()
                     .rounded(4)
                     .color(ThemeColors::BORDER)
@@ -483,7 +483,7 @@ impl CollectionView {
             .padding(Padding::from([4, 8]))
             .style(|_theme, _status| button::Style {
                 background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                text_color: ThemeColors::TEXT_SECONDARY,
+                text_color: ThemeColors::TEXT_PRIMARY,
                 border: iced::Border::default()
                     .rounded(4)
                     .color(ThemeColors::BORDER)
@@ -499,7 +499,7 @@ impl CollectionView {
             .padding(Padding::from([4, 8]))
             .style(|_theme, _status| button::Style {
                 background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                text_color: ThemeColors::TEXT_SECONDARY,
+                text_color: ThemeColors::TEXT_PRIMARY,
                 border: iced::Border::default()
                     .rounded(4)
                     .color(ThemeColors::BORDER)

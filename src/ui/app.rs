@@ -106,22 +106,47 @@ impl Recipe for MenuEventRecipe {
     fn stream(self: Box<Self>, _input: EventStream) -> BoxStream<'static, Message> {
         use std::time::Duration;
 
-        futures::stream::unfold(0u64, |tick| async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let next_tick = tick + 1;
-            let msg = if next_tick % 5 == 0 {
-                Message::PollMockServerLogs
-            } else if let Some(msg) = muda::MenuEvent::receiver()
-                .try_recv()
-                .ok()
-                .and_then(|event| crate::ui::menu::handle_menu_event(&event))
-            {
-                msg
-            } else {
-                return Some((Message::PollMockServerLogs, next_tick));
-            };
-            Some((msg, next_tick))
-        })
+        // Two separate intervals:
+        // - Menu events: poll every 50ms (low latency for menu interactions)
+        // - Mock server logs: poll every 1000ms (logs are low-frequency, no need for sub-second polling)
+        let menu_interval = Duration::from_millis(50);
+        let log_interval = Duration::from_secs(1);
+
+        futures::stream::unfold(
+            (tokio::time::Instant::now() + menu_interval, tokio::time::Instant::now() + log_interval),
+            move |(next_menu_tick, next_log_tick)| async move {
+                let now = tokio::time::Instant::now();
+
+                // Sleep until the earliest tick
+                let sleep_dur = std::cmp::min(
+                    next_menu_tick.saturating_duration_since(now),
+                    next_log_tick.saturating_duration_since(now),
+                );
+                if !sleep_dur.is_zero() {
+                    tokio::time::sleep(sleep_dur).await;
+                }
+                let now = tokio::time::Instant::now();
+
+                // Check menu events first (higher priority)
+                if now >= next_menu_tick {
+                    if let Some(msg) = muda::MenuEvent::receiver()
+                        .try_recv()
+                        .ok()
+                        .and_then(|event| crate::ui::menu::handle_menu_event(&event))
+                    {
+                        return Some((msg, (now + menu_interval, next_log_tick)));
+                    }
+                }
+
+                // Then check mock server logs (lower frequency)
+                if now >= next_log_tick {
+                    return Some((Message::PollMockServerLogs, (next_menu_tick, now + log_interval)));
+                }
+
+                // Nothing to do, sleep until next menu tick
+                Some((Message::NoOp, (now + menu_interval, next_log_tick)))
+            },
+        )
         .boxed()
     }
 }
@@ -210,6 +235,7 @@ impl Protocol {
 pub enum View {
     Main,
     EnvironmentManager,
+    CookieManager,
 }
 
 pub fn main() -> iced::Result {
@@ -257,6 +283,7 @@ pub(crate) struct AstraioApp {
     pub(crate) secret_store: crate::services::secret_store::SecretStore,
     pub(crate) global_config: crate::http_client::config::GlobalConfig,
     pub(crate) main_window_id: Option<iced::window::Id>,
+    pub(crate) cookie_manager_view: crate::ui::views::cookie_manager::CookieManagerView,
 }
 
 impl Drop for AstraioApp {
@@ -358,6 +385,8 @@ pub enum Message {
     ),
     GraphQLOAuth2AutoPollToggle(bool),
     HttpStreamChunk(usize, crate::http_client::response::HttpStreamEvent),
+    CookieManagerMsg(crate::ui::views::cookie_manager::Message),
+    ToggleCookieManager,
 }
 
 impl AstraioApp {
@@ -484,6 +513,7 @@ impl AstraioApp {
             secret_store,
             global_config,
             main_window_id: None,
+            cookie_manager_view: crate::ui::views::cookie_manager::CookieManagerView::default(),
         };
         (app, Task::none())
     }
@@ -633,6 +663,7 @@ impl AstraioApp {
                 self.current_view = match self.current_view {
                     View::EnvironmentManager => View::Main,
                     View::Main => View::EnvironmentManager,
+                    View::CookieManager => View::CookieManager,
                 };
                 Task::none()
             }
@@ -1063,6 +1094,125 @@ impl AstraioApp {
                 }
                 Task::none()
             }
+            Message::CookieManagerMsg(msg) => {
+                use crate::ui::views::cookie_manager::CookieManagerAction;
+                if let Some(action) = self.cookie_manager_view.update(msg) {
+                    match action {
+                        CookieManagerAction::DeleteCookie(domain, name, path) => {
+                            if let Ok(mut jar) = self.cookie_jar.lock() {
+                                jar.remove_cookie(&domain, &name, &path);
+                            }
+                            if let Err(e) = crate::persistence::database::delete_cookie_db(
+                                &self.db_conn, &domain, &name, &path,
+                            ) {
+                                log::warn!("Failed to delete cookie from DB: {}", e);
+                            }
+                            self.sync_cookie_data_to_tabs();
+                            self.toast_manager.success("Cookie deleted");
+                        }
+                        CookieManagerAction::ClearDomain(domain) => {
+                            if let Ok(mut jar) = self.cookie_jar.lock() {
+                                jar.clear_domain(&domain);
+                            }
+                            if let Err(e) = crate::persistence::database::clear_domain_cookies_db(
+                                &self.db_conn, &domain,
+                            ) {
+                                log::warn!("Failed to clear domain cookies from DB: {}", e);
+                            }
+                            self.sync_cookie_data_to_tabs();
+                            self.toast_manager.success(format!("Cookies for {} cleared", domain));
+                        }
+                        CookieManagerAction::ClearAll => {
+                            if let Ok(mut jar) = self.cookie_jar.lock() {
+                                jar.clear();
+                            }
+                            if let Err(e) = crate::persistence::database::clear_cookies_db(&self.db_conn) {
+                                log::warn!("Failed to clear cookies from DB: {}", e);
+                            }
+                            for tab in &mut self.request_tabs {
+                                tab.cookie_count = 0;
+                                tab.cookie_domain_count = 0;
+                                tab.cookie_domains.clear();
+                                tab.cookie_domain_cookies.clear();
+                            }
+                            self.toast_manager.success("All cookies cleared");
+                        }
+                        CookieManagerAction::SaveEdit(domain, name, path, new_value) => {
+                            if let Ok(mut jar) = self.cookie_jar.lock() {
+                                if let Some(cookies) = jar.cookies_for_domain_mut(&domain) {
+                                    for c in cookies.iter_mut() {
+                                        if c.name == name && c.path == path {
+                                            c.value = new_value.clone();
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if let Err(e) = crate::persistence::database::update_cookie_value_db(
+                                &self.db_conn, &domain, &name, &path, &new_value,
+                            ) {
+                                log::warn!("Failed to update cookie in DB: {}", e);
+                            }
+                            self.sync_cookie_data_to_tabs();
+                            self.toast_manager.success("Cookie updated");
+                        }
+                        CookieManagerAction::ImportCookies => {
+                            return Task::perform(
+                                async {
+                                    rfd::AsyncFileDialog::new()
+                                        .add_filter("Cookie files", &["txt", "json", "cookie", "cookies"])
+                                        .pick_file()
+                                        .await
+                                        .map(|f| f.path().to_path_buf())
+                                        .and_then(|p| std::fs::read_to_string(p).ok())
+                                },
+                                Message::ImportCookiesData,
+                            );
+                        }
+                        CookieManagerAction::ExportCookies => {
+                            let content = match self.cookie_jar.lock() {
+                                Ok(jar) => jar.to_netscape(),
+                                Err(e) => {
+                                    log::error!("Failed to acquire cookie_jar lock for export: {}", e);
+                                    return Task::none();
+                                }
+                            };
+                            return Task::perform(
+                                async move {
+                                    rfd::AsyncFileDialog::new()
+                                        .add_filter("Cookie files", &["txt"])
+                                        .set_file_name("cookies.txt")
+                                        .save_file()
+                                        .await
+                                        .and_then(|f| {
+                                            std::fs::write(f.path(), &content).ok()?;
+                                            Some(())
+                                        })
+                                },
+                                |result| Message::ExportCookiesComplete(result.map(|_| "Exported".to_string())),
+                            );
+                        }
+                    }
+                    // Re-sync after any action
+                    if let Ok(jar) = self.cookie_jar.lock() {
+                        self.cookie_manager_view.sync_from_jar(&jar);
+                    }
+                }
+                Task::none()
+            }
+            Message::ToggleCookieManager => {
+                self.current_view = match self.current_view {
+                    View::CookieManager => View::Main,
+                    View::Main => View::CookieManager,
+                    View::EnvironmentManager => View::CookieManager,
+                };
+                if self.current_view == View::CookieManager {
+                    if let Ok(jar) = self.cookie_jar.lock() {
+                        self.cookie_manager_view.sync_from_jar(&jar);
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1085,7 +1235,8 @@ impl AstraioApp {
 
         let active_idx = self.active_request_tab_index;
 
-        let active_cookies: Option<Vec<CookieSnapshot>> = if !self.request_tabs.is_empty() {
+        // Only build cookie snapshots for the active tab
+        let active_cookies: Option<Vec<CookieSnapshot>> = if active_idx < self.request_tabs.len() {
             let mut all_cookies = Vec::with_capacity(total);
             for (d, _) in &domains {
                 for c in jar.cookies_for_domain(d) {
@@ -1107,17 +1258,19 @@ impl AstraioApp {
         };
         drop(jar);
 
-        if let Some(cookies) = active_cookies {
-            for (i, tab) in self.request_tabs.iter_mut().enumerate() {
-                tab.cookie_count = total;
-                tab.cookie_domain_count = domain_count;
-                if i == active_idx {
+        // Update only the active tab with full data; other tabs only get counts
+        for (i, tab) in self.request_tabs.iter_mut().enumerate() {
+            tab.cookie_count = total;
+            tab.cookie_domain_count = domain_count;
+            if i == active_idx {
+                if let Some(ref cookies) = active_cookies {
                     tab.cookie_domains = domains.clone();
                     tab.cookie_domain_cookies = cookies.clone();
-                } else {
-                    tab.cookie_domains.clear();
-                    tab.cookie_domain_cookies.clear();
                 }
+            } else {
+                // Non-active tabs: clear expensive data, keep only counts
+                tab.cookie_domains.clear();
+                tab.cookie_domain_cookies.clear();
             }
         }
     }
@@ -1505,6 +1658,9 @@ impl AstraioApp {
                 stack![content, toast_overlay].into()
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
+            View::CookieManager => {
+                self.cookie_manager_view.view().map(Message::CookieManagerMsg)
+            }
         }
     }
 }

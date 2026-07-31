@@ -275,6 +275,91 @@ pub struct TestResult {
 
 pub use crate::ui::theme::method_color;
 
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ResponseState {
+    pub last_response: Option<HttpResponse>,
+    pub response_body_editor: text_editor::Content,
+    pub status_code: Option<u16>,
+    pub content_type: Option<String>,
+    pub response_duration: Option<Duration>,
+    pub response_size: Option<u64>,
+    pub streaming_body: String,
+    pub streaming_chunks_count: u32,
+    pub show_image_preview: bool,
+    pub image_preview_handle: Option<ImageHandle>,
+}
+
+impl Default for ResponseState {
+    fn default() -> Self {
+        Self {
+            last_response: None,
+            response_body_editor: text_editor::Content::new(),
+            status_code: None,
+            content_type: None,
+            response_duration: None,
+            response_size: None,
+            streaming_body: String::new(),
+            streaming_chunks_count: 0,
+            show_image_preview: false,
+            image_preview_handle: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ScriptState {
+    pub scripts: RequestScripts,
+    pub pre_request_script_editor: text_editor::Content,
+    pub post_response_script_editor: text_editor::Content,
+    pub active_script_tab: ScriptTab,
+    pub script_output: ScriptOutput,
+}
+
+impl Default for ScriptState {
+    fn default() -> Self {
+        Self {
+            scripts: RequestScripts::default(),
+            pre_request_script_editor: text_editor::Content::new(),
+            post_response_script_editor: text_editor::Content::new(),
+            active_script_tab: ScriptTab::default(),
+            script_output: ScriptOutput::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct SearchState {
+    pub show_response_search: bool,
+    pub response_search_query: String,
+    pub response_search_matches: Vec<(usize, usize)>,
+    pub response_search_index: usize,
+    pub last_search_instant: Option<std::time::Instant>,
+}
+
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct CookieTabState {
+    pub cookie_count: usize,
+    pub cookie_domain_count: usize,
+    pub cookie_manager: crate::ui::views::cookie_manager::CookieManagerView,
+    pub cookie_domains: Vec<(String, usize)>,
+    pub cookie_domain_cookies: Vec<CookieSnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct SessionState {
+    pub sessions: Vec<crate::persistence::database::Session>,
+    pub new_session_name: String,
+    pub selected_session: Option<String>,
+    pub pending_delete_session: Option<String>,
+    pub renaming_session: Option<String>,
+    pub rename_value: String,
+}
+
 #[derive(Debug)]
 pub struct HttpRequestView {
     pub url_input: String,
@@ -1293,7 +1378,15 @@ impl HttpRequestView {
                     | CmMsg::ImportCookies
                     | CmMsg::ImportData(_)
                     | CmMsg::ExportCookies
-                    | CmMsg::ExportComplete(_) => {}
+                    | CmMsg::ExportComplete(_)
+                    | CmMsg::DeselectDomain
+                    | CmMsg::RequestDeleteCookie(..)
+                    | CmMsg::ConfirmDeleteCookie(..)
+                    | CmMsg::CancelDeleteCookie
+                    | CmMsg::RequestClearAll
+                    | CmMsg::ConfirmClearAll
+                    | CmMsg::CancelClearAll
+                    | CmMsg::Close => {}
                 }
             }
             Message::ScriptTabSelected(tab) => {

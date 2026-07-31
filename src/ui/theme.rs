@@ -2,8 +2,10 @@ use iced::Color;
 
 // ── Modern Color Palette ─────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub struct ThemeColors;
 
+#[allow(dead_code)]
 impl ThemeColors {
     // Background layers
     pub const BG_DARK: Color = Color::from_rgb(0.10, 0.10, 0.14);
@@ -124,11 +126,13 @@ pub fn status_label(status: u16) -> &'static str {
 // ── UI Helper Functions ──────────────────────────────────────────────
 
 /// Method badge background color (dim version for backgrounds)
+#[allow(dead_code)]
 pub fn method_badge_bg(method: &str) -> Color {
     method_color_dim(method)
 }
 
 /// Status badge background color
+#[allow(dead_code)]
 pub fn status_badge_bg(status: u16) -> Color {
     status_color_dim(status)
 }

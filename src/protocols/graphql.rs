@@ -183,6 +183,7 @@ pub fn format_response(response: &GraphQLResponse) -> String {
 
 /// GraphQL WebSocket subscription protocol types (graphql-ws)
 pub mod graphql_ws {
+    #![allow(dead_code)]
     use serde::{Deserialize, Serialize};
 
     /// Client-to-server messages

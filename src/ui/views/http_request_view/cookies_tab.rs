@@ -11,6 +11,22 @@ impl HttpRequestView {
             search_query: self.cookie_manager.search_query.clone(),
             editing_cookie: self.cookie_manager.editing_cookie.clone(),
             edit_value: self.cookie_manager.edit_value.clone(),
+            pending_delete_cookie: None,
+            pending_clear_all: false,
+            domains: self.cookie_domains.clone(),
+            cookies: self.cookie_domain_cookies.iter().map(|c| {
+                crate::ui::views::cookie_manager::CookieSnapshot {
+                    name: c.name.clone(),
+                    value: c.value.clone(),
+                    domain: c.domain.clone(),
+                    path: c.path.clone(),
+                    secure: c.secure,
+                    http_only: c.http_only,
+                    same_site: c.same_site.clone(),
+                    expires: c.expires.clone(),
+                }
+            }).collect(),
+            total_count: self.cookie_count,
         };
 
         let mut domain_list = column![].spacing(2);
@@ -25,7 +41,9 @@ impl HttpRequestView {
 
             let domain_button = if is_selected {
                 button(domain_label)
-                    .style(iced::widget::button::primary)
+                    .style(|theme: &Theme, status: button::Status| {
+                        button::primary(theme, status)
+                    })
                     .width(Length::Fill)
             } else {
                 button(domain_label).width(Length::Fill)

@@ -276,5 +276,8 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
 fn find_free_port() -> u16 {
     use std::net::TcpListener;
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to find free port");
-    listener.local_addr().unwrap().port()
+    listener
+        .local_addr()
+        .expect("listener must have local address")
+        .port()
 }

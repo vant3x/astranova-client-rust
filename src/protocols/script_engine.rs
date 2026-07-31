@@ -4,6 +4,9 @@ use crate::http_client::response::HttpResponse;
 use rquickjs::{Context, Function, Object, Runtime, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 5_000;
 
 #[derive(Debug, Clone)]
 pub struct ScriptOutput {
@@ -91,6 +94,15 @@ impl ScriptEngineV2 {
         request: &mut HttpRequest,
         variables: &mut HashMap<String, String>,
     ) -> Result<ScriptOutput, AppError> {
+        Self::execute_pre_request_with_timeout(js_code, request, variables, DEFAULT_SCRIPT_TIMEOUT_MS)
+    }
+
+    pub fn execute_pre_request_with_timeout(
+        js_code: &str,
+        request: &mut HttpRequest,
+        variables: &mut HashMap<String, String>,
+        timeout_ms: u64,
+    ) -> Result<ScriptOutput, AppError> {
         if js_code.trim().is_empty() {
             return Ok(ScriptOutput {
                 variables: variables.clone(),
@@ -104,6 +116,14 @@ impl ScriptEngineV2 {
 
         let rt = Runtime::new()
             .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {}", e)))?;
+
+        let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        let deadline_clone = deadline;
+        // Return true to STOP execution when deadline exceeded, false to continue
+        rt.set_interrupt_handler(Some(Box::new(move || {
+            Instant::now() >= deadline_clone
+        })));
+
         let ctx = Context::full(&rt)
             .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {}", e)))?;
 
@@ -112,10 +132,20 @@ impl ScriptEngineV2 {
             execute_user_code(&ctx, js_code)
         });
 
-        if let Err(e) = exec_result {
-            let errs = state.lock().unwrap().errors.clone();
-            if errs.is_empty() {
-                return Err(e);
+        match exec_result {
+            Ok(()) => {}
+            Err(e) => {
+                let errs = state.lock().unwrap().errors.clone();
+                if !errs.is_empty() {
+                    // Script reported errors through pm.expect/pm.test - not a timeout
+                } else if Instant::now() >= deadline {
+                    return Err(AppError::Validation(format!(
+                        "Script execution timed out after {}ms",
+                        timeout_ms
+                    )));
+                } else {
+                    return Err(e);
+                }
             }
         }
 
@@ -136,6 +166,15 @@ impl ScriptEngineV2 {
         response: &HttpResponse,
         variables: &mut HashMap<String, String>,
     ) -> Result<ScriptOutput, AppError> {
+        Self::execute_post_response_with_timeout(js_code, response, variables, DEFAULT_SCRIPT_TIMEOUT_MS)
+    }
+
+    pub fn execute_post_response_with_timeout(
+        js_code: &str,
+        response: &HttpResponse,
+        variables: &mut HashMap<String, String>,
+        timeout_ms: u64,
+    ) -> Result<ScriptOutput, AppError> {
         if js_code.trim().is_empty() {
             return Ok(ScriptOutput {
                 variables: variables.clone(),
@@ -151,6 +190,14 @@ impl ScriptEngineV2 {
 
         let rt = Runtime::new()
             .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {}", e)))?;
+
+        let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        let deadline_clone = deadline;
+        // Return true to STOP execution when deadline exceeded, false to continue
+        rt.set_interrupt_handler(Some(Box::new(move || {
+            Instant::now() >= deadline_clone
+        })));
+
         let ctx = Context::full(&rt)
             .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {}", e)))?;
 
@@ -159,10 +206,20 @@ impl ScriptEngineV2 {
             execute_user_code(&ctx, js_code)
         });
 
-        if let Err(e) = exec_result {
-            let errs = state.lock().unwrap().errors.clone();
-            if errs.is_empty() {
-                return Err(e);
+        match exec_result {
+            Ok(()) => {}
+            Err(e) => {
+                let errs = state.lock().unwrap().errors.clone();
+                if !errs.is_empty() {
+                    // Script reported errors through pm.expect/pm.test - not a timeout
+                } else if Instant::now() >= deadline {
+                    return Err(AppError::Validation(format!(
+                        "Script execution timed out after {}ms",
+                        timeout_ms
+                    )));
+                } else {
+                    return Err(e);
+                }
             }
         }
 
