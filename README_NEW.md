@@ -243,7 +243,7 @@ Ensure the required system libraries are installed (see Prerequisites).
 
 ## Project Status
 
-**Version:** 0.4.0
+**Version:** 0.6.0
 
 | Feature | Status |
 |---------|--------|
