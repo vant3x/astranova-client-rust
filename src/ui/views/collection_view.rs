@@ -61,6 +61,9 @@ pub enum Message {
     ExportCollectionData(()),
     ExportCollectionHar(usize),
     ExportCollectionHarData(()),
+    ExportCollectionOpenApi(usize),
+    ExportCollectionOpenApiData(()),
+    RunCollection(usize),
     SaveCurrentRequest,
     ToggleVariablesPanel(usize),
     AddCollectionVariable(usize),
@@ -289,6 +292,9 @@ impl CollectionView {
             Message::ExportCollectionData(_) => None,
             Message::ExportCollectionHar(_) => None,
             Message::ExportCollectionHarData(_) => None,
+            Message::ExportCollectionOpenApi(_) => None,
+            Message::ExportCollectionOpenApiData(_) => None,
+            Message::RunCollection(_) => None,
             Message::SaveCurrentRequest => None,
             Message::LoadRequest(req_id) => {
                 self.selected_item = Some(TreeItemId::Request(req_id));
@@ -513,25 +519,18 @@ impl CollectionView {
 
         // ── Header ──
         let header = column![
-            row![
-                text("Collections").size(15).color(ThemeColors::TEXT_PRIMARY),
-                button(
-                    row![lucide::plus().size(13), text(" New").size(11)].spacing(3),
-                )
-                .padding(Padding::from([4, 8]))
-                .style(|_theme, _status| button::Style {
-                    background: Some(iced::Background::Color(ThemeColors::ACCENT_DIM)),
-                    text_color: ThemeColors::ACCENT,
-                    border: iced::Border::default()
-                        .rounded(4)
-                        .color(ThemeColors::ACCENT)
-                        .width(1),
-                    ..button::Style::default()
-                })
-                .on_press(Message::CreateCollection),
-            ]
+            row![text("Collections")
+                .size(15)
+                .color(ThemeColors::TEXT_PRIMARY),]
             .spacing(8)
             .align_y(Alignment::Center),
+            row![
+                button(row![lucide::plus().size(12), text(" New").size(11)].spacing(3),)
+                    .padding(Padding::from([4, 10]))
+                    .style(iced::widget::button::primary)
+                    .on_press(Message::CreateCollection),
+            ]
+            .spacing(4),
             import_row,
         ]
         .spacing(6);
@@ -558,29 +557,28 @@ impl CollectionView {
                 }
             });
 
-        let save_button: Element<'_, Message, Theme, Renderer> = button(
-            row![lucide::save().size(12), text(" Save Request").size(11)].spacing(4),
-        )
-        .padding(Padding::from([5, 10]))
-        .style(|_theme, _status| button::Style {
-            background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-            text_color: if self.collections.is_empty() {
-                ThemeColors::TEXT_DIM
-            } else {
-                ThemeColors::TEXT_SECONDARY
-            },
-            border: iced::Border::default()
-                .rounded(4)
-                .color(ThemeColors::BORDER)
-                .width(1),
-            ..button::Style::default()
-        })
-        .on_press_maybe(if self.collections.is_empty() {
-            None
-        } else {
-            Some(Message::SaveCurrentRequest)
-        })
-        .into();
+        let save_button: Element<'_, Message, Theme, Renderer> =
+            button(row![lucide::save().size(12), text(" Save Request").size(11)].spacing(4))
+                .padding(Padding::from([5, 10]))
+                .style(|_theme, _status| button::Style {
+                    background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                    text_color: if self.collections.is_empty() {
+                        ThemeColors::TEXT_DIM
+                    } else {
+                        ThemeColors::TEXT_SECONDARY
+                    },
+                    border: iced::Border::default()
+                        .rounded(4)
+                        .color(ThemeColors::BORDER)
+                        .width(1),
+                    ..button::Style::default()
+                })
+                .on_press_maybe(if self.collections.is_empty() {
+                    None
+                } else {
+                    Some(Message::SaveCurrentRequest)
+                })
+                .into();
 
         let mut tree = column![].spacing(1);
 
@@ -598,8 +596,12 @@ impl CollectionView {
                 container(
                     column![
                         lucide::folder().size(32).color(ThemeColors::TEXT_DIM),
-                        text("No collections yet").size(13).color(ThemeColors::TEXT_SECONDARY),
-                        text("Create a collection to organize your requests").size(11).color(ThemeColors::TEXT_MUTED),
+                        text("No collections yet")
+                            .size(13)
+                            .color(ThemeColors::TEXT_SECONDARY),
+                        text("Create a collection to organize your requests")
+                            .size(11)
+                            .color(ThemeColors::TEXT_MUTED),
                     ]
                     .spacing(6)
                     .align_x(Alignment::Center),
@@ -684,7 +686,9 @@ impl CollectionView {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_theme: &Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(ThemeColors::BG_DARK)),
+                background: Some(iced::Background::Color(
+                    iced::Theme::Dark.palette().background,
+                )),
                 ..iced::widget::container::Style::default()
             })
             .into()
@@ -739,9 +743,15 @@ impl CollectionView {
             tree = tree.push(rename_row);
         } else {
             let expand_icon: Element<'_, Message, Theme, Renderer> = if is_expanded {
-                lucide::chevron_down().size(12).color(ThemeColors::TEXT_SECONDARY).into()
+                lucide::chevron_down()
+                    .size(12)
+                    .color(ThemeColors::TEXT_SECONDARY)
+                    .into()
             } else {
-                lucide::chevron_right().size(12).color(ThemeColors::TEXT_SECONDARY).into()
+                lucide::chevron_right()
+                    .size(12)
+                    .color(ThemeColors::TEXT_SECONDARY)
+                    .into()
             };
 
             let col_content = row![
@@ -754,9 +764,15 @@ impl CollectionView {
                         weight: iced::font::Weight::Medium,
                         ..iced::font::Font::default()
                     }),
-                text(format!(" ({})", self.requests.iter().filter(|r| r.collection_id == col.id).count()))
-                    .size(10)
-                    .color(ThemeColors::TEXT_DIM),
+                text(format!(
+                    " ({})",
+                    self.requests
+                        .iter()
+                        .filter(|r| r.collection_id == col.id)
+                        .count()
+                ))
+                .size(10)
+                .color(ThemeColors::TEXT_DIM),
             ]
             .spacing(5)
             .align_y(Alignment::Center);
@@ -778,23 +794,26 @@ impl CollectionView {
             } else {
                 actions = actions
                     .push(
-                        icon_btn_style(lucide::pencil().size(10).into(), ThemeColors::TEXT_SECONDARY)
-                            .on_press(Message::StartRenameCollection(col_idx)),
+                        icon_btn_style(
+                            lucide::pencil().size(10).into(),
+                            ThemeColors::TEXT_SECONDARY,
+                        )
+                        .on_press(Message::StartRenameCollection(col_idx)),
                     )
                     .push(
                         icon_btn_style(lucide::braces().size(10).into(), ThemeColors::PURPLE)
                             .on_press(Message::ToggleVariablesPanel(col_idx)),
                     )
                     .push(
-                        icon_btn_style(lucide::download().size(10).into(), ThemeColors::TEXT_SECONDARY)
-                            .on_press(Message::ExportCollection(col_idx)),
+                        icon_btn_style(
+                            lucide::download().size(10).into(),
+                            ThemeColors::TEXT_SECONDARY,
+                        )
+                        .on_press(Message::ExportCollection(col_idx)),
                     )
                     .push(
-                        icon_btn_style(
-                            lucide::trash().size(10).into(),
-                            ThemeColors::ERROR,
-                        )
-                        .on_press(Message::RequestDeleteCollection(col_idx)),
+                        icon_btn_style(lucide::trash().size(10).into(), ThemeColors::ERROR)
+                            .on_press(Message::RequestDeleteCollection(col_idx)),
                     );
             }
 
@@ -829,8 +848,11 @@ impl CollectionView {
                             .on_press(Message::ExportCollection(col_idx)),
                         context_menu_item("Export as HAR")
                             .on_press(Message::ExportCollectionHar(col_idx)),
-                        danger_item("Delete")
-                            .on_press(Message::RequestDeleteCollection(col_idx)),
+                        context_menu_item("Export as OpenAPI")
+                            .on_press(Message::ExportCollectionOpenApi(col_idx)),
+                        context_menu_item("Run Collection")
+                            .on_press(Message::RunCollection(col_idx)),
+                        danger_item("Delete").on_press(Message::RequestDeleteCollection(col_idx)),
                     ]
                     .spacing(2)
                     .padding(4),
@@ -854,7 +876,9 @@ impl CollectionView {
                         .width(Length::Fill)
                         .style(|_theme: &Theme, status: iced::widget::text_input::Status| {
                             let border_color = match status {
-                                iced::widget::text_input::Status::Focused { .. } => ThemeColors::ACCENT,
+                                iced::widget::text_input::Status::Focused { .. } => {
+                                    ThemeColors::ACCENT
+                                }
                                 _ => ThemeColors::BORDER,
                             };
                             iced::widget::text_input::Style {
@@ -883,7 +907,9 @@ impl CollectionView {
                 let vars_header = row![
                     Self::indent(1),
                     lucide::braces().size(11).color(ThemeColors::PURPLE),
-                    text("Variables").size(11).color(ThemeColors::TEXT_SECONDARY),
+                    text("Variables")
+                        .size(11)
+                        .color(ThemeColors::TEXT_SECONDARY),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
@@ -903,7 +929,9 @@ impl CollectionView {
                             .width(Length::FillPortion(1))
                             .style(|_theme: &Theme, status: iced::widget::text_input::Status| {
                                 let border_color = match status {
-                                    iced::widget::text_input::Status::Focused { .. } => ThemeColors::ACCENT,
+                                    iced::widget::text_input::Status::Focused { .. } => {
+                                        ThemeColors::ACCENT
+                                    }
                                     _ => ThemeColors::BORDER,
                                 };
                                 iced::widget::text_input::Style {
@@ -930,7 +958,9 @@ impl CollectionView {
                             .width(Length::FillPortion(2))
                             .style(|_theme: &Theme, status: iced::widget::text_input::Status| {
                                 let border_color = match status {
-                                    iced::widget::text_input::Status::Focused { .. } => ThemeColors::ACCENT,
+                                    iced::widget::text_input::Status::Focused { .. } => {
+                                        ThemeColors::ACCENT
+                                    }
                                     _ => ThemeColors::BORDER,
                                 };
                                 iced::widget::text_input::Style {
@@ -1067,18 +1097,22 @@ impl CollectionView {
             tree = tree.push(rename_row);
         } else {
             let expand_icon: Element<'_, Message, Theme, Renderer> = if is_expanded {
-                lucide::chevron_down().size(11).color(ThemeColors::TEXT_SECONDARY).into()
+                lucide::chevron_down()
+                    .size(11)
+                    .color(ThemeColors::TEXT_SECONDARY)
+                    .into()
             } else {
-                lucide::chevron_right().size(11).color(ThemeColors::TEXT_SECONDARY).into()
+                lucide::chevron_right()
+                    .size(11)
+                    .color(ThemeColors::TEXT_SECONDARY)
+                    .into()
             };
 
             let folder_content = row![
                 Self::indent(depth),
                 expand_icon,
                 lucide::folder_open().size(12).color(ThemeColors::WARNING),
-                text(&folder.name)
-                    .size(12)
-                    .color(ThemeColors::TEXT_PRIMARY),
+                text(&folder.name).size(12).color(ThemeColors::TEXT_PRIMARY),
             ]
             .spacing(3)
             .align_y(Alignment::Center);
@@ -1100,8 +1134,11 @@ impl CollectionView {
             } else {
                 actions = actions
                     .push(
-                        icon_btn_style(lucide::pencil().size(10).into(), ThemeColors::TEXT_SECONDARY)
-                            .on_press(Message::StartRenameFolder(folder.id)),
+                        icon_btn_style(
+                            lucide::pencil().size(10).into(),
+                            ThemeColors::TEXT_SECONDARY,
+                        )
+                        .on_press(Message::StartRenameFolder(folder.id)),
                     )
                     .push(
                         icon_btn_style(lucide::trash().size(10).into(), ThemeColors::ERROR)
@@ -1132,10 +1169,8 @@ impl CollectionView {
                     column![
                         context_menu_item("New Sub-folder")
                             .on_press(Message::ShowNewFolderInput(col_id, Some(folder_id))),
-                        context_menu_item("Rename")
-                            .on_press(Message::StartRenameFolder(folder_id)),
-                        danger_item("Delete")
-                            .on_press(Message::RequestDeleteFolder(folder_id)),
+                        context_menu_item("Rename").on_press(Message::StartRenameFolder(folder_id)),
+                        danger_item("Delete").on_press(Message::RequestDeleteFolder(folder_id)),
                     ]
                     .spacing(2)
                     .padding(4),
@@ -1161,7 +1196,9 @@ impl CollectionView {
                         .width(Length::Fill)
                         .style(|_theme: &Theme, status: iced::widget::text_input::Status| {
                             let border_color = match status {
-                                iced::widget::text_input::Status::Focused { .. } => ThemeColors::ACCENT,
+                                iced::widget::text_input::Status::Focused { .. } => {
+                                    ThemeColors::ACCENT
+                                }
                                 _ => ThemeColors::BORDER,
                             };
                             iced::widget::text_input::Style {
@@ -1257,15 +1294,12 @@ impl CollectionView {
             tree = tree.push(rename_row);
         } else {
             // ── Method badge ──
-            let method_badge = container(
-                text(&req.method)
-                    .size(9)
-                    .color(method_color)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..iced::font::Font::default()
-                    }),
-            )
+            let method_badge = container(text(&req.method).size(9).color(method_color).font(
+                iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::font::Font::default()
+                },
+            ))
             .padding(Padding::from([2, 5]))
             .style(move |_theme: &Theme| iced::widget::container::Style {
                 background: Some(iced::Background::Color(method_bg)),
@@ -1279,9 +1313,7 @@ impl CollectionView {
             let req_content = row![
                 Self::indent(depth),
                 method_badge,
-                text(&req.name)
-                    .size(11)
-                    .color(ThemeColors::TEXT_PRIMARY),
+                text(&req.name).size(11).color(ThemeColors::TEXT_PRIMARY),
             ]
             .spacing(4)
             .align_y(Alignment::Center);
@@ -1303,8 +1335,11 @@ impl CollectionView {
             } else {
                 actions = actions
                     .push(
-                        icon_btn_style(lucide::pencil().size(9).into(), ThemeColors::TEXT_SECONDARY)
-                            .on_press(Message::StartRenameRequest(req.id)),
+                        icon_btn_style(
+                            lucide::pencil().size(9).into(),
+                            ThemeColors::TEXT_SECONDARY,
+                        )
+                        .on_press(Message::StartRenameRequest(req.id)),
                     )
                     .push(
                         icon_btn_style(lucide::trash().size(9).into(), ThemeColors::ERROR)
@@ -1333,16 +1368,12 @@ impl CollectionView {
             let context_menu = ContextMenu::new(full_row, move || {
                 container(
                     column![
-                        context_menu_item("Move Up")
-                            .on_press(Message::MoveRequestUp(req_id)),
-                        context_menu_item("Move Down")
-                            .on_press(Message::MoveRequestDown(req_id)),
+                        context_menu_item("Move Up").on_press(Message::MoveRequestUp(req_id)),
+                        context_menu_item("Move Down").on_press(Message::MoveRequestDown(req_id)),
                         context_menu_item("Move to Folder...")
                             .on_press(Message::StartMoveToFolder(req_id)),
-                        context_menu_item("Rename")
-                            .on_press(Message::StartRenameRequest(req_id)),
-                        danger_item("Delete")
-                            .on_press(Message::RequestDeleteRequest(req_id)),
+                        context_menu_item("Rename").on_press(Message::StartRenameRequest(req_id)),
+                        danger_item("Delete").on_press(Message::RequestDeleteRequest(req_id)),
                     ]
                     .spacing(2)
                     .padding(4),

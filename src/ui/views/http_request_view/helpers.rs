@@ -32,10 +32,10 @@ pub(super) fn response_content_type_to_syntax(ct: &str) -> &str {
     }
 }
 
-pub(super) fn cookie_badge<'a>(
-    icon: &'a str,
+pub(super) fn cookie_badge(
+    icon: &str,
     kind: BadgeKind,
-) -> Element<'a, Message, Theme, iced::Renderer> {
+) -> Element<'_, Message, Theme, iced::Renderer> {
     let bg = match kind {
         BadgeKind::Secure => Color::from_rgb(0.2, 0.6, 0.2),
         BadgeKind::HttpOnly => Color::from_rgb(0.3, 0.3, 0.7),

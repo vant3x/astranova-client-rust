@@ -11,7 +11,7 @@ pub fn parse_har_collection(
     json: &str,
 ) -> Result<crate::import::postman::ImportedCollection, AppError> {
     let root: HarRoot = serde_json::from_str(json)
-        .map_err(|e| AppError::Parse(format!("Invalid HAR JSON: {}", e)))?;
+        .map_err(|e| AppError::Parse(format!("Invalid HAR JSON: {e}")))?;
 
     use std::collections::HashMap;
     let mut folders_map: HashMap<String, Vec<crate::import::postman::ImportedRequest>> =
@@ -24,12 +24,11 @@ pub fn parse_har_collection(
 
         let host = url::Url::parse(&url)
             .ok()
-            .and_then(|u| u.host_str().map(|h| h.to_string()));
+            .and_then(|u| u.host_str().map(std::string::ToString::to_string));
 
         let path = url::Url::parse(&url)
             .ok()
-            .map(|u| u.path().to_string())
-            .unwrap_or_else(|| url.clone());
+            .map_or_else(|| url.clone(), |u| u.path().to_string());
         let name = format!("{} {}", req.method, path);
 
         let headers: Vec<(String, String)> = req

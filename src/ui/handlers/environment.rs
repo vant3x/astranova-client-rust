@@ -1,6 +1,7 @@
 use crate::ui::app::{AstraioApp, Message};
 use crate::ui::views::environment_manager;
 use iced::Task;
+use std::fmt::Write;
 
 pub fn handle_message(app: &mut AstraioApp, msg: environment_manager::Message) -> Task<Message> {
     app.env_manager_view.update(msg.clone());
@@ -17,7 +18,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: environment_manager::Message) -
                         app.env_manager_view.selected_environment = Some(env);
                     }
                 }
-                Err(e) => log::error!("Error creating environment: {}", e),
+                Err(e) => log::error!("Error creating environment: {e}"),
             }
         }
         environment_manager::Message::SaveEnvironment => {
@@ -34,7 +35,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: environment_manager::Message) -
                                 .cloned();
                         }
                     }
-                    Err(e) => log::error!("Error saving environment: {}", e),
+                    Err(e) => log::error!("Error saving environment: {e}"),
                 }
             }
         }
@@ -46,7 +47,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: environment_manager::Message) -
                         app.environments = environments;
                         app.env_manager_view.environments = app.environments.clone();
                     }
-                    Err(e) => log::error!("Error deleting environment: {}", e),
+                    Err(e) => log::error!("Error deleting environment: {e}"),
                 }
             }
         }
@@ -79,13 +80,13 @@ pub fn handle_message(app: &mut AstraioApp, msg: environment_manager::Message) -
         environment_manager::Message::ExportEnvFile => {
             if let Some(env) = &app.env_manager_view.selected_environment {
                 let mut content = String::new();
-                content.push_str(&format!("# Environment: {}\n", env.name));
+                let _ = writeln!(content, "# Environment: {}", env.name);
                 if let Some(endpoint) = &env.default_endpoint {
-                    content.push_str(&format!("BASE_URL={}\n", endpoint));
+                    let _ = writeln!(content, "BASE_URL={endpoint}");
                 }
                 content.push('\n');
                 for (key, value) in &env.variables {
-                    content.push_str(&format!("{}={}\n", key, value));
+                    let _ = writeln!(content, "{key}={value}");
                 }
                 let env_name = env.name.clone();
                 let content_clone = content.clone();
@@ -93,7 +94,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: environment_manager::Message) -
                     async move {
                         let file = rfd::AsyncFileDialog::new()
                             .add_filter("Env file", &["env"])
-                            .set_file_name(format!("{}.env", env_name))
+                            .set_file_name(format!("{env_name}.env"))
                             .save_file()
                             .await;
                         if let Some(file_handle) = file {

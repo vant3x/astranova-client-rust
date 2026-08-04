@@ -6,7 +6,7 @@ use iced::{
 };
 use iced_fonts::lucide;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum BadgeKind {
     Secure,
     HttpOnly,
@@ -197,9 +197,11 @@ impl CookieManagerView {
         };
 
         let domain_list: Element<Message> = if filtered_domains.is_empty() {
-            column![text("No cookies stored").size(13).color(ThemeColors::TEXT_MUTED)]
-                .spacing(8)
-                .into()
+            column![text("No cookies stored")
+                .size(13)
+                .color(ThemeColors::TEXT_MUTED)]
+            .spacing(8)
+            .into()
         } else {
             let mut list = column![].spacing(2);
             for (domain, count) in &filtered_domains {
@@ -207,7 +209,7 @@ impl CookieManagerView {
                 let domain_btn = button(
                     row![
                         lucide::globe().size(12),
-                        text(format!("{} ({})", domain, count)).size(13),
+                        text(format!("{domain} ({count})")).size(13),
                     ]
                     .spacing(6)
                     .align_y(Alignment::Center),
@@ -216,7 +218,9 @@ impl CookieManagerView {
                 .on_press(Message::DomainSelected(domain.clone()))
                 .style(if is_selected {
                     |_theme: &Theme, _status: button::Status| button::Style {
-                        background: Some(iced::Background::Color(ThemeColors::ACCENT.scale_alpha(0.2))),
+                        background: Some(iced::Background::Color(
+                            ThemeColors::ACCENT.scale_alpha(0.2),
+                        )),
                         ..button::Style::default()
                     }
                 } else {
@@ -262,39 +266,36 @@ impl CookieManagerView {
 
                 let mut cookie_list = column![].spacing(4);
                 for cookie in &filtered {
-                    let is_editing = self.editing_cookie.as_ref().map(|(d, n, p)| {
+                    let is_editing = self.editing_cookie.as_ref().is_some_and(|(d, n, p)| {
                         d == domain && n == &cookie.name && p == &cookie.path
-                    }).unwrap_or(false);
+                    });
 
-                    let is_pending_delete = self.pending_delete_cookie.as_ref().map(|(d, n, p)| {
-                        d == domain && n == &cookie.name && p == &cookie.path
-                    }).unwrap_or(false);
+                    let is_pending_delete =
+                        self.pending_delete_cookie
+                            .as_ref()
+                            .is_some_and(|(d, n, p)| {
+                                d == domain && n == &cookie.name && p == &cookie.path
+                            });
 
                     let cookie_row = if is_editing {
                         row![
                             text_input("Cookie value", &self.edit_value)
                                 .on_input(Message::EditValueChanged)
                                 .size(12),
-                            button(lucide::check().size(12))
-                                .on_press(Message::SaveEdit),
-                            button(lucide::x().size(12))
-                                .on_press(Message::CancelEdit),
+                            button(lucide::check().size(12)).on_press(Message::SaveEdit),
+                            button(lucide::x().size(12)).on_press(Message::CancelEdit),
                         ]
                         .spacing(6)
                         .align_y(Alignment::Center)
                     } else if is_pending_delete {
                         row![
-                            text("Delete?")
-                                .size(12)
-                                .color(ThemeColors::ERROR),
-                            button(text("Yes").size(12))
-                                .on_press(Message::ConfirmDeleteCookie(
-                                    domain.clone(),
-                                    cookie.name.clone(),
-                                    cookie.path.clone(),
-                                )),
-                            button(lucide::x().size(12))
-                                .on_press(Message::CancelDeleteCookie),
+                            text("Delete?").size(12).color(ThemeColors::ERROR),
+                            button(text("Yes").size(12)).on_press(Message::ConfirmDeleteCookie(
+                                domain.clone(),
+                                cookie.name.clone(),
+                                cookie.path.clone(),
+                            )),
+                            button(lucide::x().size(12)).on_press(Message::CancelDeleteCookie),
                         ]
                         .spacing(6)
                         .align_y(Alignment::Center)
@@ -311,10 +312,8 @@ impl CookieManagerView {
                             "Lax" => ThemeColors::ORANGE,
                             _ => ThemeColors::TEXT_MUTED,
                         };
-                        badges = badges.push(render_badge(
-                            format!("SS:{}", cookie.same_site),
-                            ss_color,
-                        ));
+                        badges =
+                            badges.push(render_badge(format!("SS:{}", cookie.same_site), ss_color));
 
                         row![
                             column![
@@ -326,27 +325,23 @@ impl CookieManagerView {
                                         .color(ThemeColors::TEXT_SECONDARY),
                                 ]
                                 .spacing(4),
-                                row![
-                                    text(format!("Path: {}", cookie.path))
-                                        .size(11)
-                                        .color(ThemeColors::TEXT_MUTED),
-                                ],
+                                row![text(format!("Path: {}", cookie.path))
+                                    .size(11)
+                                    .color(ThemeColors::TEXT_MUTED),],
                                 badges,
                             ]
                             .spacing(4)
                             .width(Length::Fill),
-                            button(lucide::pencil().size(12))
-                                .on_press(Message::StartEdit(
-                                    domain.clone(),
-                                    cookie.name.clone(),
-                                    cookie.path.clone(),
-                                )),
-                            button(lucide::trash().size(12))
-                                .on_press(Message::DeleteCookie(
-                                    domain.clone(),
-                                    cookie.name.clone(),
-                                    cookie.path.clone(),
-                                )),
+                            button(lucide::pencil().size(12)).on_press(Message::StartEdit(
+                                domain.clone(),
+                                cookie.name.clone(),
+                                cookie.path.clone(),
+                            )),
+                            button(lucide::trash().size(12)).on_press(Message::DeleteCookie(
+                                domain.clone(),
+                                cookie.name.clone(),
+                                cookie.path.clone(),
+                            )),
                         ]
                         .spacing(8)
                         .align_y(Alignment::Center)
@@ -360,12 +355,9 @@ impl CookieManagerView {
                         .on_press(Message::ClearDomain(domain.clone()));
 
                 column![
-                    row![
-                        lucide::cookie().size(14),
-                        text(domain.as_str()).size(14),
-                    ]
-                    .spacing(6)
-                    .align_y(Alignment::Center),
+                    row![lucide::cookie().size(14), text(domain.as_str()).size(14),]
+                        .spacing(6)
+                        .align_y(Alignment::Center),
                     scrollable(cookie_list).height(Length::Fill),
                     rule::horizontal(1),
                     clear_domain_btn,
@@ -373,33 +365,35 @@ impl CookieManagerView {
                 .spacing(8)
                 .into()
             }
-            None => {
-                column![
-                    text("Select a domain to view cookies").size(13).color(ThemeColors::TEXT_MUTED),
-                ]
-                .spacing(8)
-                .into()
-            }
+            None => column![text("Select a domain to view cookies")
+                .size(13)
+                .color(ThemeColors::TEXT_MUTED),]
+            .spacing(8)
+            .into(),
         };
 
         let clear_all_btn = if self.pending_clear_all {
             row![
-                button(text("Confirm clear all?").size(12).color(ThemeColors::ERROR))
-                    .on_press(Message::ClearAll),
+                button(
+                    text("Confirm clear all?")
+                        .size(12)
+                        .color(ThemeColors::ERROR)
+                )
+                .on_press(Message::ClearAll),
                 button(lucide::x().size(12)).on_press(Message::CancelClearAll),
             ]
             .spacing(6)
         } else {
-            row![button(row![lucide::trash().size(12), text(" Clear All")].spacing(4))
-                .on_press(Message::ClearAll)]
+            row![
+                button(row![lucide::trash().size(12), text(" Clear All")].spacing(4))
+                    .on_press(Message::ClearAll)
+            ]
         };
 
-        let import_btn =
-            button(row![lucide::upload().size(12), text(" Import")].spacing(4))
-                .on_press(Message::ImportCookies);
-        let export_btn =
-            button(row![lucide::download().size(12), text(" Export")].spacing(4))
-                .on_press(Message::ExportCookies);
+        let import_btn = button(row![lucide::upload().size(12), text(" Import")].spacing(4))
+            .on_press(Message::ImportCookies);
+        let export_btn = button(row![lucide::download().size(12), text(" Export")].spacing(4))
+            .on_press(Message::ExportCookies);
         let close_btn =
             button(row![lucide::x().size(12), text(" Close")].spacing(4)).on_press(Message::Close);
 
@@ -412,9 +406,14 @@ impl CookieManagerView {
                 .spacing(6)
                 .align_y(Alignment::Center),
             rule::horizontal(1),
-            row![domain_panel, container(detail_panel).width(Length::FillPortion(2)).height(Length::Fill)]
-                .spacing(16)
-                .height(Length::Fill),
+            row![
+                domain_panel,
+                container(detail_panel)
+                    .width(Length::FillPortion(2))
+                    .height(Length::Fill)
+            ]
+            .spacing(16)
+            .height(Length::Fill),
             rule::horizontal(1),
             action_bar,
         ]

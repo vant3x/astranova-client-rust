@@ -2,6 +2,7 @@ use super::{HttpRequestView, Message, ScriptTab};
 use iced::widget::text_editor;
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Color, Element, Length, Theme};
+use std::fmt::Write;
 
 impl HttpRequestView {
     pub(super) fn create_scripts_tab_content(&self) -> Element<'_, Message, Theme, iced::Renderer> {
@@ -54,28 +55,28 @@ impl HttpRequestView {
                 if !self.script_output.pre_logs.is_empty() {
                     output_text.push_str("=== Pre-request logs ===\n");
                     for log in &self.script_output.pre_logs {
-                        output_text.push_str(&format!("  {}\n", log));
+                        let _ = writeln!(output_text, "  {log}");
                     }
                     output_text.push('\n');
                 }
                 if !self.script_output.pre_errors.is_empty() {
                     output_text.push_str("=== Pre-request errors ===\n");
                     for err in &self.script_output.pre_errors {
-                        output_text.push_str(&format!("  {}\n", err));
+                        let _ = writeln!(output_text, "  {err}");
                     }
                     output_text.push('\n');
                 }
                 if !self.script_output.post_logs.is_empty() {
                     output_text.push_str("=== Post-response logs ===\n");
                     for log in &self.script_output.post_logs {
-                        output_text.push_str(&format!("  {}\n", log));
+                        let _ = writeln!(output_text, "  {log}");
                     }
                     output_text.push('\n');
                 }
                 if !self.script_output.post_errors.is_empty() {
                     output_text.push_str("=== Post-response errors ===\n");
                     for err in &self.script_output.post_errors {
-                        output_text.push_str(&format!("  {}\n", err));
+                        let _ = writeln!(output_text, "  {err}");
                     }
                     output_text.push('\n');
                 }
@@ -83,7 +84,7 @@ impl HttpRequestView {
                     output_text.push_str("=== Extracted variables ===\n");
                     for (k, v) in &self.script_output.extracted_vars {
                         let preview: String = v.chars().take(80).collect();
-                        output_text.push_str(&format!("  {} = {}\n", k, preview));
+                        let _ = writeln!(output_text, "  {k} = {preview}");
                     }
                     output_text.push('\n');
                 }
@@ -96,12 +97,13 @@ impl HttpRequestView {
                         .filter(|t| t.passed)
                         .count();
                     let total = self.script_output.test_results.len();
-                    output_text.push_str(&format!("  {}/{} passed\n\n", passed, total));
+                    writeln!(output_text, "  {passed}/{total} passed").unwrap();
+                    output_text.push('\n');
                     for test in &self.script_output.test_results {
                         let icon = if test.passed { "PASS" } else { "FAIL" };
-                        output_text.push_str(&format!("  [{}] {}", icon, test.name));
+                        let _ = write!(output_text, "  [{icon}] {}", test.name);
                         if let Some(msg) = &test.message {
-                            output_text.push_str(&format!(" - {}", msg));
+                            let _ = write!(output_text, " - {msg}");
                         }
                         output_text.push('\n');
                     }

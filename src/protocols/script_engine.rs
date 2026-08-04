@@ -94,7 +94,12 @@ impl ScriptEngineV2 {
         request: &mut HttpRequest,
         variables: &mut HashMap<String, String>,
     ) -> Result<ScriptOutput, AppError> {
-        Self::execute_pre_request_with_timeout(js_code, request, variables, DEFAULT_SCRIPT_TIMEOUT_MS)
+        Self::execute_pre_request_with_timeout(
+            js_code,
+            request,
+            variables,
+            DEFAULT_SCRIPT_TIMEOUT_MS,
+        )
     }
 
     pub fn execute_pre_request_with_timeout(
@@ -115,17 +120,15 @@ impl ScriptEngineV2 {
         let state = Arc::new(Mutex::new(EngineState::new_for_request(request, variables)));
 
         let rt = Runtime::new()
-            .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {e}")))?;
 
         let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
         let deadline_clone = deadline;
         // Return true to STOP execution when deadline exceeded, false to continue
-        rt.set_interrupt_handler(Some(Box::new(move || {
-            Instant::now() >= deadline_clone
-        })));
+        rt.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline_clone)));
 
         let ctx = Context::full(&rt)
-            .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {e}")))?;
 
         let exec_result = ctx.with(|ctx| {
             setup_pm_api(&ctx, state.clone(), false, None)?;
@@ -135,13 +138,16 @@ impl ScriptEngineV2 {
         match exec_result {
             Ok(()) => {}
             Err(e) => {
-                let errs = state.lock().unwrap().errors.clone();
+                let errs = state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .errors
+                    .clone();
                 if !errs.is_empty() {
                     // Script reported errors through pm.expect/pm.test - not a timeout
                 } else if Instant::now() >= deadline {
                     return Err(AppError::Validation(format!(
-                        "Script execution timed out after {}ms",
-                        timeout_ms
+                        "Script execution timed out after {timeout_ms}ms"
                     )));
                 } else {
                     return Err(e);
@@ -149,7 +155,10 @@ impl ScriptEngineV2 {
             }
         }
 
-        let final_state = state.lock().unwrap().clone();
+        let final_state = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         final_state.apply_to_request(request);
         *variables = final_state.variables.clone();
 
@@ -166,7 +175,12 @@ impl ScriptEngineV2 {
         response: &HttpResponse,
         variables: &mut HashMap<String, String>,
     ) -> Result<ScriptOutput, AppError> {
-        Self::execute_post_response_with_timeout(js_code, response, variables, DEFAULT_SCRIPT_TIMEOUT_MS)
+        Self::execute_post_response_with_timeout(
+            js_code,
+            response,
+            variables,
+            DEFAULT_SCRIPT_TIMEOUT_MS,
+        )
     }
 
     pub fn execute_post_response_with_timeout(
@@ -189,17 +203,15 @@ impl ScriptEngineV2 {
         )));
 
         let rt = Runtime::new()
-            .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS runtime: {e}")))?;
 
         let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
         let deadline_clone = deadline;
         // Return true to STOP execution when deadline exceeded, false to continue
-        rt.set_interrupt_handler(Some(Box::new(move || {
-            Instant::now() >= deadline_clone
-        })));
+        rt.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline_clone)));
 
         let ctx = Context::full(&rt)
-            .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to create QuickJS context: {e}")))?;
 
         let exec_result = ctx.with(|ctx| {
             setup_pm_api(&ctx, state.clone(), true, Some(response))?;
@@ -209,13 +221,16 @@ impl ScriptEngineV2 {
         match exec_result {
             Ok(()) => {}
             Err(e) => {
-                let errs = state.lock().unwrap().errors.clone();
+                let errs = state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .errors
+                    .clone();
                 if !errs.is_empty() {
                     // Script reported errors through pm.expect/pm.test - not a timeout
                 } else if Instant::now() >= deadline {
                     return Err(AppError::Validation(format!(
-                        "Script execution timed out after {}ms",
-                        timeout_ms
+                        "Script execution timed out after {timeout_ms}ms"
                     )));
                 } else {
                     return Err(e);
@@ -223,7 +238,9 @@ impl ScriptEngineV2 {
             }
         }
 
-        let final_state = state.lock().unwrap();
+        let final_state = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *variables = final_state.variables.clone();
 
         Ok(ScriptOutput {
@@ -237,7 +254,7 @@ impl ScriptEngineV2 {
 
 fn execute_user_code(ctx: &rquickjs::Ctx<'_>, js_code: &str) -> Result<(), AppError> {
     ctx.eval::<(), _>(js_code)
-        .map_err(|e| AppError::Validation(format!("Script error: {}", e)))
+        .map_err(|e| AppError::Validation(format!("Script error: {e}")))
 }
 
 fn setup_pm_api(
@@ -248,12 +265,12 @@ fn setup_pm_api(
 ) -> Result<(), AppError> {
     let globals = ctx.globals();
     let pm = Object::new(ctx.clone())
-        .map_err(|e| AppError::Http(format!("Failed to create pm: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("Failed to create pm: {e}")))?;
 
     // ---- pm.environment ----
     {
         let env = Object::new(ctx.clone())
-            .map_err(|e| AppError::Http(format!("Failed to create env: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to create env: {e}")))?;
 
         let s = state.clone();
         let get_fn = Function::new(ctx.clone(), move |name: String| -> String {
@@ -264,44 +281,44 @@ fn setup_pm_api(
                 .cloned()
                 .unwrap_or_default()
         })
-        .map_err(|e| AppError::Http(format!("env.get: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("env.get: {e}")))?;
 
         let s = state.clone();
         let set_fn = Function::new(ctx.clone(), move |name: String, value: String| {
             s.lock().unwrap().variables.insert(name, value);
         })
-        .map_err(|e| AppError::Http(format!("env.set: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("env.set: {e}")))?;
 
         env.set("get", get_fn)
-            .map_err(|e| AppError::Http(format!("env.get set: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("env.get set: {e}")))?;
         env.set("set", set_fn)
-            .map_err(|e| AppError::Http(format!("env.set set: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("env.set set: {e}")))?;
         pm.set("environment", env)
-            .map_err(|e| AppError::Http(format!("pm.environment: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("pm.environment: {e}")))?;
     }
 
     // ---- pm.request ----
     {
         let req = Object::new(ctx.clone())
-            .map_err(|e| AppError::Http(format!("Failed to create req: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to create req: {e}")))?;
 
         let s = state.clone();
         let set_url = Function::new(ctx.clone(), move |url: String| {
             s.lock().unwrap().request_url = url;
         })
-        .map_err(|e| AppError::Http(format!("set_url: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("set_url: {e}")))?;
 
         let s = state.clone();
         let set_method = Function::new(ctx.clone(), move |method: String| {
             s.lock().unwrap().request_method = method;
         })
-        .map_err(|e| AppError::Http(format!("set_method: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("set_method: {e}")))?;
 
         let s = state.clone();
         let set_body = Function::new(ctx.clone(), move |body: String| {
             s.lock().unwrap().request_body = Some(body);
         })
-        .map_err(|e| AppError::Http(format!("set_body: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("set_body: {e}")))?;
 
         let s = state.clone();
         let set_header = Function::new(ctx.clone(), move |key: String, value: String| {
@@ -310,7 +327,7 @@ fn setup_pm_api(
                 .retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
             st.request_headers.push((key, value));
         })
-        .map_err(|e| AppError::Http(format!("set_header: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("set_header: {e}")))?;
 
         let s = state.clone();
         let get_header = Function::new(ctx.clone(), move |key: String| -> String {
@@ -321,7 +338,7 @@ fn setup_pm_api(
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default()
         })
-        .map_err(|e| AppError::Http(format!("get_header: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("get_header: {e}")))?;
 
         let s = state.clone();
         let remove_header = Function::new(ctx.clone(), move |key: String| {
@@ -330,84 +347,84 @@ fn setup_pm_api(
                 .request_headers
                 .retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
         })
-        .map_err(|e| AppError::Http(format!("remove_header: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("remove_header: {e}")))?;
 
         let s = state.clone();
         let get_url = Function::new(ctx.clone(), move || -> String {
             s.lock().unwrap().request_url.clone()
         })
-        .map_err(|e| AppError::Http(format!("get_url: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("get_url: {e}")))?;
 
         let s = state.clone();
         let get_method = Function::new(ctx.clone(), move || -> String {
             s.lock().unwrap().request_method.clone()
         })
-        .map_err(|e| AppError::Http(format!("get_method: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("get_method: {e}")))?;
 
         let s = state.clone();
         let get_body = Function::new(ctx.clone(), move || -> String {
             s.lock().unwrap().request_body.clone().unwrap_or_default()
         })
-        .map_err(|e| AppError::Http(format!("get_body: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("get_body: {e}")))?;
 
         req.set("setUrl", set_url)
-            .map_err(|e| AppError::Http(format!("req.setUrl: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.setUrl: {e}")))?;
         req.set("setMethod", set_method)
-            .map_err(|e| AppError::Http(format!("req.setMethod: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.setMethod: {e}")))?;
         req.set("setBody", set_body)
-            .map_err(|e| AppError::Http(format!("req.setBody: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.setBody: {e}")))?;
         req.set("setHeader", set_header)
-            .map_err(|e| AppError::Http(format!("req.setHeader: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.setHeader: {e}")))?;
         req.set("getHeader", get_header)
-            .map_err(|e| AppError::Http(format!("req.getHeader: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.getHeader: {e}")))?;
         req.set("removeHeader", remove_header)
-            .map_err(|e| AppError::Http(format!("req.removeHeader: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.removeHeader: {e}")))?;
         req.set("getUrl", get_url)
-            .map_err(|e| AppError::Http(format!("req.getUrl: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.getUrl: {e}")))?;
         req.set("getMethod", get_method)
-            .map_err(|e| AppError::Http(format!("req.getMethod: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.getMethod: {e}")))?;
         req.set("getBody", get_body)
-            .map_err(|e| AppError::Http(format!("req.getBody: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("req.getBody: {e}")))?;
         pm.set("request", req)
-            .map_err(|e| AppError::Http(format!("pm.request: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("pm.request: {e}")))?;
     }
 
     // ---- pm.response ----
     if has_response {
         if let Some(resp) = response {
             let res = Object::new(ctx.clone())
-                .map_err(|e| AppError::Http(format!("Failed to create res: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("Failed to create res: {e}")))?;
 
             res.set("status", resp.status)
-                .map_err(|e| AppError::Http(format!("res.status: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.status: {e}")))?;
             res.set("body", resp.body.clone())
-                .map_err(|e| AppError::Http(format!("res.body: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.body: {e}")))?;
             res.set("url", resp.url.clone())
-                .map_err(|e| AppError::Http(format!("res.url: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.url: {e}")))?;
             res.set("method", format!("{}", resp.method))
-                .map_err(|e| AppError::Http(format!("res.method: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.method: {e}")))?;
             res.set("responseTime", resp.duration.as_millis() as u64)
-                .map_err(|e| AppError::Http(format!("res.responseTime: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.responseTime: {e}")))?;
             res.set("size", resp.size)
-                .map_err(|e| AppError::Http(format!("res.size: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.size: {e}")))?;
 
             let headers = Object::new(ctx.clone())
-                .map_err(|e| AppError::Http(format!("Failed to create res.headers: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("Failed to create res.headers: {e}")))?;
             for (k, v) in &resp.headers {
                 headers.set(k.as_str(), v.as_str()).ok();
             }
             res.set("headers", headers)
-                .map_err(|e| AppError::Http(format!("res.headers: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("res.headers: {e}")))?;
 
             if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&resp.body) {
                 let json_str = serde_json::to_string(&json_val).unwrap_or_default();
-                if let Ok(js_val) = ctx.eval::<Value<'_>, _>(format!("({})", json_str)) {
+                if let Ok(js_val) = ctx.eval::<Value<'_>, _>(format!("({json_str})")) {
                     res.set("json", js_val).ok();
                 }
             }
 
             pm.set("response", res)
-                .map_err(|e| AppError::Http(format!("pm.response: {}", e)))?;
+                .map_err(|e| AppError::Http(format!("pm.response: {e}")))?;
         }
     }
 
@@ -429,9 +446,9 @@ fn setup_pm_api(
                 s.lock().unwrap().logs.push(parts.join(" "));
             },
         )
-        .map_err(|e| AppError::Http(format!("pm.log: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("pm.log: {e}")))?;
         pm.set("log", log_fn)
-            .map_err(|e| AppError::Http(format!("pm.log set: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("pm.log set: {e}")))?;
     }
 
     // ---- pm.test ----
@@ -446,15 +463,15 @@ fn setup_pm_api(
                     message: None,
                 };
                 match test_fn_val.call::<(), ()>(()) {
-                    Ok(_) => result.passed = true,
-                    Err(e) => result.message = Some(format!("{}", e)),
+                    Ok(()) => result.passed = true,
+                    Err(e) => result.message = Some(format!("{e}")),
                 }
                 s.lock().unwrap().test_results.push(result);
             },
         )
-        .map_err(|e| AppError::Http(format!("pm.test: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("pm.test: {e}")))?;
         pm.set("test", test_fn)
-            .map_err(|e| AppError::Http(format!("pm.test set: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("pm.test set: {e}")))?;
     }
 
     // ---- pm.expect (defined via JS to avoid lifetime issues) ----
@@ -463,15 +480,15 @@ fn setup_pm_api(
         let collect_error = Function::new(ctx.clone(), move |msg: String| {
             s2.lock().unwrap().errors.push(msg);
         })
-        .map_err(|e| AppError::Http(format!("collect_error: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("collect_error: {e}")))?;
         pm.set("__collectError", collect_error)
-            .map_err(|e| AppError::Http(format!("pm.__collectError: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("pm.__collectError: {e}")))?;
     }
 
     // Set pm on globals BEFORE defining pm.expect via JS eval
     globals
         .set("pm", pm)
-        .map_err(|e| AppError::Http(format!("Failed to set global pm: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("Failed to set global pm: {e}")))?;
 
     // ---- pm.expect (defined via JS to avoid lifetime issues) ----
     ctx.eval::<(), _>(r#"
@@ -524,7 +541,7 @@ fn setup_pm_api(
                     }
                 };
             };
-        "#).map_err(|e| AppError::Http(format!("Failed to define pm.expect: {}", e)))?;
+        "#).map_err(|e| AppError::Http(format!("Failed to define pm.expect: {e}")))?;
 
     Ok(())
 }
@@ -710,7 +727,7 @@ mod tests {
         "#;
         let result = ScriptEngineV2::execute_pre_request(code, &mut req, &mut vars).unwrap();
         assert!(result.variables.get("doubled").unwrap().contains("10"));
-        assert!(result.variables.get("evens").unwrap().contains("2"));
+        assert!(result.variables.get("evens").unwrap().contains('2'));
         assert_eq!(result.variables.get("sum").unwrap(), "15");
     }
 
@@ -902,9 +919,7 @@ mod tests {
     fn test_syntax_error() {
         let mut req = make_request();
         let mut vars = HashMap::new();
-        assert!(
-            ScriptEngineV2::execute_pre_request(r#"invalid @@@"#, &mut req, &mut vars).is_err()
-        );
+        assert!(ScriptEngineV2::execute_pre_request(r"invalid @@@", &mut req, &mut vars).is_err());
     }
 
     #[test]
@@ -912,8 +927,7 @@ mod tests {
         let mut req = make_request();
         let mut vars = HashMap::new();
         assert!(
-            ScriptEngineV2::execute_pre_request(r#"undefinedVar.foo;"#, &mut req, &mut vars)
-                .is_err()
+            ScriptEngineV2::execute_pre_request(r"undefinedVar.foo;", &mut req, &mut vars).is_err()
         );
     }
 }

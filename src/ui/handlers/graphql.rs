@@ -73,7 +73,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                                     c
                                 }
                                 Err(e) => {
-                                    log::error!("Failed to build custom client: {}", e);
+                                    log::error!("Failed to build custom client: {e}");
                                     std::sync::Arc::clone(&app.http_client)
                                 }
                             }
@@ -163,7 +163,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                             c
                         }
                         Err(e) => {
-                            log::error!("Failed to build custom client: {}", e);
+                            log::error!("Failed to build custom client: {e}");
                             std::sync::Arc::clone(&app.http_client)
                         }
                     }
@@ -181,8 +181,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                     let introspection: crate::protocols::graphql_schema::IntrospectionResponse =
                         serde_json::from_str(&response.body).map_err(|e| {
                             crate::error::AppError::Parse(format!(
-                                "Failed to parse introspection response: {}",
-                                e
+                                "Failed to parse introspection response: {e}"
                             ))
                         })?;
 
@@ -230,7 +229,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
             );
 
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     app.graphql_view
                         .update(graphql_view::Message::SavedToHistory(Ok(())));
                     let _ = crate::services::history_service::trim(&app.db_conn, 500);
@@ -295,14 +294,14 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                                     }
                                 }
                                 Err(e) => {
-                                    log::error!("Failed to create collection: {}", e);
+                                    log::error!("Failed to create collection: {e}");
                                     return Task::none();
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to load collections: {}", e);
+                        log::error!("Failed to load collections: {e}");
                         return Task::none();
                     }
                 }
@@ -369,7 +368,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                         if let Err(e) =
                             crate::persistence::database::save_cookies(&app.db_conn, &jar)
                         {
-                            log::warn!("Failed to persist GraphQL cookies: {}", e);
+                            log::warn!("Failed to persist GraphQL cookies: {e}");
                         }
                     }
                 } else {
@@ -383,16 +382,16 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
             Task::none()
         }
         graphql_view::Message::OAuth2StartAuth => {
-            Task::perform(async {}, |_| Message::GraphQLOAuth2StartAuth)
+            Task::perform(async {}, |()| Message::GraphQLOAuth2StartAuth)
         }
         graphql_view::Message::OAuth2RefreshToken => {
-            Task::perform(async {}, |_| Message::GraphQLOAuth2RefreshToken)
+            Task::perform(async {}, |()| Message::GraphQLOAuth2RefreshToken)
         }
         graphql_view::Message::OAuth2StartDeviceAuth => {
-            Task::perform(async {}, |_| Message::GraphQLOAuth2StartDeviceAuth)
+            Task::perform(async {}, |()| Message::GraphQLOAuth2StartDeviceAuth)
         }
         graphql_view::Message::OAuth2AutoPollToggle(enabled) => {
-            Task::perform(async move {}, move |_| {
+            Task::perform(async move {}, move |()| {
                 Message::GraphQLOAuth2AutoPollToggle(enabled)
             })
         }
@@ -509,11 +508,11 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                                     if let crate::protocols::websocket::WsEvent::Message(msg) =
                                         event
                                     {
-                                        if let Ok(server_msg) =
-                                            serde_json::from_str::<crate::protocols::graphql::graphql_ws::ServerMessage>(
-                                                &msg.data,
-                                            )
-                                        {
+                                        if let Ok(server_msg) = serde_json::from_str::<
+                                            crate::protocols::graphql::graphql_ws::ServerMessage,
+                                        >(
+                                            &msg.data
+                                        ) {
                                             match server_msg {
                                                 crate::protocols::graphql::graphql_ws::ServerMessage::Next { payload, .. } => {
                                                     let _response = crate::protocols::graphql::GraphQLResponse {
@@ -525,7 +524,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                                                     log::debug!("Subscription data received");
                                                 }
                                                 crate::protocols::graphql::graphql_ws::ServerMessage::Error { payload, .. } => {
-                                                    log::error!("Subscription error: {:?}", payload);
+                                                    log::error!("Subscription error: {payload:?}");
                                                 }
                                                 crate::protocols::graphql::graphql_ws::ServerMessage::Complete { .. } => {
                                                     log::info!("Subscription completed");
@@ -544,11 +543,9 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
                             Ok(()) => {
                                 Message::GraphQLMsg(graphql_view::Message::SubscriptionConnected)
                             }
-                            Err(e) => {
-                                Message::GraphQLMsg(graphql_view::Message::SubscriptionError(
-                                    e.to_string(),
-                                ))
-                            }
+                            Err(e) => Message::GraphQLMsg(
+                                graphql_view::Message::SubscriptionError(e.to_string()),
+                            ),
                         },
                     )
                 }
@@ -562,7 +559,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: graphql_view::Message) -> Task<
         graphql_view::Message::StopSubscription => {
             // Send Complete message if we have a subscription
             if let Some(sub_id) = &app.graphql_view.subscription_id {
-                log::info!("Stopping subscription: {}", sub_id);
+                log::info!("Stopping subscription: {sub_id}");
             }
             app.graphql_view.subscription_status = graphql_view::SubscriptionStatus::Disconnected;
             app.graphql_view.subscription_id = None;

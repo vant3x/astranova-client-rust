@@ -170,7 +170,8 @@ pub fn run(cli: Cli) -> Result<(), AppError> {
         .map_err(|e| AppError::Database(format!("Failed to open database: {}", e)))?;
 
     // Run keyring migration if needed
-    let _ = crate::services::secret_store::migrate_plaintext_tokens_to_keyring(&conn);
+    let store = crate::services::secret_store::SecretStore::new();
+    let _ = crate::services::secret_store::migrate_plaintext_tokens_to_keyring(&store, &conn);
 
     match cli.command {
         Commands::Run { id, url, method, body, headers } => {

@@ -10,7 +10,7 @@ where
     Ok(opt.unwrap_or_default())
 }
 
-pub const INTROSPECTION_QUERY: &str = r#"
+pub const INTROSPECTION_QUERY: &str = r"
 query IntrospectionQuery {
   __schema {
     queryType { name }
@@ -100,7 +100,7 @@ fragment TypeRef on __Type {
     }
   }
 }
-"#;
+";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntrospectionResponse {
@@ -438,8 +438,8 @@ fn render_type_ref(type_ref: &TypeRef) -> String {
             if let Some(of_type) = &type_ref.of_type {
                 let inner = render_type_ref(of_type);
                 match type_ref.kind.as_deref() {
-                    Some("NON_NULL") => format!("{}!", inner),
-                    Some("LIST") => format!("[{}]", inner),
+                    Some("NON_NULL") => format!("{inner}!"),
+                    Some("LIST") => format!("[{inner}]"),
                     _ => inner,
                 }
             } else {
@@ -451,8 +451,8 @@ fn render_type_ref(type_ref: &TypeRef) -> String {
             if let Some(of_type) = &type_ref.of_type {
                 let inner = render_type_ref(of_type);
                 match type_ref.kind.as_deref() {
-                    Some("NON_NULL") => format!("{}!", inner),
-                    Some("LIST") => format!("[{}]", inner),
+                    Some("NON_NULL") => format!("{inner}!"),
+                    Some("LIST") => format!("[{inner}]"),
                     _ => inner,
                 }
             } else {
@@ -512,8 +512,7 @@ pub fn get_autocomplete_suggestions(
 
     let last_word = before_cursor
         .rsplit_once(|c: char| c.is_whitespace() || c == '{' || c == '(' || c == ':')
-        .map(|(_, w)| w)
-        .unwrap_or(before_cursor);
+        .map_or(before_cursor, |(_, w)| w);
 
     if let Some(query_type) = get_query_type(schema) {
         for field in &query_type.fields {

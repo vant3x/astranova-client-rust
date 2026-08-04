@@ -116,7 +116,7 @@ pub struct ImportedRequest {
 
 pub fn parse_postman_collection(json: &str) -> Result<ImportedCollection, AppError> {
     let collection: PostmanCollection = serde_json::from_str(json)
-        .map_err(|e| AppError::Parse(format!("Invalid Postman collection: {}", e)))?;
+        .map_err(|e| AppError::Parse(format!("Invalid Postman collection: {e}")))?;
 
     let mut imported_folders = Vec::new();
     let mut imported_requests = Vec::new();
@@ -216,7 +216,7 @@ fn extract_url(url: &PostmanUrl) -> String {
     let mut parts = Vec::new();
 
     if let Some(protocol) = &url.protocol {
-        parts.push(format!("{}://", protocol));
+        parts.push(format!("{protocol}://"));
     }
 
     if let Some(host) = &url.host {

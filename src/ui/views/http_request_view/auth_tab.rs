@@ -182,7 +182,9 @@ impl HttpRequestView {
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center),
-                    if !config.status.to_string().is_empty() {
+                    if config.status.to_string().is_empty() {
+                        Element::from(column![])
+                    } else {
                         Element::from(text(config.status.to_string()).size(12).color(
                             match &config.status {
                                 crate::data::auth::OAuth2Status::Error(_) => {
@@ -197,8 +199,6 @@ impl HttpRequestView {
                                 _ => Color::from_rgb(0.5, 0.5, 0.5),
                             },
                         ))
-                    } else {
-                        Element::from(column![])
                     },
                 ]
                 .spacing(10)

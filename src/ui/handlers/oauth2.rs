@@ -19,7 +19,7 @@ pub fn handle_start_auth(app: &mut AstraioApp, index: usize) -> Task<Message> {
             if let Some(ref verifier) = pkce_verifier {
                 let identifier = config.client_id.clone();
                 if let Err(e) = app.secret_store.store_pkce_verifier(&identifier, verifier) {
-                    log::warn!("Failed to store PKCE verifier in keyring: {}", e);
+                    log::warn!("Failed to store PKCE verifier in keyring: {e}");
                 }
             }
 
@@ -94,7 +94,7 @@ pub fn handle_auth_complete(
         }
         Err(e) => {
             app.toast_manager
-                .error(format!("Authorization failed: {}", e));
+                .error(format!("Authorization failed: {e}"));
         }
     }
     Task::none()
@@ -127,7 +127,7 @@ pub fn handle_token_received(
                         token_response.refresh_token.as_deref().unwrap_or(""),
                         &config.client_secret,
                     ) {
-                        log::warn!("Failed to store OAuth2 tokens in keyring: {}", e);
+                        log::warn!("Failed to store OAuth2 tokens in keyring: {e}");
                     }
 
                     app.toast_manager
@@ -135,7 +135,7 @@ pub fn handle_token_received(
                 }
                 Err(e) => {
                     app.toast_manager
-                        .error(format!("OAuth2 token exchange failed: {}", e));
+                        .error(format!("OAuth2 token exchange failed: {e}"));
                 }
             }
         }
@@ -245,17 +245,16 @@ pub fn handle_device_auth_received(
                     let verification_url = config.verification_uri.clone();
                     let user_code = config.user_code.clone();
 
-                    log::info!("Device authorization received. User code: {}", user_code);
+                    log::info!("Device authorization received. User code: {user_code}");
 
                     app.toast_manager.info(format!(
-                        "Device auth started. Code: {}. Polling enabled.",
-                        user_code
+                        "Device auth started. Code: {user_code}. Polling enabled."
                     ));
 
                     let _ = open::that(&verification_url);
                 }
                 Err(e) => {
-                    log::error!("Device authorization failed: {}", e);
+                    log::error!("Device authorization failed: {e}");
                 }
             }
         }
@@ -289,7 +288,7 @@ pub fn handle_device_token_poll(
                             &config.refresh_token,
                             &config.client_secret,
                         ) {
-                            log::warn!("Failed to store OAuth2 tokens in keyring: {}", e);
+                            log::warn!("Failed to store OAuth2 tokens in keyring: {e}");
                         }
 
                         log::info!("Device token received successfully");
@@ -304,7 +303,7 @@ pub fn handle_device_token_poll(
                                 current + 5
                             );
                         } else {
-                            log::error!("Device token error: {}", error);
+                            log::error!("Device token error: {error}");
                             config.device_code.clear();
                             config.user_code.clear();
                             config.verification_uri.clear();
@@ -313,7 +312,7 @@ pub fn handle_device_token_poll(
                     }
                 }
                 Err(e) => {
-                    log::error!("Device token poll failed: {}", e);
+                    log::error!("Device token poll failed: {e}");
                     config.auto_polling = false;
                 }
             }
@@ -327,9 +326,9 @@ pub fn handle_auto_poll_toggle(app: &mut AstraioApp, index: usize, enabled: bool
         if let Auth::OAuth2(config) = &mut view.auth {
             config.auto_polling = enabled;
             if enabled {
-                log::info!("Device code auto-polling enabled for tab {}", index);
+                log::info!("Device code auto-polling enabled for tab {index}");
             } else {
-                log::info!("Device code auto-polling disabled for tab {}", index);
+                log::info!("Device code auto-polling disabled for tab {index}");
             }
         }
     }
@@ -351,7 +350,7 @@ pub fn handle_graphql_start_auth(app: &mut AstraioApp) -> Task<Message> {
         if let Some(ref verifier) = pkce_verifier {
             let identifier = config.client_id.clone();
             if let Err(e) = app.secret_store.store_pkce_verifier(&identifier, verifier) {
-                log::warn!("Failed to store PKCE verifier in keyring: {}", e);
+                log::warn!("Failed to store PKCE verifier in keyring: {e}");
             }
         }
 
@@ -422,7 +421,7 @@ pub fn handle_graphql_auth_complete(
         }
         Err(e) => {
             app.toast_manager
-                .error(format!("Authorization failed: {}", e));
+                .error(format!("Authorization failed: {e}"));
         }
     }
     Task::none()
@@ -452,7 +451,7 @@ pub fn handle_graphql_token_received(
                     token_response.refresh_token.as_deref().unwrap_or(""),
                     &config.client_secret,
                 ) {
-                    log::warn!("Failed to store OAuth2 tokens in keyring: {}", e);
+                    log::warn!("Failed to store OAuth2 tokens in keyring: {e}");
                 }
 
                 app.toast_manager
@@ -460,7 +459,7 @@ pub fn handle_graphql_token_received(
             }
             Err(e) => {
                 app.toast_manager
-                    .error(format!("OAuth2 token exchange failed: {}", e));
+                    .error(format!("OAuth2 token exchange failed: {e}"));
             }
         }
     }
@@ -560,17 +559,16 @@ pub fn handle_graphql_device_auth_received(
                 let verification_url = config.verification_uri.clone();
                 let user_code = config.user_code.clone();
 
-                log::info!("Device authorization received. User code: {}", user_code);
+                log::info!("Device authorization received. User code: {user_code}");
 
                 app.toast_manager.info(format!(
-                    "Device auth started. Code: {}. Polling enabled.",
-                    user_code
+                    "Device auth started. Code: {user_code}. Polling enabled."
                 ));
 
                 let _ = open::that(&verification_url);
             }
             Err(e) => {
-                log::error!("Device authorization failed: {}", e);
+                log::error!("Device authorization failed: {e}");
             }
         }
     }
@@ -601,7 +599,7 @@ pub fn handle_graphql_device_token_poll(
                         &config.refresh_token,
                         &config.client_secret,
                     ) {
-                        log::warn!("Failed to store OAuth2 tokens in keyring: {}", e);
+                        log::warn!("Failed to store OAuth2 tokens in keyring: {e}");
                     }
 
                     log::info!("Device token received successfully");
@@ -613,7 +611,7 @@ pub fn handle_graphql_device_token_poll(
                         config.device_code_interval = Some(current + 5);
                         log::warn!("Slow down detected, increased interval to {}s", current + 5);
                     } else {
-                        log::error!("Device token error: {}", error);
+                        log::error!("Device token error: {error}");
                         config.device_code.clear();
                         config.user_code.clear();
                         config.verification_uri.clear();
@@ -622,7 +620,7 @@ pub fn handle_graphql_device_token_poll(
                 }
             }
             Err(e) => {
-                log::error!("Device token poll failed: {}", e);
+                log::error!("Device token poll failed: {e}");
                 config.auto_polling = false;
             }
         }

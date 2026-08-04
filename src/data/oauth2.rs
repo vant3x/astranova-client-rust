@@ -3,6 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fmt::Write;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
@@ -91,14 +92,15 @@ pub fn build_authorization_url(
     );
 
     if !scopes.is_empty() {
-        url.push_str(&format!("&scope={}", urlencoding::encode(scopes)));
+        let _ = write!(url, "&scope={}", urlencoding::encode(scopes));
     }
 
     if let Some(pkce) = pkce {
-        url.push_str(&format!(
+        let _ = write!(
+            url,
             "&code_challenge={}&code_challenge_method=S256",
             urlencoding::encode(&pkce.challenge)
-        ));
+        );
     }
 
     url
@@ -133,17 +135,17 @@ pub async fn exchange_code(
         .form(&params)
         .send()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to send token request: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to send token request: {e}")))?;
 
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {e}")))?;
 
     if status.is_success() {
         serde_json::from_str(&body)
-            .map_err(|e| AppError::OAuth2(format!("Failed to parse token response: {}", e)))
+            .map_err(|e| AppError::OAuth2(format!("Failed to parse token response: {e}")))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
@@ -185,19 +187,17 @@ pub async fn client_credentials(
         .form(&params)
         .send()
         .await
-        .map_err(|e| {
-            AppError::OAuth2(format!("Failed to send client credentials request: {}", e))
-        })?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to send client credentials request: {e}")))?;
 
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {e}")))?;
 
     if status.is_success() {
         serde_json::from_str(&body)
-            .map_err(|e| AppError::OAuth2(format!("Failed to parse token response: {}", e)))
+            .map_err(|e| AppError::OAuth2(format!("Failed to parse token response: {e}")))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
@@ -234,17 +234,17 @@ pub async fn refresh_token(
         .form(&params)
         .send()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to send refresh token request: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to send refresh token request: {e}")))?;
 
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {e}")))?;
 
     if status.is_success() {
         serde_json::from_str(&body)
-            .map_err(|e| AppError::OAuth2(format!("Failed to parse token response: {}", e)))
+            .map_err(|e| AppError::OAuth2(format!("Failed to parse token response: {e}")))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {
@@ -265,7 +265,7 @@ pub fn generate_state() -> String {
     (0..32)
         .map(|_| {
             let idx = rng.gen_range(0..16);
-            format!("{:x}", idx)
+            format!("{idx:x}")
         })
         .collect()
 }
@@ -279,12 +279,12 @@ impl LocalAuthCallback {
     pub async fn start() -> Result<Self, AppError> {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
-            .map_err(|e| AppError::OAuth2(format!("Failed to bind local server: {}", e)))?;
+            .map_err(|e| AppError::OAuth2(format!("Failed to bind local server: {e}")))?;
         let port = listener
             .local_addr()
-            .map_err(|e| AppError::OAuth2(format!("Failed to get local server address: {}", e)))?
+            .map_err(|e| AppError::OAuth2(format!("Failed to get local server address: {e}")))?
             .port();
-        let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
+        let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
         let handle = tokio::spawn(async move { Self::wait_for_callback(listener).await });
 
@@ -301,10 +301,9 @@ impl LocalAuthCallback {
             Ok(Ok(None)) => Err(AppError::OAuth2(
                 "No authorization code received".to_string(),
             )),
-            Ok(Err(e)) => Err(AppError::OAuth2(format!("Local server error: {}", e))),
+            Ok(Err(e)) => Err(AppError::OAuth2(format!("Local server error: {e}"))),
             Err(_) => Err(AppError::OAuth2(format!(
-                "Authorization timed out after {} seconds",
-                timeout_secs
+                "Authorization timed out after {timeout_secs} seconds"
             ))),
         }
     }
@@ -403,23 +402,19 @@ pub async fn device_authorization(
         .send()
         .await
         .map_err(|e| {
-            AppError::OAuth2(format!(
-                "Failed to send device authorization request: {}",
-                e
-            ))
+            AppError::OAuth2(format!("Failed to send device authorization request: {e}"))
         })?;
 
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {e}")))?;
 
     if status.is_success() {
         serde_json::from_str(&body).map_err(|e| {
             AppError::OAuth2(format!(
-                "Failed to parse device authorization response: {}",
-                e
+                "Failed to parse device authorization response: {e}"
             ))
         })
     } else {
@@ -458,17 +453,17 @@ pub async fn poll_device_token(
         .form(&params)
         .send()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to poll device token: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to poll device token: {e}")))?;
 
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {}", e)))?;
+        .map_err(|e| AppError::OAuth2(format!("Failed to read response body: {e}")))?;
 
     if status.is_success() {
         serde_json::from_str(&body)
-            .map_err(|e| AppError::OAuth2(format!("Failed to parse device token response: {}", e)))
+            .map_err(|e| AppError::OAuth2(format!("Failed to parse device token response: {e}")))
     } else {
         let error: OAuth2ErrorResponse =
             serde_json::from_str(&body).unwrap_or_else(|_| OAuth2ErrorResponse {

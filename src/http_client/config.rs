@@ -84,7 +84,7 @@ impl fmt::Display for RedirectPolicy {
         match self {
             RedirectPolicy::Follow => write!(f, "Follow"),
             RedirectPolicy::NoFollow => write!(f, "No Follow"),
-            RedirectPolicy::Limited(n) => write!(f, "Limited ({})", n),
+            RedirectPolicy::Limited(n) => write!(f, "Limited ({n})"),
         }
     }
 }

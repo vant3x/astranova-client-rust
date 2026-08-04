@@ -51,7 +51,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                         app.collection_view.new_collection_name.clear();
                         refresh_all_data(app);
                     }
-                    Err(e) => log::error!("Error creating collection: {}", e),
+                    Err(e) => log::error!("Error creating collection: {e}"),
                 }
             }
         }
@@ -73,7 +73,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             app.collection_view.new_folder_parent = None;
                             refresh_collection_data(app, col_id);
                         }
-                        Err(e) => log::error!("Error creating folder: {}", e),
+                        Err(e) => log::error!("Error creating folder: {e}"),
                     }
                 }
             }
@@ -95,7 +95,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                         app.collection_view.sync_collections(&cols);
                         refresh_all_data(app);
                     }
-                    Err(e) => log::error!("Error deleting collection: {}", e),
+                    Err(e) => log::error!("Error deleting collection: {e}"),
                 }
             }
         }
@@ -115,7 +115,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     Ok(_) => {
                         refresh_collection_data(app, col_id);
                     }
-                    Err(e) => log::error!("Error deleting folder: {}", e),
+                    Err(e) => log::error!("Error deleting folder: {e}"),
                 }
             }
         }
@@ -173,7 +173,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                                                 );
                                             }
                                         }
-                                        Err(e) => log::error!("Error creating folder: {}", e),
+                                        Err(e) => log::error!("Error creating folder: {e}"),
                                     }
                                 }
                                 for req in &imported.requests {
@@ -195,10 +195,10 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                                 refresh_all_data(app);
                             }
                         }
-                        Err(e) => log::error!("Error creating collection: {}", e),
+                        Err(e) => log::error!("Error creating collection: {e}"),
                     }
                 }
-                Err(e) => log::error!("Error parsing Postman collection: {}", e),
+                Err(e) => log::error!("Error parsing Postman collection: {e}"),
             }
         }
         collection_view::Message::ImportCollectionData(None) => {}
@@ -256,7 +256,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                                                 requests_count += 1;
                                             }
                                         }
-                                        Err(e) => log::error!("Error creating folder: {}", e),
+                                        Err(e) => log::error!("Error creating folder: {e}"),
                                     }
                                 }
                                 for req in &imported.requests {
@@ -284,14 +284,14 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             }
                         }
                         Err(e) => {
-                            log::error!("Error creating collection: {}", e);
-                            app.toast_manager.error(format!("Import failed: {}", e));
+                            log::error!("Error creating collection: {e}");
+                            app.toast_manager.error(format!("Import failed: {e}"));
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("Error parsing HAR collection: {}", e);
-                    app.toast_manager.error(format!("Invalid HAR file: {}", e));
+                    log::error!("Error parsing HAR collection: {e}");
+                    app.toast_manager.error(format!("Invalid HAR file: {e}"));
                 }
             }
         }
@@ -356,7 +356,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                                             folder_id_map
                                                 .insert(folder.name.clone(), created_folder.id);
                                         }
-                                        Err(e) => log::error!("Error creating folder: {}", e),
+                                        Err(e) => log::error!("Error creating folder: {e}"),
                                     }
                                 }
 
@@ -406,15 +406,15 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             }
                         }
                         Err(e) => {
-                            log::error!("Error creating collection: {}", e);
-                            app.toast_manager.error(format!("Import failed: {}", e));
+                            log::error!("Error creating collection: {e}");
+                            app.toast_manager.error(format!("Import failed: {e}"));
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("Error parsing OpenAPI spec: {}", e);
+                    log::error!("Error parsing OpenAPI spec: {e}");
                     app.toast_manager
-                        .error(format!("Invalid OpenAPI spec: {}", e));
+                        .error(format!("Invalid OpenAPI spec: {e}"));
                 }
             }
         }
@@ -435,7 +435,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             async move {
                                 let file = rfd::AsyncFileDialog::new()
                                     .add_filter("Postman Collection", &["json"])
-                                    .set_file_name(format!("{}.json", col_name))
+                                    .set_file_name(format!("{col_name}.json"))
                                     .save_file()
                                     .await;
                                 if let Some(file_handle) = file {
@@ -451,11 +451,11 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             },
                         );
                     }
-                    Err(e) => log::error!("Error exporting collection: {}", e),
+                    Err(e) => log::error!("Error exporting collection: {e}"),
                 }
             }
         }
-        collection_view::Message::ExportCollectionData(_) => {}
+        collection_view::Message::ExportCollectionData(()) => {}
         collection_view::Message::ExportCollectionHar(idx) => {
             if let Some(col) = app.collection_view.collections.get(idx) {
                 let requests =
@@ -468,7 +468,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     async move {
                         let file = rfd::AsyncFileDialog::new()
                             .add_filter("HTTP Archive (HAR)", &["har"])
-                            .set_file_name(format!("{}.har", col_name))
+                            .set_file_name(format!("{col_name}.har"))
                             .save_file()
                             .await;
                         if let Some(file_handle) = file {
@@ -485,7 +485,45 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                 );
             }
         }
-        collection_view::Message::ExportCollectionHarData(_) => {}
+        collection_view::Message::ExportCollectionHarData(()) => {}
+        collection_view::Message::ExportCollectionOpenApi(idx) => {
+            if let Some(col) = app.collection_view.collections.get(idx) {
+                let folders =
+                    crate::services::collection_service::get_folders(&app.db_conn, col.id)
+                        .unwrap_or_default();
+                let requests =
+                    crate::services::collection_service::get_requests(&app.db_conn, col.id, None)
+                        .unwrap_or_default();
+                match crate::export::openapi::export_collection_to_openapi(col, &folders, &requests)
+                {
+                    Ok(json) => {
+                        let col_name = col.name.clone();
+                        app.collection_view.update(msg);
+                        return Task::perform(
+                            async move {
+                                let file = rfd::AsyncFileDialog::new()
+                                    .add_filter("OpenAPI Spec", &["json"])
+                                    .set_file_name(format!("{col_name}.json"))
+                                    .save_file()
+                                    .await;
+                                if let Some(file_handle) = file {
+                                    let path = file_handle.path().to_path_buf();
+                                    let _ = tokio::fs::write(&path, json.as_bytes()).await;
+                                }
+                                None::<()>
+                            },
+                            |_: Option<_>| {
+                                Message::CollectionMsg(
+                                    collection_view::Message::ExportCollectionOpenApiData(()),
+                                )
+                            },
+                        );
+                    }
+                    Err(e) => log::error!("Error exporting OpenAPI: {e}"),
+                }
+            }
+        }
+        collection_view::Message::ExportCollectionOpenApiData(()) => {}
         collection_view::Message::ConfirmRenameCollection => {
             if let Some(idx) = app.collection_view.renaming_collection {
                 let new_name = app.collection_view.rename_collection_value.clone();
@@ -495,7 +533,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                         Ok(()) => {
                             refresh_all_data(app);
                         }
-                        Err(e) => log::error!("Error renaming collection: {}", e),
+                        Err(e) => log::error!("Error renaming collection: {e}"),
                     }
                 }
             }
@@ -519,7 +557,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             refresh_collection_data(app, col_id);
                         }
                     }
-                    Err(e) => log::error!("Error renaming folder: {}", e),
+                    Err(e) => log::error!("Error renaming folder: {e}"),
                 }
             }
         }
@@ -539,7 +577,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                             refresh_collection_data(app, col_id);
                         }
                     }
-                    Err(e) => log::error!("Error renaming request: {}", e),
+                    Err(e) => log::error!("Error renaming request: {e}"),
                 }
             }
         }
@@ -556,7 +594,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     Ok(_) => {
                         refresh_collection_data(app, col_id);
                     }
-                    Err(e) => log::error!("Error deleting request: {}", e),
+                    Err(e) => log::error!("Error deleting request: {e}"),
                 }
             }
         }
@@ -576,7 +614,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     col_id,
                     &variables,
                 ) {
-                    log::error!("Failed to save collection variables: {}", e);
+                    log::error!("Failed to save collection variables: {e}");
                 }
             }
             return Task::none();
@@ -588,7 +626,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     Ok(()) => {
                         refresh_collection_data(app, req.collection_id);
                     }
-                    Err(e) => log::error!("Error moving request up: {}", e),
+                    Err(e) => log::error!("Error moving request up: {e}"),
                 }
             }
         }
@@ -599,7 +637,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     Ok(()) => {
                         refresh_collection_data(app, req.collection_id);
                     }
-                    Err(e) => log::error!("Error moving request down: {}", e),
+                    Err(e) => log::error!("Error moving request down: {e}"),
                 }
             }
         }
@@ -624,7 +662,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
                     app.collection_view.update(msg.clone());
                 }
                 Err(e) => {
-                    log::error!("Error moving request to folder: {}", e);
+                    log::error!("Error moving request to folder: {e}");
                     app.collection_view.update(msg.clone());
                 }
             }
@@ -632,6 +670,30 @@ pub fn handle_message(app: &mut AstraioApp, msg: collection_view::Message) -> Ta
         collection_view::Message::CancelMoveToFolder => {
             app.collection_view.update(msg.clone());
             return Task::none();
+        }
+        collection_view::Message::RunCollection(idx) => {
+            if let Some(col) = app.collection_view.collections.get(idx) {
+                let col_id = col.id;
+                let col_name = col.name.clone();
+                let requests =
+                    crate::services::collection_service::get_requests(&app.db_conn, col_id, None)
+                        .unwrap_or_default();
+                if requests.is_empty() {
+                    app.toast_manager
+                        .warning("Collection has no requests to run");
+                    return Task::none();
+                }
+                app.collection_view.update(msg);
+                return Task::perform(async move { Some((col_id, col_name, requests)) }, |data| {
+                    if let Some((id, name, reqs)) = data {
+                        Message::CollectionRunnerMsg(
+                            crate::ui::views::collection_runner::Message::StartRun(id, name, reqs),
+                        )
+                    } else {
+                        Message::NoOp
+                    }
+                });
+            }
         }
         _ => {}
     }
@@ -776,7 +838,7 @@ fn save_current_to_collection(app: &mut AstraioApp) {
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to create default collection: {}", e);
+                    log::error!("Failed to create default collection: {e}");
                     return;
                 }
             }

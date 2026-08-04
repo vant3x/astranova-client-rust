@@ -14,8 +14,10 @@ impl HttpRequestView {
             pending_delete_cookie: None,
             pending_clear_all: false,
             domains: self.cookie_domains.clone(),
-            cookies: self.cookie_domain_cookies.iter().map(|c| {
-                crate::ui::views::cookie_manager::CookieSnapshot {
+            cookies: self
+                .cookie_domain_cookies
+                .iter()
+                .map(|c| crate::ui::views::cookie_manager::CookieSnapshot {
                     name: c.name.clone(),
                     value: c.value.clone(),
                     domain: c.domain.clone(),
@@ -24,8 +26,8 @@ impl HttpRequestView {
                     http_only: c.http_only,
                     same_site: c.same_site.clone(),
                     expires: c.expires.clone(),
-                }
-            }).collect(),
+                })
+                .collect(),
             total_count: self.cookie_count,
         };
 
@@ -34,16 +36,14 @@ impl HttpRequestView {
             let is_selected = manager.selected_domain.as_ref() == Some(domain);
             let domain_label = row![
                 lucide::globe().size(12),
-                text(format!(" {} ({})", domain, count)).size(13),
+                text(format!(" {domain} ({count})")).size(13),
             ]
             .spacing(4)
             .align_y(Alignment::Center);
 
             let domain_button = if is_selected {
                 button(domain_label)
-                    .style(|theme: &Theme, status: button::Status| {
-                        button::primary(theme, status)
-                    })
+                    .style(|theme: &Theme, status: button::Status| button::primary(theme, status))
                     .width(Length::Fill)
             } else {
                 button(domain_label).width(Length::Fill)
@@ -145,11 +145,9 @@ impl HttpRequestView {
             );
         } else {
             for cookie in &filtered {
-                let is_editing = manager
-                    .editing_cookie
-                    .as_ref()
-                    .map(|(d, n, p)| d == &cookie.domain && n == &cookie.name && p == &cookie.path)
-                    .unwrap_or(false);
+                let is_editing = manager.editing_cookie.as_ref().is_some_and(|(d, n, p)| {
+                    d == &cookie.domain && n == &cookie.name && p == &cookie.path
+                });
 
                 let value_cell: Element<'_, Message, Theme, iced::Renderer> = if is_editing {
                     text_input("value", &manager.edit_value)
@@ -214,8 +212,7 @@ impl HttpRequestView {
                 .spacing(8)
                 .align_y(Alignment::Center),
                 text(format!(
-                    "{} cookies across {} domains",
-                    total_cookies, total_domains
+                    "{total_cookies} cookies across {total_domains} domains"
                 ))
                 .size(12)
                 .color(Color::from_rgb(0.5, 0.5, 0.5)),

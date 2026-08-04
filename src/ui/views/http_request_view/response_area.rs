@@ -34,14 +34,14 @@ impl HttpRequestView {
             RequestStatus::Loading { started_at } => {
                 let elapsed = started_at.elapsed().as_millis();
                 let elapsed_text = if elapsed < 1000 {
-                    format!("{}ms", elapsed)
+                    format!("{elapsed}ms")
                 } else {
                     format!("{:.1}s", elapsed as f64 / 1000.0)
                 };
                 container(
                     column![
                         iced_aw::Spinner::new().width(32).height(32),
-                        text(format!("Sending request... ({})", elapsed_text)).size(14),
+                        text(format!("Sending request... ({elapsed_text})")).size(14),
                     ]
                     .spacing(8)
                     .align_x(Alignment::Center),
@@ -126,8 +126,7 @@ impl HttpRequestView {
                             let syntax = self
                                 .content_type
                                 .as_deref()
-                                .map(super::helpers::response_content_type_to_syntax)
-                                .unwrap_or("text");
+                                .map_or("text", super::helpers::response_content_type_to_syntax);
                             let is_truncated = self.highlight_content.is_some();
                             let highlight_ref = self
                                 .highlight_content
@@ -407,11 +406,12 @@ impl HttpRequestView {
                     text(if response.duration.as_millis() > 0 {
                         format!("{:.2?}", response.duration)
                     } else if let Some(started) = match &self.request_status {
-                        crate::ui::request_status::RequestStatus::Loading { started_at } => Some(*started_at),
+                        crate::ui::request_status::RequestStatus::Loading { started_at } =>
+                            Some(*started_at),
                         _ => None,
                     } {
                         let elapsed = started.elapsed();
-                        format!("{:.2?}", elapsed)
+                        format!("{elapsed:.2?}")
                     } else {
                         "N/A".to_string()
                     })

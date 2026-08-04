@@ -33,8 +33,8 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                     ));
                 }
                 Err(e) => {
-                    log::error!("Error creating mock server: {}", e);
-                    app.toast_manager.error(format!("Failed to create: {}", e));
+                    log::error!("Error creating mock server: {e}");
+                    app.toast_manager.error(format!("Failed to create: {e}"));
                 }
             }
         }
@@ -55,7 +55,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                     }
                     app.toast_manager.success("Mock server deleted");
                 }
-                Err(e) => log::error!("Error deleting mock server: {}", e),
+                Err(e) => log::error!("Error deleting mock server: {e}"),
             }
         }
         mock_server_view::Message::StartServer(id) => {
@@ -79,11 +79,11 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                 async move { crate::protocols::mock_server::start_mock_server(&config).await },
                 move |result| match result {
                     Ok((handle, actual_port)) => {
-                        log::info!("[Mock] Server started successfully on port {}", actual_port);
+                        log::info!("[Mock] Server started successfully on port {actual_port}");
                         Message::MockServerStarted(server_id, handle, actual_port)
                     }
                     Err(e) => {
-                        log::error!("[Mock] Failed to start server: {}", e);
+                        log::error!("[Mock] Failed to start server: {e}");
                         Message::MockServerStartError(server_id, e)
                     }
                 },
@@ -238,8 +238,8 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                         app.toast_manager.success("Endpoint saved");
                     }
                     Err(e) => {
-                        log::error!("Error saving endpoint: {}", e);
-                        app.toast_manager.error(format!("Failed to save: {}", e));
+                        log::error!("Error saving endpoint: {e}");
+                        app.toast_manager.error(format!("Failed to save: {e}"));
                     }
                 }
             }
@@ -259,7 +259,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: mock_server_view::Message) -> T
                     app.mock_server_view.sync_servers(&servers);
                     app.toast_manager.success("Endpoint deleted");
                 }
-                Err(e) => log::error!("Error deleting endpoint: {}", e),
+                Err(e) => log::error!("Error deleting endpoint: {e}"),
             }
         }
         mock_server_view::Message::EndpointSearchChanged(query) => {

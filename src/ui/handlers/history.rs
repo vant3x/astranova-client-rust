@@ -6,7 +6,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: history_view::Message) -> Task<
     match msg.clone() {
         history_view::Message::ConfirmClearHistory => {
             if let Err(e) = crate::services::history_service::clear(&app.db_conn) {
-                log::error!("Failed to clear history: {}", e);
+                log::error!("Failed to clear history: {e}");
             }
             app.history_view.update(msg);
         }
@@ -84,7 +84,7 @@ pub fn handle_message(app: &mut AstraioApp, msg: history_view::Message) -> Task<
                                 entries.len(),
                                 ext.to_uppercase()
                             )),
-                            Err(e) => Err(format!("Export failed: {}", e)),
+                            Err(e) => Err(format!("Export failed: {e}")),
                         }
                     } else {
                         Err("Export cancelled".to_string())
@@ -109,7 +109,7 @@ fn refresh_history_entries(app: &mut AstraioApp) {
     app.history_view.entries =
         crate::services::history_service::search(&app.db_conn, &query, &method, 500)
             .unwrap_or_else(|e| {
-                log::error!("Failed to search history: {}", e);
+                log::error!("Failed to search history: {e}");
                 Vec::new()
             });
 }

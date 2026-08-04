@@ -1,10 +1,13 @@
-use super::models::*;
+use super::models::{
+    OpenApiSpec, Operation, Parameter, ParsedEndpoint, ParsedParameter, ParsedSpec, PathItem,
+    Schema,
+};
 use crate::error::AppError;
 use std::collections::HashMap;
 
 pub fn parse_spec(content: &str) -> Result<ParsedSpec, AppError> {
-    let spec_value: serde_json::Value = serde_json::from_str(content)
-        .map_err(|e| AppError::Parse(format!("Invalid JSON: {}", e)))?;
+    let spec_value: serde_json::Value =
+        serde_json::from_str(content).map_err(|e| AppError::Parse(format!("Invalid JSON: {e}")))?;
 
     if spec_value.get("openapi").is_some() {
         parse_openapi3(&spec_value)
@@ -18,8 +21,8 @@ pub fn parse_spec(content: &str) -> Result<ParsedSpec, AppError> {
 }
 
 pub fn parse_spec_from_yaml(content: &str) -> Result<ParsedSpec, AppError> {
-    let spec_value: serde_json::Value = serde_yaml::from_str(content)
-        .map_err(|e| AppError::Parse(format!("Invalid YAML: {}", e)))?;
+    let spec_value: serde_json::Value =
+        serde_yaml::from_str(content).map_err(|e| AppError::Parse(format!("Invalid YAML: {e}")))?;
 
     if spec_value.get("openapi").is_some() {
         parse_openapi3(&spec_value)
@@ -34,7 +37,7 @@ pub fn parse_spec_from_yaml(content: &str) -> Result<ParsedSpec, AppError> {
 
 fn parse_openapi3(value: &serde_json::Value) -> Result<ParsedSpec, AppError> {
     let spec: OpenApiSpec = serde_json::from_value(value.clone())
-        .map_err(|e| AppError::Parse(format!("Failed to parse spec: {}", e)))?;
+        .map_err(|e| AppError::Parse(format!("Failed to parse spec: {e}")))?;
 
     let base_url = spec.servers.first().map(|s| s.url.clone()).or_else(|| {
         spec.info
@@ -66,7 +69,7 @@ fn parse_openapi3(value: &serde_json::Value) -> Result<ParsedSpec, AppError> {
 
 fn parse_swagger2(value: &serde_json::Value) -> Result<ParsedSpec, AppError> {
     let spec: OpenApiSpec = serde_json::from_value(value.clone())
-        .map_err(|e| AppError::Parse(format!("Failed to parse spec: {}", e)))?;
+        .map_err(|e| AppError::Parse(format!("Failed to parse spec: {e}")))?;
 
     let base_url = value.get("host").and_then(|h| h.as_str()).map(|host| {
         let scheme = value
@@ -79,7 +82,7 @@ fn parse_swagger2(value: &serde_json::Value) -> Result<ParsedSpec, AppError> {
             .get("basePath")
             .and_then(|bp| bp.as_str())
             .unwrap_or("/");
-        format!("{}://{}{}", scheme, host, base_path)
+        format!("{scheme}://{host}{base_path}")
     });
 
     let mut endpoints = Vec::new();
@@ -260,7 +263,7 @@ fn resolve_parameter_example(
     }
     match param.param_type.as_deref() {
         Some("string") => Some("string".to_string()),
-        Some("integer") | Some("number") => Some("0".to_string()),
+        Some("integer" | "number") => Some("0".to_string()),
         Some("boolean") => Some("false".to_string()),
         _ => None,
     }
@@ -320,11 +323,11 @@ fn generate_example_from_schema(
         Some("string") => {
             let s = match schema.format.as_deref() {
                 Some("email") => "user@example.com",
-                Some("uri") | Some("url") => "https://example.com",
+                Some("uri" | "url") => "https://example.com",
                 Some("uuid") => "550e8400-e29b-41d4-a716-446655440000",
                 Some("date") => "2024-01-01",
                 Some("date-time") => "2024-01-01T00:00:00Z",
-                Some("binary") | Some("byte") => "base64EncodedString",
+                Some("binary" | "byte") => "base64EncodedString",
                 _ => "string",
             };
             serde_json::Value::String(s.to_string())
@@ -689,7 +692,7 @@ mod tests {
             ..Default::default()
         };
         let example = generate_example_from_schema(&email_schema, &schemas).unwrap();
-        assert!(example.contains("@"));
+        assert!(example.contains('@'));
 
         let url_schema = Schema {
             schema_type: Some("string".to_string()),

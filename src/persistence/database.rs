@@ -196,7 +196,7 @@ fn get_db_path() -> std::result::Result<PathBuf, AppError> {
         .ok_or_else(|| AppError::Database("Failed to determine project directories".to_string()))?;
     let data_dir = proj_dirs.data_dir();
     std::fs::create_dir_all(data_dir)
-        .map_err(|e| AppError::Io(format!("Failed to create data directory: {}", e)))?;
+        .map_err(|e| AppError::Io(format!("Failed to create data directory: {e}")))?;
     Ok(data_dir.join("astraio.db"))
 }
 
@@ -452,7 +452,7 @@ pub fn init() -> std::result::Result<Connection, AppError> {
     let db_path = get_db_path()?;
     let conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
-        .map_err(|e| AppError::Database(format!("Failed to set pragmas: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to set pragmas: {e}")))?;
     init_schema(&conn)?;
     // Rebuild FTS index for any existing rows (handles upgrades)
     conn.execute_batch("INSERT INTO request_history_fts(request_history_fts) VALUES('rebuild');")
@@ -460,7 +460,7 @@ pub fn init() -> std::result::Result<Connection, AppError> {
     Ok(conn)
 }
 
-/// Persist a single cookie to SQLite (efficient for response handlers).
+/// Persist a single cookie to `SQLite` (efficient for response handlers).
 #[allow(dead_code)]
 pub fn save_cookie(
     conn: &Connection,
@@ -477,17 +477,17 @@ pub fn save_cookie(
             cookie.value,
             cookie.path,
             cookie.expires,
-            cookie.secure as i32,
-            cookie.http_only as i32,
+            i32::from(cookie.secure),
+            i32::from(cookie.http_only),
             cookie.same_site.to_string(),
             now,
         ],
     )
-    .map_err(|e| AppError::Database(format!("Failed to save cookie: {}", e)))?;
+    .map_err(|e| AppError::Database(format!("Failed to save cookie: {e}")))?;
     Ok(())
 }
 
-/// Persist the entire CookieJar to SQLite.
+/// Persist the entire `CookieJar` to `SQLite`.
 /// Uses a single transaction for performance.
 pub fn save_cookies(
     conn: &Connection,
@@ -498,7 +498,7 @@ pub fn save_cookies(
 
     let tx = conn
         .unchecked_transaction()
-        .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to start transaction: {e}")))?;
 
     for domain in &all_domains {
         for cookie in jar.cookies_for_domain(domain) {
@@ -512,22 +512,22 @@ pub fn save_cookies(
                     cookie.value,
                     cookie.path,
                     cookie.expires,
-                    cookie.secure as i32,
-                    cookie.http_only as i32,
+                    i32::from(cookie.secure),
+                    i32::from(cookie.http_only),
                     cookie.same_site.to_string(),
                     now,
                 ],
             )
-            .map_err(|e| AppError::Database(format!("Failed to save cookie: {}", e)))?;
+            .map_err(|e| AppError::Database(format!("Failed to save cookie: {e}")))?;
         }
     }
 
     tx.commit()
-        .map_err(|e| AppError::Database(format!("Failed to commit cookie transaction: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to commit cookie transaction: {e}")))?;
     Ok(())
 }
 
-/// Load all cookies from SQLite into a fresh CookieJar.
+/// Load all cookies from `SQLite` into a fresh `CookieJar`.
 /// Called once at app startup.
 pub fn load_cookies(conn: &Connection) -> std::result::Result<crate::cookie::CookieJar, AppError> {
     use crate::cookie::{Cookie, CookieJar, SameSite};
@@ -538,7 +538,7 @@ pub fn load_cookies(conn: &Connection) -> std::result::Result<crate::cookie::Coo
             "SELECT domain, name, value, path, expires_at, secure, http_only, same_site
              FROM cookies",
         )
-        .map_err(|e| AppError::Database(format!("Failed to prepare cookie query: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to prepare cookie query: {e}")))?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -559,12 +559,12 @@ pub fn load_cookies(conn: &Connection) -> std::result::Result<crate::cookie::Coo
                 same_site,
             })
         })
-        .map_err(|e| AppError::Database(format!("Failed to query cookies: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to query cookies: {e}")))?;
 
     for row in rows {
         match row {
             Ok(cookie) => jar.insert(cookie),
-            Err(e) => log::warn!("Skipping corrupt cookie row: {}", e),
+            Err(e) => log::warn!("Skipping corrupt cookie row: {e}"),
         }
     }
 
@@ -579,7 +579,7 @@ pub fn load_cookies(conn: &Connection) -> std::result::Result<crate::cookie::Coo
 /// Remove all cookies from the database (used by Clear Cookies button).
 pub fn clear_cookies_db(conn: &Connection) -> std::result::Result<(), AppError> {
     conn.execute("DELETE FROM cookies", [])
-        .map_err(|e| AppError::Database(format!("Failed to clear cookies: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to clear cookies: {e}")))?;
     Ok(())
 }
 
@@ -589,7 +589,7 @@ pub fn clear_domain_cookies_db(
     domain: &str,
 ) -> std::result::Result<(), AppError> {
     conn.execute("DELETE FROM cookies WHERE domain = ?1", params![domain])
-        .map_err(|e| AppError::Database(format!("Failed to clear domain cookies: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to clear domain cookies: {e}")))?;
     Ok(())
 }
 
@@ -604,7 +604,7 @@ pub fn delete_cookie_db(
         "DELETE FROM cookies WHERE domain = ?1 AND name = ?2 AND path = ?3",
         params![domain, name, path],
     )
-    .map_err(|e| AppError::Database(format!("Failed to delete cookie: {}", e)))?;
+    .map_err(|e| AppError::Database(format!("Failed to delete cookie: {e}")))?;
     Ok(())
 }
 
@@ -620,7 +620,7 @@ pub fn update_cookie_value_db(
         "UPDATE cookies SET value = ?1 WHERE domain = ?2 AND name = ?3 AND path = ?4",
         params![new_value, domain, name, path],
     )
-    .map_err(|e| AppError::Database(format!("Failed to update cookie: {}", e)))?;
+    .map_err(|e| AppError::Database(format!("Failed to update cookie: {e}")))?;
     Ok(())
 }
 
@@ -638,14 +638,14 @@ pub fn save_session(conn: &Connection, session: &Session) -> std::result::Result
             session.updated_at,
         ],
     )
-    .map_err(|e| AppError::Database(format!("Failed to save session: {}", e)))?;
+    .map_err(|e| AppError::Database(format!("Failed to save session: {e}")))?;
     Ok(())
 }
 
 pub fn load_sessions(conn: &Connection) -> std::result::Result<Vec<Session>, AppError> {
     let mut stmt = conn
         .prepare("SELECT id, name, cookies_json, headers_json, auth_json, created_at, updated_at FROM sessions ORDER BY updated_at DESC")
-        .map_err(|e| AppError::Database(format!("Failed to prepare sessions query: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to prepare sessions query: {e}")))?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -659,7 +659,7 @@ pub fn load_sessions(conn: &Connection) -> std::result::Result<Vec<Session>, App
                 updated_at: row.get(6)?,
             })
         })
-        .map_err(|e| AppError::Database(format!("Failed to query sessions: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to query sessions: {e}")))?;
 
     let mut sessions = Vec::new();
     for s in rows.flatten() {
@@ -670,7 +670,7 @@ pub fn load_sessions(conn: &Connection) -> std::result::Result<Vec<Session>, App
 
 pub fn delete_session(conn: &Connection, id: &str) -> std::result::Result<(), AppError> {
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
-        .map_err(|e| AppError::Database(format!("Failed to delete session: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to delete session: {e}")))?;
     Ok(())
 }
 
@@ -684,7 +684,7 @@ pub fn rename_session(
         "UPDATE sessions SET name = ?1, updated_at = ?2 WHERE id = ?3",
         params![new_name, now, id],
     )
-    .map_err(|e| AppError::Database(format!("Failed to rename session: {}", e)))?;
+    .map_err(|e| AppError::Database(format!("Failed to rename session: {e}")))?;
     Ok(())
 }
 
@@ -790,7 +790,7 @@ pub fn save_request_history(
     let timestamp = crate::utils::timestamp_seconds();
     conn.execute(
         "INSERT INTO request_history (method, url, status, duration_ms, timestamp, request_data, response_data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![method, url, status.map(|s| s as i64), duration_ms.map(|d| d as i64), timestamp, request_data, response_data],
+        params![method, url, status.map(i64::from), duration_ms.map(|d| d as i64), timestamp, request_data, response_data],
     )?;
     Ok(())
 }
@@ -858,6 +858,17 @@ fn map_history_row(row: &rusqlite::Row) -> rusqlite::Result<RequestHistoryEntry>
     })
 }
 
+fn sanitize_fts5_query(query: &str) -> String {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    // Wrap in double quotes to force literal phrase search.
+    // Escape internal double quotes by doubling them per FTS5 rules.
+    let escaped = trimmed.replace('"', "\"\"");
+    format!("\"{}\"*", escaped)
+}
+
 pub fn search_request_history(
     conn: &Connection,
     query: &str,
@@ -869,7 +880,7 @@ pub fn search_request_history(
 
     if has_query {
         // Use FTS5 for full-text search when there's a search query
-        let fts_pattern = format!("{}*", query.replace('"', ""));
+        let fts_pattern = sanitize_fts5_query(query);
         let sql = if has_method {
             "SELECT h.id, h.method, h.url, h.status, h.duration_ms, h.timestamp, h.request_data, h.response_data
              FROM request_history h
@@ -884,7 +895,7 @@ pub fn search_request_history(
              ORDER BY h.id DESC LIMIT ?2"
         };
 
-        let method_pattern = format!("%{}%", method_filter);
+        let method_pattern = format!("%{method_filter}%");
         let limit_val = limit as i64;
 
         let mut stmt = conn.prepare(sql)?;
@@ -907,7 +918,7 @@ pub fn search_request_history(
             "SELECT id, method, url, status, duration_ms, timestamp, request_data, response_data FROM request_history ORDER BY id DESC LIMIT ?1"
         };
 
-        let method_pattern = format!("%{}%", method_filter);
+        let method_pattern = format!("%{method_filter}%");
         let limit_val = limit as i64;
 
         let mut stmt = conn.prepare(sql)?;
@@ -973,7 +984,7 @@ pub fn create_collection(
     Ok(Collection {
         id: id as i32,
         name: name.to_string(),
-        description: description.map(|s| s.to_string()),
+        description: description.map(std::string::ToString::to_string),
         sort_order: max_order + 1,
         variables,
     })
@@ -1237,6 +1248,67 @@ fn parse_collection_request(row: &rusqlite::Row) -> rusqlite::Result<CollectionR
     })
 }
 
+#[allow(dead_code)]
+pub fn get_collection_request_by_id(
+    conn: &Connection,
+    id: i32,
+) -> Result<Option<CollectionRequest>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, collection_id, folder_id, name, method, url, headers, body, body_type, auth_type, auth_data, params, config_json, scripts, sort_order FROM collection_requests WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map([id], parse_collection_request)?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+#[allow(dead_code)]
+pub fn get_collection_by_id(conn: &Connection, id: i32) -> Result<Option<Collection>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, sort_order, variables FROM collections WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map([id], |row| {
+        let variables_json: String = row.get(4)?;
+        let variables: Vec<(String, String)> =
+            serde_json::from_str(&variables_json).unwrap_or_default();
+        Ok(Collection {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+            sort_order: row.get(3)?,
+            variables,
+        })
+    })?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+#[allow(dead_code)]
+pub fn get_collection_by_name(conn: &Connection, name: &str) -> Result<Option<Collection>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, sort_order, variables FROM collections WHERE name = ?1",
+    )?;
+    let mut rows = stmt.query_map([name], |row| {
+        let variables_json: String = row.get(4)?;
+        let variables: Vec<(String, String)> =
+            serde_json::from_str(&variables_json).unwrap_or_default();
+        Ok(Collection {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+            sort_order: row.get(3)?,
+            variables,
+        })
+    })?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
 pub fn rename_collection_request(conn: &Connection, id: i32, new_name: &str) -> Result<()> {
     conn.execute(
         "UPDATE collection_requests SET name = ?1 WHERE id = ?2",
@@ -1316,7 +1388,7 @@ pub fn get_adjacent_requests(
 pub fn create_mock_server(conn: &Connection, name: &str, port: u16) -> Result<i32> {
     conn.execute(
         "INSERT INTO mock_servers (name, port) VALUES (?1, ?2)",
-        params![name, port as i64],
+        params![name, i64::from(port)],
     )?;
     Ok(conn.last_insert_rowid() as i32)
 }
@@ -1387,7 +1459,7 @@ pub fn update_mock_server(
 ) -> Result<()> {
     conn.execute(
         "UPDATE mock_servers SET name = ?1, port = ?2, enabled = ?3 WHERE id = ?4",
-        params![name, port as i64, enabled as i64, id],
+        params![name, i64::from(port), i64::from(enabled), id],
     )?;
     Ok(())
 }
@@ -1412,7 +1484,7 @@ pub fn create_mock_endpoint(
     let headers_json = serde_json::to_string(headers).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
         "INSERT INTO mock_endpoints (mock_server_id, method, path, status, headers, body, delay_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![mock_server_id, method, path, status as i64, headers_json, body, delay_ms as i64],
+        params![mock_server_id, method, path, i64::from(status), headers_json, body, delay_ms as i64],
     )?;
     Ok(conn.last_insert_rowid() as i32)
 }
@@ -1462,7 +1534,7 @@ pub fn update_mock_endpoint(
     let headers_json = serde_json::to_string(headers).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
         "UPDATE mock_endpoints SET method = ?1, path = ?2, status = ?3, headers = ?4, body = ?5, delay_ms = ?6 WHERE id = ?7",
-        params![method, path, status as i64, headers_json, body, delay_ms as i64, id],
+        params![method, path, i64::from(status), headers_json, body, delay_ms as i64, id],
     )?;
     Ok(())
 }
@@ -1750,7 +1822,7 @@ mod tests {
             save_request_history(
                 &conn,
                 "GET",
-                &format!("https://example.com/{}", i),
+                &format!("https://example.com/{i}"),
                 Some(200),
                 Some(100),
                 None,
@@ -2103,7 +2175,7 @@ mod tests {
             save_request_history(
                 &conn,
                 "GET",
-                &format!("https://example.com/{}", i),
+                &format!("https://example.com/{i}"),
                 Some(200),
                 Some(100),
                 None,
@@ -2142,7 +2214,7 @@ mod tests {
             save_request_history(
                 &conn,
                 "GET",
-                &format!("https://example.com/{}", i),
+                &format!("https://example.com/{i}"),
                 Some(200),
                 Some(100),
                 None,

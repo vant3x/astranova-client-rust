@@ -130,7 +130,7 @@ fn generate_request_name(endpoint: &ParsedEndpoint) -> String {
         })
         .collect();
 
-    format!("{}{}", method_display, path_display)
+    format!("{method_display}{path_display}")
 }
 
 fn build_url(endpoint: &ParsedEndpoint, base_url: &Option<String>) -> String {
@@ -143,7 +143,7 @@ fn build_url(endpoint: &ParsedEndpoint, base_url: &Option<String>) -> String {
         .map(|segment| {
             if segment.starts_with('{') && segment.ends_with('}') {
                 let param_name = &segment[1..segment.len() - 1];
-                format!("{{{}}}", param_name)
+                format!("{{{param_name}}}")
             } else {
                 segment.to_string()
             }
@@ -152,9 +152,9 @@ fn build_url(endpoint: &ParsedEndpoint, base_url: &Option<String>) -> String {
         .join("/");
 
     if path.starts_with('/') {
-        format!("{}{}", base, path)
+        format!("{base}{path}")
     } else {
-        format!("{}/{}", base, path)
+        format!("{base}/{path}")
     }
 }
 

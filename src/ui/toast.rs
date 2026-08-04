@@ -250,7 +250,7 @@ mod tests {
         let mut manager = ToastManager::new();
         manager.max_toasts = 3;
         for i in 0..5 {
-            manager.success(format!("Toast {}", i));
+            manager.success(format!("Toast {i}"));
         }
         assert_eq!(manager.toasts.len(), 3);
         // Should keep the last 3 (Toast 2, 3, 4)

@@ -11,11 +11,7 @@ pub(crate) fn build_client_cache_key(config: &RequestConfig) -> String {
     let proxy_part = match (&config.proxy_url, &config.proxy) {
         (Some(url), _) => url.clone(),
         (None, Some(proxy)) => {
-            let user = proxy
-                .auth
-                .as_ref()
-                .map(|a| a.username.as_str())
-                .unwrap_or("");
+            let user = proxy.auth.as_ref().map_or("", |a| a.username.as_str());
             format!("{}:{}", proxy.url, user)
         }
         (None, None) => String::new(),
@@ -63,7 +59,7 @@ pub fn handle_http_request_msg(
                 }
                 if let Ok(jar) = app.cookie_jar.lock() {
                     if let Err(e) = crate::persistence::database::save_cookies(&app.db_conn, &jar) {
-                        log::warn!("Failed to persist loaded cookies: {}", e);
+                        log::warn!("Failed to persist loaded cookies: {e}");
                     }
                 }
                 app.sync_cookie_data_to_tabs();
@@ -180,7 +176,7 @@ pub fn handle_http_request_msg(
                 return Task::none();
             }
             if reqwest::Url::parse(url).is_err() {
-                app.toast_manager.error(format!("Invalid URL: {}", url));
+                app.toast_manager.error(format!("Invalid URL: {url}"));
                 return Task::none();
             }
 
@@ -204,7 +200,7 @@ pub fn handle_http_request_msg(
                 Ok(r) => r,
                 Err(e) => {
                     app.toast_manager
-                        .error(format!("Failed to build request: {}", e));
+                        .error(format!("Failed to build request: {e}"));
                     return Task::none();
                 }
             };
@@ -276,7 +272,7 @@ pub fn handle_http_request_msg(
             }
 
             for log in &script_output.pre_logs {
-                app.toast_manager.info(format!("[Pre-request] {}", log));
+                app.toast_manager.info(format!("[Pre-request] {log}"));
             }
 
             let request_url = request.url.clone();
@@ -326,7 +322,7 @@ pub fn handle_http_request_msg(
                             c
                         }
                         Err(e) => {
-                            log::error!("Failed to build custom client: {}", e);
+                            log::error!("Failed to build custom client: {e}");
                             Arc::clone(&app.http_client)
                         }
                     }
@@ -384,7 +380,7 @@ pub fn handle_http_request_msg(
                                         }
                                         Err(e) => {
                                             warnings
-                                                .push(format!("Post-response script error: {}", e));
+                                                .push(format!("Post-response script error: {e}"));
                                         }
                                     }
                                 } else {
@@ -393,14 +389,12 @@ pub fn handle_http_request_msg(
                                         &resp,
                                         &mut post_ctx,
                                     ) {
-                                        warnings.push(format!("Post-response script error: {}", e));
+                                        warnings.push(format!("Post-response script error: {e}"));
                                     }
                                     script_output.post_logs.append(&mut post_ctx.logs);
                                     script_output.post_errors.append(&mut post_ctx.errors);
                                     for (k, v) in &post_ctx.variables {
-                                        script_output
-                                            .extracted_vars
-                                            .push((k.clone(), v.clone()));
+                                        script_output.extracted_vars.push((k.clone(), v.clone()));
                                     }
                                 }
 
@@ -409,7 +403,7 @@ pub fn handle_http_request_msg(
                                 }
                                 let output_json =
                                     serde_json::to_string(&script_output).unwrap_or_default();
-                                warnings.push(format!("__SCRIPT_OUTPUT__{}", output_json));
+                                warnings.push(format!("__SCRIPT_OUTPUT__{output_json}"));
                                 resp.url = request_url;
                                 resp.method = request_method
                                     .parse()
@@ -434,7 +428,8 @@ pub fn handle_http_request_msg(
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 let stream_id = app.http_stream_id;
                 app.http_stream_id += 1;
-                app.http_stream_receivers.insert(index, (stream_id, Arc::new(Mutex::new(Some(rx)))));
+                app.http_stream_receivers
+                    .insert(index, (stream_id, Arc::new(Mutex::new(Some(rx)))));
 
                 let http_client_clone = http_client;
 
@@ -442,14 +437,13 @@ pub fn handle_http_request_msg(
                     if let Some(ms) = delay_ms {
                         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
                     }
-                    if let Err(e) = client::send_request_stream(
-                        &http_client_clone,
-                        request,
-                        tx.clone(),
-                    ).await {
-                        let _ = tx.send(crate::http_client::response::HttpStreamEvent::StreamError(
-                            e.to_string(),
-                        ));
+                    if let Err(e) =
+                        client::send_request_stream(&http_client_clone, request, tx.clone()).await
+                    {
+                        let _ =
+                            tx.send(crate::http_client::response::HttpStreamEvent::StreamError(
+                                e.to_string(),
+                            ));
                     }
                 });
                 view.abort_handle = None;
@@ -469,26 +463,23 @@ pub fn handle_http_request_msg(
                     }
                 } else {
                     app.toast_manager
-                        .warning(format!("[Post-response] {}", warning));
+                        .warning(format!("[Post-response] {warning}"));
                 }
             }
             match result {
                 Ok(response) => {
                     let request_data = view.pending_request_data.take();
-                    let response_data = serde_json::to_string(response)
-                        .ok()
-                        .map(|data| {
-                            let max = crate::persistence::database::MAX_HISTORY_RESPONSE_BYTES;
-                            if data.len() > max {
-                                let mut truncated: String =
-                                    String::with_capacity(max + 64);
-                                truncated.push_str(&data[..max]);
-                                truncated.push_str("...\"__truncated__\":true}");
-                                truncated
-                            } else {
-                                data
-                            }
-                        });
+                    let response_data = serde_json::to_string(response).ok().map(|data| {
+                        let max = crate::persistence::database::MAX_HISTORY_RESPONSE_BYTES;
+                        if data.len() > max {
+                            let mut truncated: String = String::with_capacity(max + 64);
+                            truncated.push_str(&data[..max]);
+                            truncated.push_str("...\"__truncated__\":true}");
+                            truncated
+                        } else {
+                            data
+                        }
+                    });
 
                     let (new_total, new_domains) = {
                         if let Ok(mut jar) = app.cookie_jar.lock() {
@@ -502,7 +493,7 @@ pub fn handle_http_request_msg(
                             if let Err(e) =
                                 crate::persistence::database::save_cookies(&app.db_conn, &jar)
                             {
-                                log::warn!("Failed to persist cookies: {}", e);
+                                log::warn!("Failed to persist cookies: {e}");
                             }
                             (total, domains)
                         } else {
@@ -546,7 +537,7 @@ pub fn handle_http_request_msg(
                     }
                 }
                 Err(e) => {
-                    app.toast_manager.error(format!("Request failed: {}", e));
+                    app.toast_manager.error(format!("Request failed: {e}"));
                 }
             }
             if let Some(v) = app.request_tabs.get_mut(index) {
@@ -571,16 +562,16 @@ pub fn handle_http_request_msg(
             )
         }
         http_request_view::Message::OAuth2StartAuth => {
-            Task::perform(async {}, move |_| Message::OAuth2StartAuth(index))
+            Task::perform(async {}, move |()| Message::OAuth2StartAuth(index))
         }
         http_request_view::Message::OAuth2RefreshToken => {
-            Task::perform(async {}, move |_| Message::OAuth2RefreshToken(index))
+            Task::perform(async {}, move |()| Message::OAuth2RefreshToken(index))
         }
         http_request_view::Message::OAuth2StartDeviceAuth => {
-            Task::perform(async {}, move |_| Message::OAuth2StartDeviceAuth(index))
+            Task::perform(async {}, move |()| Message::OAuth2StartDeviceAuth(index))
         }
         http_request_view::Message::OAuth2AutoPollToggle(enabled) => {
-            Task::perform(async {}, move |_| {
+            Task::perform(async {}, move |()| {
                 Message::OAuth2AutoPollToggle(index, enabled)
             })
         }
@@ -600,8 +591,10 @@ pub fn handle_http_request_msg(
                         .headers
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                        .map(|(_, v)| v.clone())
-                        .unwrap_or_else(|| "application/octet-stream".to_string());
+                        .map_or_else(
+                            || "application/octet-stream".to_string(),
+                            |(_, v)| v.clone(),
+                        );
 
                     let ext = if content_type.contains("image/png") {
                         "png"
@@ -635,7 +628,7 @@ pub fn handle_http_request_msg(
                         "bin"
                     };
 
-                    let suggested_name = format!("response.{}", ext);
+                    let suggested_name = format!("response.{ext}");
 
                     let save_dialog = rfd::AsyncFileDialog::new()
                         .set_file_name(suggested_name)
@@ -661,7 +654,7 @@ pub fn handle_http_request_msg(
                     let path = file_handle.path().to_path_buf();
                     tokio::fs::write(&path, &bytes)
                         .await
-                        .map_err(|e| format!("Write error: {}", e))?;
+                        .map_err(|e| format!("Write error: {e}"))?;
 
                     Ok(path.to_string_lossy().to_string())
                 },
@@ -676,7 +669,7 @@ pub fn handle_http_request_msg(
         http_request_view::Message::ResponseFileSaved(result) => {
             match result {
                 Ok(path) => {
-                    app.toast_manager.success(format!("Saved: {}", path));
+                    app.toast_manager.success(format!("Saved: {path}"));
                 }
                 Err(e) => {
                     if e != "Cancelled" {
@@ -714,7 +707,7 @@ pub fn handle_http_request_msg(
                     })
                 }
                 Err(e) => {
-                    app.toast_manager.error(format!("Invalid scripts: {}", e));
+                    app.toast_manager.error(format!("Invalid scripts: {e}"));
                     Task::none()
                 }
             }
@@ -729,18 +722,18 @@ pub fn handle_http_request_msg(
             })
         }
         http_request_view::Message::ClearCookies => {
-            Task::perform(async {}, |_| Message::ClearCookies)
+            Task::perform(async {}, |()| Message::ClearCookies)
         }
         http_request_view::Message::CookieManagerMsg(cm_msg) => {
             use crate::ui::views::cookie_manager::Message as CmMsg;
             match cm_msg {
                 CmMsg::DeleteCookie(d, n, p) => {
-                    Task::perform(async {}, move |_| Message::DeleteCookie(d, n, p))
+                    Task::perform(async {}, move |()| Message::DeleteCookie(d, n, p))
                 }
                 CmMsg::ClearDomain(d) => {
-                    Task::perform(async {}, move |_| Message::ClearDomainCookies(d))
+                    Task::perform(async {}, move |()| Message::ClearDomainCookies(d))
                 }
-                CmMsg::ClearAll => Task::perform(async {}, |_| Message::ClearCookies),
+                CmMsg::ClearAll => Task::perform(async {}, |()| Message::ClearCookies),
                 CmMsg::SaveEdit => {
                     let edit = app
                         .request_tabs
@@ -757,7 +750,7 @@ pub fn handle_http_request_msg(
                                 CmMsg::SaveEdit,
                             ));
                         }
-                        Task::perform(async {}, move |_| Message::SaveCookieEdit(d, n, p, value))
+                        Task::perform(async {}, move |()| Message::SaveCookieEdit(d, n, p, value))
                     } else {
                         if let Some(view) = app.request_tabs.get_mut(index) {
                             view.update(http_request_view::Message::CookieManagerMsg(
@@ -767,8 +760,8 @@ pub fn handle_http_request_msg(
                         Task::none()
                     }
                 }
-                CmMsg::ImportCookies => Task::perform(async {}, |_| Message::ImportCookies),
-                CmMsg::ExportCookies => Task::perform(async {}, |_| Message::ExportCookies),
+                CmMsg::ImportCookies => Task::perform(async {}, |()| Message::ImportCookies),
+                CmMsg::ExportCookies => Task::perform(async {}, |()| Message::ExportCookies),
                 other => {
                     if let Some(view) = app.request_tabs.get_mut(index) {
                         view.update(http_request_view::Message::CookieManagerMsg(other));
@@ -786,8 +779,7 @@ pub fn handle_http_request_msg(
             let cookies_json = app
                 .cookie_jar
                 .lock()
-                .map(|jar| jar.to_json_pretty())
-                .unwrap_or_else(|_| Ok("{}".to_string()))
+                .map_or_else(|_| Ok("{}".to_string()), |jar| jar.to_json_pretty())
                 .unwrap_or_else(|_| "{}".to_string());
             let headers_json = serde_json::to_string(
                 &view
@@ -804,7 +796,7 @@ pub fn handle_http_request_msg(
                     .collect::<Vec<_>>(),
             )
             .unwrap_or_else(|_| "[]".to_string());
-            let auth_json = serde_json::to_string(&view.auth).ok();
+            let auth_json = view.auth.to_safe_json().ok();
             let id = format!(
                 "{}-{}",
                 chrono::Utc::now().timestamp_millis(),
@@ -821,19 +813,18 @@ pub fn handle_http_request_msg(
             };
             if let Err(e) = crate::persistence::database::save_session(&app.db_conn, &session) {
                 app.toast_manager
-                    .error(format!("Failed to save session: {}", e));
+                    .error(format!("Failed to save session: {e}"));
             } else {
                 view.sessions.insert(0, session);
                 view.new_session_name.clear();
-                app.toast_manager
-                    .success(format!("Session saved: {}", name));
+                app.toast_manager.success(format!("Session saved: {name}"));
             }
             Task::none()
         }
         http_request_view::Message::SessionConfirmDelete(session_id) => {
             if let Err(e) = crate::persistence::database::delete_session(&app.db_conn, &session_id)
             {
-                log::error!("Failed to delete session: {}", e);
+                log::error!("Failed to delete session: {e}");
             }
             view.update(http_request_view::Message::SessionConfirmDelete(session_id));
             Task::none()
@@ -847,7 +838,7 @@ pub fn handle_http_request_msg(
                         session_id,
                         &new_name,
                     ) {
-                        log::error!("Failed to rename session: {}", e);
+                        log::error!("Failed to rename session: {e}");
                     }
                 }
             }

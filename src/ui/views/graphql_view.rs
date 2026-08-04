@@ -114,7 +114,9 @@ pub enum Message {
     #[allow(dead_code)]
     SubscriptionDisconnected(String),
     #[allow(dead_code)]
-    SubscriptionDataReceived(Result<crate::protocols::graphql::GraphQLResponse, crate::error::AppError>),
+    SubscriptionDataReceived(
+        Result<crate::protocols::graphql::GraphQLResponse, crate::error::AppError>,
+    ),
     SubscriptionError(String),
 }
 
@@ -197,9 +199,10 @@ impl Clone for GraphQLView {
             response_body_editor: text_editor::Content::with_text(
                 &self.response_body_editor.text(),
             ),
-            highlight_content: self.highlight_content.as_ref().map(|c| {
-                text_editor::Content::with_text(&c.text())
-            }),
+            highlight_content: self
+                .highlight_content
+                .as_ref()
+                .map(|c| text_editor::Content::with_text(&c.text())),
             status_code: self.status_code,
             content_type: self.content_type.clone(),
             response_headers: self.response_headers.clone(),
@@ -269,13 +272,13 @@ impl Default for GraphQLView {
         Self {
             url_input: "https://countries.trevorblades.com/".to_string(),
             query_input: text_editor::Content::with_text(
-                r#"{
+                r"{
   countries {
     code
     name
     emoji
   }
-}"#,
+}",
             ),
             variables_input: text_editor::Content::new(),
             operation_name: String::new(),
@@ -315,7 +318,7 @@ impl Default for GraphQLView {
 impl GraphQLView {
     pub fn apply_environment(&mut self, env: &crate::persistence::database::Environment) {
         for (key, value) in &env.variables {
-            let placeholder = format!("{{{{{}}}}}", key);
+            let placeholder = format!("{{{{{key}}}}}");
             self.url_input = self.url_input.replace(&placeholder, value);
 
             let new_query = self.query_input.text().replace(&placeholder, value);
@@ -422,11 +425,11 @@ impl GraphQLView {
 
         match &self.auth {
             Auth::BearerToken(token) if !token.is_empty() => {
-                headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
+                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
             }
             Auth::Basic { user, pass } if !user.is_empty() || !pass.is_empty() => {
-                let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
-                headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
+                let encoded = general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+                headers.push(("Authorization".to_string(), format!("Basic {encoded}")));
             }
             Auth::ApiKey {
                 key,
@@ -493,11 +496,11 @@ impl GraphQLView {
 
         match &self.auth {
             Auth::BearerToken(token) if !token.is_empty() => {
-                headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
+                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
             }
             Auth::Basic { user, pass } if !user.is_empty() || !pass.is_empty() => {
-                let encoded = general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
-                headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
+                let encoded = general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+                headers.push(("Authorization".to_string(), format!("Basic {encoded}")));
             }
             Auth::ApiKey {
                 key,
@@ -593,12 +596,11 @@ impl GraphQLView {
                     self.status_code = Some(status);
                     self.response_duration = Some(duration);
                     self.response_size = Some(size);
-                    self.response_headers = headers.to_vec();
+                    self.response_headers = headers.clone();
                     let ct = headers
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                        .map(|(_, v)| v.clone())
-                        .unwrap_or_else(|| "application/json".to_string());
+                        .map_or_else(|| "application/json".to_string(), |(_, v)| v.clone());
                     self.content_type = Some(ct);
 
                     let formatted = crate::protocols::graphql::format_response(&response);
@@ -606,7 +608,8 @@ impl GraphQLView {
                     let fmt_len = formatted.len();
                     self.highlight_content = if fmt_len > 500_000 {
                         // Safe truncation at char boundary to avoid UTF-8 panic
-                        let truncated = if let Some(idx) = formatted.char_indices()
+                        let truncated = if let Some(idx) = formatted
+                            .char_indices()
                             .map(|(i, _)| i)
                             .find(|&i| i >= 500_000)
                         {
@@ -622,7 +625,7 @@ impl GraphQLView {
                     self.request_status = RequestStatus::Success;
                 }
                 Err(e) => {
-                    self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                    self.request_status = RequestStatus::Error(format!("Error: {e}"));
                     self.last_response = None;
                     self.response_body_editor = text_editor::Content::new();
                     self.highlight_content = None;
@@ -645,7 +648,7 @@ impl GraphQLView {
                     let text: String = self
                         .response_headers
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .map(|(k, v)| format!("{k}: {v}"))
                         .collect::<Vec<_>>()
                         .join("\n");
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
@@ -692,7 +695,7 @@ impl GraphQLView {
                         self.schema = Some(schema);
                     }
                     Err(e) => {
-                        self.last_save_status = Some(format!("Schema fetch failed: {}", e));
+                        self.last_save_status = Some(format!("Schema fetch failed: {e}"));
                     }
                 }
             }
@@ -710,7 +713,7 @@ impl GraphQLView {
                     self.last_save_status = Some("Saved to history".to_string());
                 }
                 Err(e) => {
-                    self.last_save_status = Some(format!("Failed to save: {}", e));
+                    self.last_save_status = Some(format!("Failed to save: {e}"));
                 }
             },
             Message::SaveToCollection(_, _) => {
@@ -721,7 +724,7 @@ impl GraphQLView {
                     self.last_save_status = Some("Saved to collection".to_string());
                 }
                 Err(e) => {
-                    self.last_save_status = Some(format!("Failed to save: {}", e));
+                    self.last_save_status = Some(format!("Failed to save: {e}"));
                 }
             },
             Message::ToggleSaveMenu => {
@@ -731,10 +734,9 @@ impl GraphQLView {
                 let query = self.query_input.text();
                 let last_word_start = query
                     .rfind(|c: char| c.is_whitespace() || c == '{' || c == '(' || c == ':')
-                    .map(|p| p + 1)
-                    .unwrap_or(0);
+                    .map_or(0, |p| p + 1);
                 let prefix = &query[..last_word_start];
-                let new_query = format!("{}{}", prefix, suggestion);
+                let new_query = format!("{prefix}{suggestion}");
                 self.query_input = text_editor::Content::with_text(&new_query);
                 self.autocomplete_suggestions.clear();
             }
@@ -743,7 +745,7 @@ impl GraphQLView {
                 let args_str = if has_args {
                     let formatted: Vec<String> = args
                         .iter()
-                        .map(|(name, arg_type)| format!("${}: {}", name, arg_type))
+                        .map(|(name, arg_type)| format!("${name}: {arg_type}"))
                         .collect();
                     format!("({})", formatted.join(", "))
                 } else {
@@ -755,19 +757,19 @@ impl GraphQLView {
                     && !return_type.ends_with(']');
 
                 let fragment = if is_scalar {
-                    format!("{}{}", field_name, args_str)
+                    format!("{field_name}{args_str}")
                 } else {
-                    format!("{}{} {{\n  \n}}", field_name, args_str)
+                    format!("{field_name}{args_str} {{\n  \n}}")
                 };
 
                 let query = self.query_input.text();
                 let new_query = if query.trim().is_empty() || query.trim() == "{" {
-                    format!("{{\n  {}\n}}", fragment)
+                    format!("{{\n  {fragment}\n}}")
                 } else {
                     let insert_pos = query.rfind('}').unwrap_or(query.len());
                     let before = &query[..insert_pos];
                     let after = &query[insert_pos..];
-                    format!("{}  {}\n{}", before, fragment, after)
+                    format!("{before}  {fragment}\n{after}")
                 };
 
                 self.query_input = text_editor::Content::with_text(&new_query);
@@ -833,7 +835,7 @@ impl GraphQLView {
                 self.subscription_status = SubscriptionStatus::Disconnected;
                 self.subscription_id = None;
                 if !reason.is_empty() {
-                    log::warn!("GraphQL subscription disconnected: {}", reason);
+                    log::warn!("GraphQL subscription disconnected: {reason}");
                 }
             }
             Message::SubscriptionDataReceived(result) => {
@@ -862,12 +864,12 @@ impl GraphQLView {
                         self.response_body_editor = text_editor::Content::with_text(&formatted);
                     }
                     Err(e) => {
-                        log::error!("GraphQL subscription error: {}", e);
+                        log::error!("GraphQL subscription error: {e}");
                     }
                 }
             }
             Message::SubscriptionError(e) => {
-                log::error!("GraphQL subscription error: {}", e);
+                log::error!("GraphQL subscription error: {e}");
                 self.subscription_status = SubscriptionStatus::Disconnected;
             }
         }
@@ -1088,14 +1090,14 @@ impl GraphQLView {
             RequestStatus::Loading { started_at } => {
                 let elapsed = started_at.elapsed().as_millis();
                 let elapsed_text = if elapsed < 1000 {
-                    format!("{}ms", elapsed)
+                    format!("{elapsed}ms")
                 } else {
                     format!("{:.1}s", elapsed as f64 / 1000.0)
                 };
                 container(
                     column![
                         iced_aw::Spinner::new().width(32).height(32),
-                        text(format!("Sending request... ({})", elapsed_text)).size(14),
+                        text(format!("Sending request... ({elapsed_text})")).size(14),
                     ]
                     .spacing(8)
                     .align_x(Alignment::Center),
@@ -1202,7 +1204,7 @@ impl GraphQLView {
                     .into()
             }
             RequestStatus::Error(error_message) => {
-                container(text(format!("Error: {}", error_message)))
+                container(text(format!("Error: {error_message}")))
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .align_x(Alignment::Center)
@@ -1213,7 +1215,7 @@ impl GraphQLView {
 
         let status_text = if let Some(status) = self.status_code {
             let color = status_color(status);
-            text(format!("  {}  ", status)).size(14).color(color)
+            text(format!("  {status}  ")).size(14).color(color)
         } else {
             text(String::new()).size(14)
         };
@@ -1231,22 +1233,20 @@ impl GraphQLView {
         let duration_text = text(format!(
             "{}ms",
             self.response_duration
-                .map(|d| d.as_millis().to_string())
-                .unwrap_or_else(|| "N/A".to_string())
+                .map_or_else(|| "N/A".to_string(), |d| d.as_millis().to_string())
         ))
         .size(14);
 
-        let size_text = text(
-            self.response_size
-                .map(|s| {
-                    if s > 1024 {
-                        format!("{:.1} KB", s as f64 / 1024.0)
-                    } else {
-                        format!("{} B", s)
-                    }
-                })
-                .unwrap_or_else(|| "N/A".to_string()),
-        )
+        let size_text = text(self.response_size.map_or_else(
+            || "N/A".to_string(),
+            |s| {
+                if s > 1024 {
+                    format!("{:.1} KB", s as f64 / 1024.0)
+                } else {
+                    format!("{s} B")
+                }
+            },
+        ))
         .size(14);
 
         let method_label = text("GraphQL")
@@ -1371,25 +1371,26 @@ impl GraphQLView {
                     .color(Color::from_rgb(0.2, 0.7, 0.3)),
                 };
                 let event_count = self.subscription_events.len();
-                let sub_events_display: Element<'_, Message, Theme, Renderer> =
-                    if event_count > 0 && matches!(self.subscription_status, SubscriptionStatus::Connected) {
-                        let mut events_list = column![].spacing(2);
-                        // Show last 10 events
-                        let start = event_count.saturating_sub(10);
-                        for event in &self.subscription_events[start..] {
-                            let data_str = serde_json::to_string_pretty(&event.data)
-                                .unwrap_or_else(|_| event.data.to_string());
-                            let truncated: String = data_str.chars().take(100).collect();
-                            events_list = events_list.push(
-                                text(format!("{}: {}", &event.id[..8], truncated))
-                                    .size(10)
-                                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
-                            );
-                        }
-                        scrollable(events_list).height(Length::Fixed(120.0)).into()
-                    } else {
-                        column![].into()
-                    };
+                let sub_events_display: Element<'_, Message, Theme, Renderer> = if event_count > 0
+                    && matches!(self.subscription_status, SubscriptionStatus::Connected)
+                {
+                    let mut events_list = column![].spacing(2);
+                    // Show last 10 events
+                    let start = event_count.saturating_sub(10);
+                    for event in &self.subscription_events[start..] {
+                        let data_str = serde_json::to_string_pretty(&event.data)
+                            .unwrap_or_else(|_| event.data.to_string());
+                        let truncated: String = data_str.chars().take(100).collect();
+                        events_list = events_list.push(
+                            text(format!("{}: {}", &event.id[..8], truncated))
+                                .size(10)
+                                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+                        );
+                    }
+                    scrollable(events_list).height(Length::Fixed(120.0)).into()
+                } else {
+                    column![].into()
+                };
                 column![sub_status_text, sub_events_display].spacing(4)
             },
             column![
@@ -1473,8 +1474,7 @@ impl GraphQLView {
                 let is_selected = self
                     .schema_selected_type
                     .as_ref()
-                    .map(|s| s == &schema_type.name)
-                    .unwrap_or(false);
+                    .is_some_and(|s| s == &schema_type.name);
 
                 let item = if is_selected {
                     button(type_label).on_press(Message::SchemaTypeSelected(String::new()))
@@ -1563,7 +1563,7 @@ impl GraphQLView {
                             if let Some(desc) = &field.description {
                                 if !desc.is_empty() {
                                     field_col = field_col.push(
-                                        text(format!("  {}", desc))
+                                        text(format!("  {desc}"))
                                             .size(10)
                                             .color(Color::from_rgb(0.5, 0.5, 0.5)),
                                     );
@@ -1586,7 +1586,7 @@ impl GraphQLView {
 
                                     if let Some(default) = &arg.default_value {
                                         arg_row = arg_row.push(
-                                            text(format!(" = {}", default))
+                                            text(format!(" = {default}"))
                                                 .size(10)
                                                 .color(Color::from_rgb(0.5, 0.5, 0.5)),
                                         );
@@ -1595,7 +1595,7 @@ impl GraphQLView {
                                     if let Some(desc) = &arg.description {
                                         if !desc.is_empty() {
                                             arg_row = arg_row.push(
-                                                text(format!("  ({})", desc))
+                                                text(format!("  ({desc})"))
                                                     .size(9)
                                                     .color(Color::from_rgb(0.4, 0.4, 0.4)),
                                             );
@@ -1636,7 +1636,7 @@ impl GraphQLView {
                             if let Some(desc) = &field.description {
                                 if !desc.is_empty() {
                                     field_col = field_col.push(
-                                        text(format!("  {}", desc))
+                                        text(format!("  {desc}"))
                                             .size(10)
                                             .color(Color::from_rgb(0.5, 0.5, 0.5)),
                                     );
@@ -1644,7 +1644,7 @@ impl GraphQLView {
                             }
                             if let Some(default) = &field.default_value {
                                 field_col = field_col.push(
-                                    text(format!("  Default: {}", default))
+                                    text(format!("  Default: {default}"))
                                         .size(10)
                                         .color(Color::from_rgb(0.4, 0.4, 0.4)),
                                 );
@@ -1672,7 +1672,7 @@ impl GraphQLView {
                             if let Some(desc) = &val.description {
                                 if !desc.is_empty() {
                                     val_text = val_text.push(
-                                        text(format!("- {}", desc))
+                                        text(format!("- {desc}"))
                                             .size(10)
                                             .color(Color::from_rgb(0.5, 0.5, 0.5)),
                                     );
@@ -1710,21 +1710,21 @@ impl GraphQLView {
                 container(
                     column![
                         text("Select a type from the list to view its details.").size(12),
-                        text(format!("Query root: {}", qt))
+                        text(format!("Query root: {qt}"))
                             .size(12)
                             .color(Color::from_rgb(0.2, 0.6, 0.9),),
                         {
                             let mut info = column![].spacing(2);
                             if let Some(mt) = &schema.mutation_type {
                                 info = info.push(
-                                    text(format!("Mutation root: {}", mt))
+                                    text(format!("Mutation root: {mt}"))
                                         .size(12)
                                         .color(Color::from_rgb(0.2, 0.6, 0.9)),
                                 );
                             }
                             if let Some(st) = &schema.subscription_type {
                                 info = info.push(
-                                    text(format!("Subscription root: {}", st))
+                                    text(format!("Subscription root: {st}"))
                                         .size(12)
                                         .color(Color::from_rgb(0.2, 0.6, 0.9)),
                                 );
@@ -1955,7 +1955,9 @@ impl GraphQLView {
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center),
-                    if !config.status.to_string().is_empty() {
+                    if config.status.to_string().is_empty() {
+                        Element::from(column![])
+                    } else {
                         Element::from(text(config.status.to_string()).size(12).color(
                             match &config.status {
                                 crate::data::auth::OAuth2Status::Error(_) => {
@@ -1970,8 +1972,6 @@ impl GraphQLView {
                                 _ => Color::from_rgb(0.5, 0.5, 0.5),
                             },
                         ))
-                    } else {
-                        Element::from(column![])
                     },
                 ]
                 .spacing(10)
@@ -2044,7 +2044,7 @@ impl GraphQLView {
                         let path: String = err
                             .path
                             .iter()
-                            .map(|p| p.to_string())
+                            .map(std::string::ToString::to_string)
                             .collect::<Vec<_>>()
                             .join(".");
                         err_col = err_col.push(

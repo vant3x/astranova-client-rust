@@ -56,8 +56,8 @@ impl HttpRequestView {
             .proxy
             .as_ref()
             .and_then(|p| p.auth.as_ref());
-        let proxy_username = proxy_auth.map(|a| a.username.as_str()).unwrap_or("");
-        let proxy_password = proxy_auth.map(|a| a.password.as_str()).unwrap_or("");
+        let proxy_username = proxy_auth.map_or("", |a| a.username.as_str());
+        let proxy_password = proxy_auth.map_or("", |a| a.password.as_str());
 
         let proxy_username_input = text_input("Proxy Username", proxy_username)
             .on_input(Message::ProxyAuthUsernameChanged)
@@ -82,7 +82,9 @@ impl HttpRequestView {
         })
         .on_press(Message::VerifySslToggled(!verify_ssl));
 
-        let ssl_warning: Element<'_, Message, Theme, iced::Renderer> = if !verify_ssl {
+        let ssl_warning: Element<'_, Message, Theme, iced::Renderer> = if verify_ssl {
+            column![].into()
+        } else {
             container(
                 row![
                     lucide::triangle_alert().size(14),
@@ -98,8 +100,6 @@ impl HttpRequestView {
                 ..Default::default()
             })
             .into()
-        } else {
-            column![].into()
         };
 
         let ca_cert = self
@@ -251,14 +251,12 @@ impl HttpRequestView {
                             let is_renaming = self
                                 .renaming_session
                                 .as_ref()
-                                .map(|s| s == &session.id)
-                                .unwrap_or(false);
+                                .is_some_and(|s| s == &session.id);
 
                             let is_pending_delete = self
                                 .pending_delete_session
                                 .as_ref()
-                                .map(|s| s == &session.id)
-                                .unwrap_or(false);
+                                .is_some_and(|s| s == &session.id);
 
                             let session_row = if is_renaming {
                                 let rename_input =

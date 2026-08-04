@@ -481,9 +481,10 @@ impl Clone for HttpRequestView {
             active_script_tab: self.active_script_tab.clone(),
             script_output: self.script_output.clone(),
             cookie_count: self.cookie_count,
-            highlight_content: self.highlight_content.as_ref().map(|c| {
-                text_editor::Content::with_text(&c.text())
-            }),
+            highlight_content: self
+                .highlight_content
+                .as_ref()
+                .map(|c| text_editor::Content::with_text(&c.text())),
             cookie_domain_count: self.cookie_domain_count,
             cookie_manager: self.cookie_manager.clone(),
             cookie_domains: self.cookie_domains.clone(),
@@ -500,73 +501,10 @@ impl Clone for HttpRequestView {
 }
 
 impl HttpRequestView {
-    pub fn clone_for_send(&self) -> Self {
-        Self {
-            url_input: self.url_input.clone(),
-            method: self.method.clone(),
-            body_input: text_editor::Content::with_text(&self.body_input.text()),
-            auth: self.auth.clone(),
-            headers_editor: self.headers_editor.clone(),
-            params_editor: self.params_editor.clone(),
-            request_content_type: self.request_content_type,
-            request_config: self.request_config.clone(),
-            body_type: self.body_type,
-            multipart_entries: self.multipart_entries.clone(),
-            multipart_next_id: self.multipart_next_id,
-            form_entries: self.form_entries.clone(),
-            form_next_id: self.form_next_id,
-            scripts: self.scripts.clone(),
-            active_tab: self.active_tab.clone(),
-            active_response_tab: self.active_response_tab.clone(),
-            request_status: self.request_status.clone(),
-            last_response: None,
-            response_body_editor: text_editor::Content::new(),
-            status_code: None,
-            content_type: None,
-            response_duration: None,
-            response_size: None,
-            highlighter_theme: self.highlighter_theme,
-            show_snippets: false,
-            show_import_curl: false,
-            import_curl_input: String::new(),
-            snippet_format: self.snippet_format,
-            snippet_content: text_editor::Content::new(),
-            word_wrap: self.word_wrap,
-            pending_request_data: None,
-            logo_handle: self.logo_handle.clone(),
-            streaming_body: String::new(),
-            streaming_chunks_count: 0,
-            show_response_search: false,
-            response_search_query: String::new(),
-            response_search_matches: Vec::new(),
-            response_search_index: 0,
-            show_image_preview: false,
-            image_preview_handle: None,
-            show_bearer_token: self.show_bearer_token,
-            show_api_key_value: self.show_api_key_value,
-            abort_handle: None,
-            pre_request_script_editor: text_editor::Content::with_text(
-                &self.pre_request_script_editor.text(),
-            ),
-            post_response_script_editor: text_editor::Content::with_text(
-                &self.post_response_script_editor.text(),
-            ),
-            active_script_tab: self.active_script_tab.clone(),
-            script_output: ScriptOutput::default(),
-            cookie_count: 0,
-            highlight_content: None,
-            cookie_domain_count: 0,
-            cookie_manager: Default::default(),
-            cookie_domains: Vec::new(),
-            cookie_domain_cookies: Vec::new(),
-            sessions: Vec::new(),
-            new_session_name: String::new(),
-            selected_session: None,
-            pending_delete_session: None,
-            renaming_session: None,
-            rename_value: String::new(),
-            last_search_instant: None,
-        }
+    /// Create a lightweight snapshot of only the fields needed for building/sending a request.
+    /// This avoids cloning 50+ fields (response state, UI state, etc.) on every send.
+    pub fn clone_for_send(&self) -> crate::ui::views::http_request_view::builders::RequestSnapshot {
+        crate::ui::views::http_request_view::builders::RequestSnapshot::from_view(self)
     }
 }
 
@@ -757,7 +695,7 @@ impl HttpRequestView {
             Message::ParamsEditor(msg) => self.params_editor.update(msg),
             Message::BodyInputChanged(action) => self.body_input.perform(action),
             Message::RequestContentTypeSelected(content_type) => {
-                self.request_content_type = content_type
+                self.request_content_type = content_type;
             }
             Message::SendRequest => {}
             Message::SetLoading => {
@@ -782,19 +720,26 @@ impl HttpRequestView {
             Message::StreamEvent(_tab_index, event) => {
                 use crate::http_client::response::HttpStreamEvent;
                 match event {
-                    HttpStreamEvent::HeadersReceived { status, headers, url, method: _ } => {
+                    HttpStreamEvent::HeadersReceived {
+                        status,
+                        headers,
+                        url,
+                        method: _,
+                    } => {
                         self.status_code = Some(status);
                         let content_type = headers
                             .iter()
                             .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                            .map(|(_, v)| v.clone())
-                            .unwrap_or_else(|| "unknown".to_string());
+                            .map_or_else(|| "unknown".to_string(), |(_, v)| v.clone());
                         self.content_type = Some(content_type);
                         self.streaming_body.clear();
                         self.streaming_chunks_count = 0;
                         self.last_response = Some(crate::http_client::response::HttpResponse {
                             url,
-                            method: self.method.parse().unwrap_or(crate::http_client::request::HttpMethod::Get),
+                            method: self
+                                .method
+                                .parse()
+                                .unwrap_or(crate::http_client::request::HttpMethod::Get),
                             status,
                             headers,
                             body: String::new(),
@@ -817,7 +762,8 @@ impl HttpRequestView {
                                 } else {
                                     &self.streaming_body
                                 };
-                                self.response_body_editor = text_editor::Content::with_text(preview);
+                                self.response_body_editor =
+                                    text_editor::Content::with_text(preview);
                             }
                             // Don't set Success here - wait for StreamComplete
                         }
@@ -840,11 +786,12 @@ impl HttpRequestView {
                         // Don't set Success here - wait for StreamComplete
                     }
                     HttpStreamEvent::StreamComplete { total_size } => {
-                        let duration = if let RequestStatus::Loading { started_at } = self.request_status {
-                            started_at.elapsed()
-                        } else {
-                            std::time::Duration::ZERO
-                        };
+                        let duration =
+                            if let RequestStatus::Loading { started_at } = self.request_status {
+                                started_at.elapsed()
+                            } else {
+                                std::time::Duration::ZERO
+                            };
                         let final_body = std::mem::take(&mut self.streaming_body);
                         self.response_size = Some(total_size);
                         self.response_duration = Some(duration);
@@ -862,7 +809,7 @@ impl HttpRequestView {
                             truncated_display
                         } else {
                             if let Some(ref mut resp) = self.last_response {
-                                resp.body = final_body.clone();
+                                resp.body.clone_from(&final_body);
                                 resp.size = total_size;
                                 resp.duration = duration;
                             }
@@ -879,7 +826,7 @@ impl HttpRequestView {
                         self.request_status = RequestStatus::Success;
                     }
                     HttpStreamEvent::StreamError(e) => {
-                        self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                        self.request_status = RequestStatus::Error(format!("Error: {e}"));
                         self.last_response = None;
                         self.streaming_body.clear();
                         self.highlight_content = None;
@@ -897,8 +844,7 @@ impl HttpRequestView {
                         .headers
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                        .map(|(_, v)| v.clone())
-                        .unwrap_or_else(|| "unknown".to_string());
+                        .map_or_else(|| "unknown".to_string(), |(_, v)| v.clone());
                     self.content_type = Some(content_type.clone());
 
                     let is_image = content_type.contains("image/");
@@ -943,7 +889,7 @@ impl HttpRequestView {
                     self.request_status = RequestStatus::Success;
                 }
                 Err(e) => {
-                    self.request_status = RequestStatus::Error(format!("Error: {}", e));
+                    self.request_status = RequestStatus::Error(format!("Error: {e}"));
                     self.last_response = None;
                     self.response_body_editor = text_editor::Content::new();
                     self.highlight_content = None;
@@ -971,7 +917,7 @@ impl HttpRequestView {
                     let headers_text = response
                         .headers
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .map(|(k, v)| format!("{k}: {v}"))
                         .collect::<Vec<_>>()
                         .join("\n");
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
@@ -1197,12 +1143,7 @@ impl HttpRequestView {
                         for (key, value) in result.headers {
                             self.headers_editor
                                 .update(crate::ui::components::key_value_editor::Message::AddEntry);
-                            let entry_id = self
-                                .headers_editor
-                                .entries
-                                .last()
-                                .map(|e| e.id)
-                                .unwrap_or(0);
+                            let entry_id = self.headers_editor.entries.last().map_or(0, |e| e.id);
                             self.headers_editor.update(
                                 crate::ui::components::key_value_editor::Message::EntryKeyChanged(
                                     entry_id, key,
@@ -1221,7 +1162,7 @@ impl HttpRequestView {
                         self.import_curl_input.clear();
                     }
                     Err(e) => {
-                        log::error!("Failed to parse cURL: {}", e);
+                        log::error!("Failed to parse cURL: {e}");
                     }
                 }
             }
@@ -1273,13 +1214,13 @@ impl HttpRequestView {
             }
             Message::ToggleResponseSearch => {
                 self.show_response_search = !self.show_response_search;
-                if !self.show_response_search {
+                if self.show_response_search {
+                    self.last_search_instant = None;
+                    self.update_search_matches();
+                } else {
                     self.response_search_query.clear();
                     self.response_search_matches.clear();
                     self.response_search_index = 0;
-                } else {
-                    self.last_search_instant = None;
-                    self.update_search_matches();
                 }
             }
             Message::ResponseSearchChanged(query) => {
@@ -1288,8 +1229,7 @@ impl HttpRequestView {
                 let now = std::time::Instant::now();
                 let should_search = self
                     .last_search_instant
-                    .map(|t| t.elapsed() >= std::time::Duration::from_millis(150))
-                    .unwrap_or(true)
+                    .is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(150))
                     || query_len < self.response_search_matches.len();
                 if should_search {
                     self.update_search_matches();
@@ -1500,11 +1440,7 @@ impl HttpRequestView {
         while let Some(pos) = body_lower[start..].find(&query_lower) {
             let absolute_pos = start + pos;
             let line = body_text[..absolute_pos].lines().count();
-            let col = absolute_pos
-                - body_text[..absolute_pos]
-                    .rfind('\n')
-                    .map(|p| p + 1)
-                    .unwrap_or(0);
+            let col = absolute_pos - body_text[..absolute_pos].rfind('\n').map_or(0, |p| p + 1);
             self.response_search_matches.push((line, col));
             start = absolute_pos + 1;
         }
@@ -1512,15 +1448,15 @@ impl HttpRequestView {
 
     pub fn load_scripts(&mut self, scripts: &RequestScripts) {
         self.scripts = scripts.clone();
-        let pre_text = if !scripts.js_pre_request.trim().is_empty() {
-            scripts.js_pre_request.clone()
-        } else {
+        let pre_text = if scripts.js_pre_request.trim().is_empty() {
             scripts.pre_request.to_json().unwrap_or_default()
-        };
-        let post_text = if !scripts.js_post_response.trim().is_empty() {
-            scripts.js_post_response.clone()
         } else {
+            scripts.js_pre_request.clone()
+        };
+        let post_text = if scripts.js_post_response.trim().is_empty() {
             scripts.post_response.to_json().unwrap_or_default()
+        } else {
+            scripts.js_post_response.clone()
         };
         self.pre_request_script_editor = text_editor::Content::with_text(&pre_text);
         self.post_response_script_editor = text_editor::Content::with_text(&post_text);

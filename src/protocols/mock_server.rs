@@ -58,8 +58,8 @@ impl std::fmt::Display for MockServerStatus {
         match self {
             MockServerStatus::Stopped => write!(f, "Stopped"),
             MockServerStatus::Starting => write!(f, "Starting..."),
-            MockServerStatus::Running { actual_port } => write!(f, "Running on :{}", actual_port),
-            MockServerStatus::Error(e) => write!(f, "Error: {}", e),
+            MockServerStatus::Running { actual_port } => write!(f, "Running on :{actual_port}"),
+            MockServerStatus::Error(e) => write!(f, "Error: {e}"),
         }
     }
 }
@@ -105,37 +105,29 @@ async fn mock_handler(
         .iter()
         .find(|ep| ep.matches(&req_method, &req_path));
 
-    let (status, resp_headers, resp_body, delay_ms) = match matched {
-        Some(ep) => {
-            log::info!(
-                "[Mock] Matched endpoint: {} {} -> {} (delay: {}ms)",
-                ep.method,
-                ep.path,
-                ep.status,
-                ep.delay_ms
-            );
-            (
-                ep.status,
-                ep.headers.clone(),
-                ep.body.clone().unwrap_or_default(),
-                ep.delay_ms,
-            )
-        }
-        None => {
-            log::warn!(
-                "[Mock] No match for {} {}, returning 404",
-                req_method,
-                req_path
-            );
-            let not_found_headers =
-                vec![("content-type".to_string(), "application/json".to_string())];
-            (
-                404u16,
-                not_found_headers,
-                r#"{"error": "No mock endpoint configured for this route"}"#.to_string(),
-                0u64,
-            )
-        }
+    let (status, resp_headers, resp_body, delay_ms) = if let Some(ep) = matched {
+        log::info!(
+            "[Mock] Matched endpoint: {} {} -> {} (delay: {}ms)",
+            ep.method,
+            ep.path,
+            ep.status,
+            ep.delay_ms
+        );
+        (
+            ep.status,
+            ep.headers.clone(),
+            ep.body.clone().unwrap_or_default(),
+            ep.delay_ms,
+        )
+    } else {
+        log::warn!("[Mock] No match for {req_method} {req_path}, returning 404");
+        let not_found_headers = vec![("content-type".to_string(), "application/json".to_string())];
+        (
+            404u16,
+            not_found_headers,
+            r#"{"error": "No mock endpoint configured for this route"}"#.to_string(),
+            0u64,
+        )
     };
 
     if delay_ms > 0 {
@@ -225,7 +217,7 @@ pub async fn start_mock_server(
 
     let listener = TcpListener::bind(&addr)
         .await
-        .map_err(|e| format!("Failed to bind to {}: {}", addr, e))?;
+        .map_err(|e| format!("Failed to bind to {addr}: {e}"))?;
 
     let actual_port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
@@ -236,7 +228,7 @@ pub async fn start_mock_server(
             let _ = shutdown_rx.await;
         });
         if let Err(e) = server.await {
-            log::error!("[Mock] Server error: {}", e);
+            log::error!("[Mock] Server error: {e}");
         }
     });
 

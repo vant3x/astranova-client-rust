@@ -118,42 +118,42 @@ pub enum ScriptAction {
 impl std::fmt::Display for ScriptAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScriptAction::SetVariable { name, value } => write!(f, "set_var({}={})", name, value),
-            ScriptAction::SetHeader { key, value } => write!(f, "set_header({}: {})", key, value),
-            ScriptAction::RemoveHeader { key } => write!(f, "remove_header({})", key),
+            ScriptAction::SetVariable { name, value } => write!(f, "set_var({name}={value})"),
+            ScriptAction::SetHeader { key, value } => write!(f, "set_header({key}: {value})"),
+            ScriptAction::RemoveHeader { key } => write!(f, "remove_header({key})"),
             ScriptAction::SetBody { body } => {
                 let preview: String = body.chars().take(30).collect();
-                write!(f, "set_body({}...)", preview)
+                write!(f, "set_body({preview}...)")
             }
-            ScriptAction::SetUrl { url } => write!(f, "set_url({})", url),
-            ScriptAction::SetMethod { method } => write!(f, "set_method({})", method),
-            ScriptAction::AssertStatus { expected } => write!(f, "assert_status({})", expected),
-            ScriptAction::AssertHeader { key, .. } => write!(f, "assert_header({})", key),
+            ScriptAction::SetUrl { url } => write!(f, "set_url({url})"),
+            ScriptAction::SetMethod { method } => write!(f, "set_method({method})"),
+            ScriptAction::AssertStatus { expected } => write!(f, "assert_status({expected})"),
+            ScriptAction::AssertHeader { key, .. } => write!(f, "assert_header({key})"),
             ScriptAction::AssertBody { .. } => write!(f, "assert_body(...)"),
             ScriptAction::ExtractJson { variable, path } => {
-                write!(f, "extract_json({} from {})", variable, path)
+                write!(f, "extract_json({variable} from {path})")
             }
             ScriptAction::ExtractHeader { variable, header } => {
-                write!(f, "extract_header({} from {})", variable, header)
+                write!(f, "extract_header({variable} from {header})")
             }
-            ScriptAction::Log { message } => write!(f, "log({})", message),
-            ScriptAction::Delay { ms } => write!(f, "delay({}ms)", ms),
-            ScriptAction::TransformToUpper { input, .. } => write!(f, "to_upper({})", input),
-            ScriptAction::TransformToLower { input, .. } => write!(f, "to_lower({})", input),
-            ScriptAction::TransformTrim { input, .. } => write!(f, "trim({})", input),
-            ScriptAction::EncodeBase64 { input, .. } => write!(f, "base64_encode({})", input),
-            ScriptAction::DecodeBase64 { input, .. } => write!(f, "base64_decode({})", input),
-            ScriptAction::HashSha256 { input, .. } => write!(f, "sha256({})", input),
-            ScriptAction::HmacSha256 { message, .. } => write!(f, "hmac_sha256({})", message),
-            ScriptAction::IfStatus { code, .. } => write!(f, "if_status({})", code),
+            ScriptAction::Log { message } => write!(f, "log({message})"),
+            ScriptAction::Delay { ms } => write!(f, "delay({ms}ms)"),
+            ScriptAction::TransformToUpper { input, .. } => write!(f, "to_upper({input})"),
+            ScriptAction::TransformToLower { input, .. } => write!(f, "to_lower({input})"),
+            ScriptAction::TransformTrim { input, .. } => write!(f, "trim({input})"),
+            ScriptAction::EncodeBase64 { input, .. } => write!(f, "base64_encode({input})"),
+            ScriptAction::DecodeBase64 { input, .. } => write!(f, "base64_decode({input})"),
+            ScriptAction::HashSha256 { input, .. } => write!(f, "sha256({input})"),
+            ScriptAction::HmacSha256 { message, .. } => write!(f, "hmac_sha256({message})"),
+            ScriptAction::IfStatus { code, .. } => write!(f, "if_status({code})"),
             ScriptAction::ExtractRegex { variable, pattern } => {
-                write!(f, "extract_regex({} from {})", variable, pattern)
+                write!(f, "extract_regex({variable} from {pattern})")
             }
             ScriptAction::SetBodyJson { path, value } => {
-                write!(f, "set_body_json({}={})", path, value)
+                write!(f, "set_body_json({path}={value})")
             }
-            ScriptAction::AssertJsonPath { path, .. } => write!(f, "assert_json_path({})", path),
-            ScriptAction::SetQuery { key, value } => write!(f, "set_query({}={})", key, value),
+            ScriptAction::AssertJsonPath { path, .. } => write!(f, "assert_json_path({path})"),
+            ScriptAction::SetQuery { key, value } => write!(f, "set_query({key}={value})"),
         }
     }
 }
@@ -169,7 +169,7 @@ impl Script {
         if json.trim().is_empty() {
             return Ok(Self::default());
         }
-        serde_json::from_str(json).map_err(|e| AppError::Parse(format!("Invalid script: {}", e)))
+        serde_json::from_str(json).map_err(|e| AppError::Parse(format!("Invalid script: {e}")))
     }
 
     pub fn to_json(&self) -> Result<String, AppError> {
@@ -201,7 +201,7 @@ impl ScriptContext {
             let mut changed = false;
 
             for (key, value) in &self.variables {
-                let placeholder = format!("{{{{{}}}}}", key);
+                let placeholder = format!("{{{{{key}}}}}");
                 if result.contains(&placeholder) {
                     result = result.replace(&placeholder, value);
                     changed = true;
@@ -236,7 +236,7 @@ impl ScriptContext {
             if let Some(end) = remaining[start..].find("}}") {
                 let var_name = &remaining[start + 2..start + end];
                 self.errors
-                    .push(format!("Unresolved variable: {{{{ {} }}}}", var_name));
+                    .push(format!("Unresolved variable: {{{{ {var_name} }}}}"));
                 remaining = &remaining[start + end + 2..];
             } else {
                 break;
@@ -264,7 +264,7 @@ impl RequestScripts {
         if json.trim().is_empty() {
             return Ok(Self::default());
         }
-        serde_json::from_str(json).map_err(|e| AppError::Parse(format!("Invalid scripts: {}", e)))
+        serde_json::from_str(json).map_err(|e| AppError::Parse(format!("Invalid scripts: {e}")))
     }
 
     pub fn to_json(&self) -> Result<String, AppError> {
@@ -297,10 +297,10 @@ impl ScriptEngine {
                 errors.push(e.to_string());
             }
         }
-        if !errors.is_empty() {
-            Err(AppError::Validation(errors.join("\n")))
-        } else {
+        if errors.is_empty() {
             Ok(())
+        } else {
+            Err(AppError::Validation(errors.join("\n")))
         }
     }
 
@@ -351,7 +351,7 @@ impl ScriptEngine {
                         context.variables.insert(variable.clone(), decoded);
                     }
                     Err(e) => {
-                        let msg = format!("Base64 decode failed: {}", e);
+                        let msg = format!("Base64 decode failed: {e}");
                         context.errors.push(msg.clone());
                         return Err(AppError::Validation(msg));
                     }
@@ -372,7 +372,7 @@ impl ScriptEngine {
                 let resolved_key = context.resolve_variables(key);
                 let resolved_message = context.resolve_variables(message);
                 let mut mac = HmacSha256::new_from_slice(resolved_key.as_bytes())
-                    .map_err(|e| AppError::Validation(format!("HMAC key error: {}", e)))?;
+                    .map_err(|e| AppError::Validation(format!("HMAC key error: {e}")))?;
                 mac.update(resolved_message.as_bytes());
                 let result = format!("{:x}", mac.finalize().into_bytes());
                 context.variables.insert(variable.clone(), result);
@@ -431,16 +431,15 @@ impl ScriptEngine {
                 );
                 if !valid {
                     return Err(AppError::Validation(format!(
-                        "Invalid HTTP method: {}",
-                        resolved
+                        "Invalid HTTP method: {resolved}"
                     )));
                 }
                 request.method = resolved.parse().map_err(|_| {
-                    AppError::Validation(format!("Invalid HTTP method: {}", resolved))
+                    AppError::Validation(format!("Invalid HTTP method: {resolved}"))
                 })?;
             }
             ScriptAction::Delay { ms } => {
-                log::info!("Pre-request delay: {}ms (applied by request handler)", ms);
+                log::info!("Pre-request delay: {ms}ms (applied by request handler)");
             }
             ScriptAction::IfStatus { .. } => {
                 log::warn!(
@@ -461,7 +460,7 @@ impl ScriptEngine {
                         }
                     }
                     Err(e) => {
-                        return Err(AppError::Validation(format!("Invalid regex: {}", e)));
+                        return Err(AppError::Validation(format!("Invalid regex: {e}")));
                     }
                 }
             }
@@ -532,7 +531,7 @@ impl ScriptEngine {
 
                 match header_value {
                     None => {
-                        let msg = format!("Assertion failed: header '{}' not found", key);
+                        let msg = format!("Assertion failed: header '{key}' not found");
                         context.errors.push(msg.clone());
                         return Err(AppError::Validation(msg));
                     }
@@ -541,8 +540,7 @@ impl ScriptEngine {
                             let resolved = context.resolve_variables(expected);
                             if val != resolved {
                                 let msg = format!(
-                                    "Assertion failed: header '{}' expected '{}', got '{}'",
-                                    key, resolved, val
+                                    "Assertion failed: header '{key}' expected '{resolved}', got '{val}'"
                                 );
                                 context.errors.push(msg.clone());
                                 return Err(AppError::Validation(msg));
@@ -552,8 +550,7 @@ impl ScriptEngine {
                             let resolved = context.resolve_variables(expected);
                             if !val.contains(resolved.as_str()) {
                                 let msg = format!(
-                                    "Assertion failed: header '{}' should contain '{}', got '{}'",
-                                    key, resolved, val
+                                    "Assertion failed: header '{key}' should contain '{resolved}', got '{val}'"
                                 );
                                 context.errors.push(msg.clone());
                                 return Err(AppError::Validation(msg));
@@ -578,7 +575,7 @@ impl ScriptEngine {
                 if let Some(expected) = contains {
                     let resolved = context.resolve_variables(expected);
                     if !response.body.contains(resolved.as_str()) {
-                        let msg = format!("Assertion failed: body should contain '{}'", resolved);
+                        let msg = format!("Assertion failed: body should contain '{resolved}'");
                         context.errors.push(msg.clone());
                         return Err(AppError::Validation(msg));
                     }
@@ -593,7 +590,7 @@ impl ScriptEngine {
                     } else {
                         context
                             .errors
-                            .push(format!("JSON path '{}' not found", resolved_path));
+                            .push(format!("JSON path '{resolved_path}' not found"));
                     }
                 }
             }
@@ -608,7 +605,7 @@ impl ScriptEngine {
                 } else {
                     context
                         .errors
-                        .push(format!("Header '{}' not found", resolved_header));
+                        .push(format!("Header '{resolved_header}' not found"));
                 }
             }
             ScriptAction::IfStatus {
@@ -648,13 +645,12 @@ impl ScriptEngine {
                             context.variables.insert(variable.clone(), val);
                         } else {
                             context.errors.push(format!(
-                                "Regex pattern '{}' not found in response",
-                                resolved_pattern
+                                "Regex pattern '{resolved_pattern}' not found in response"
                             ));
                         }
                     }
                     Err(e) => {
-                        let msg = format!("Invalid regex '{}': {}", resolved_pattern, e);
+                        let msg = format!("Invalid regex '{resolved_pattern}': {e}");
                         context.errors.push(msg.clone());
                         return Err(AppError::Validation(msg));
                     }
@@ -672,8 +668,7 @@ impl ScriptEngine {
                             let resolved_expected = context.resolve_variables(expected);
                             if extracted != resolved_expected {
                                 let msg = format!(
-                                    "AssertJsonPath '{}' expected '{}', got '{}'",
-                                    resolved_path, resolved_expected, extracted
+                                    "AssertJsonPath '{resolved_path}' expected '{resolved_expected}', got '{extracted}'"
                                 );
                                 context.errors.push(msg.clone());
                                 return Err(AppError::Validation(msg));
@@ -683,15 +678,14 @@ impl ScriptEngine {
                             let resolved_expected = context.resolve_variables(expected);
                             if !extracted.contains(resolved_expected.as_str()) {
                                 let msg = format!(
-                                    "AssertJsonPath '{}' should contain '{}', got '{}'",
-                                    resolved_path, resolved_expected, extracted
+                                    "AssertJsonPath '{resolved_path}' should contain '{resolved_expected}', got '{extracted}'"
                                 );
                                 context.errors.push(msg.clone());
                                 return Err(AppError::Validation(msg));
                             }
                         }
                     } else {
-                        let msg = format!("AssertJsonPath: path '{}' not found", resolved_path);
+                        let msg = format!("AssertJsonPath: path '{resolved_path}' not found");
                         context.errors.push(msg.clone());
                         return Err(AppError::Validation(msg));
                     }
@@ -769,14 +763,12 @@ fn set_json_path(value: &mut serde_json::Value, path: &str, new_val: serde_json:
                         map.insert(key.clone(), new_val);
                         return;
                     }
+                } else if let serde_json::Value::Object(map) = current {
+                    current = map
+                        .entry(key.clone())
+                        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
                 } else {
-                    if let serde_json::Value::Object(map) = current {
-                        current = map
-                            .entry(key.clone())
-                            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-                    } else {
-                        return;
-                    }
+                    return;
                 }
             }
             PathSegment::Index(idx) => {
@@ -787,16 +779,14 @@ fn set_json_path(value: &mut serde_json::Value, path: &str, new_val: serde_json:
                             return;
                         }
                     }
-                } else {
-                    if let serde_json::Value::Array(arr) = current {
-                        if *idx < arr.len() {
-                            current = &mut arr[*idx];
-                        } else {
-                            return;
-                        }
+                } else if let serde_json::Value::Array(arr) = current {
+                    if *idx < arr.len() {
+                        current = &mut arr[*idx];
                     } else {
                         return;
                     }
+                } else {
+                    return;
                 }
             }
         }
@@ -2027,7 +2017,7 @@ mod tests {
 
         ScriptEngine::execute_pre_request(&script, &mut request, &mut context).unwrap();
         assert!(request.url.contains("page=2"));
-        assert!(request.url.contains("?"));
+        assert!(request.url.contains('?'));
     }
 
     #[test]

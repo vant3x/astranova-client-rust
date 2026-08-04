@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQLRequest {
@@ -44,8 +45,8 @@ pub enum GraphQLPathSegment {
 impl std::fmt::Display for GraphQLPathSegment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GraphQLPathSegment::String(s) => write!(f, "{}", s),
-            GraphQLPathSegment::Number(n) => write!(f, "{}", n),
+            GraphQLPathSegment::String(s) => write!(f, "{s}"),
+            GraphQLPathSegment::Number(n) => write!(f, "{n}"),
         }
     }
 }
@@ -75,7 +76,7 @@ impl GraphQLRequest {
     }
 
     pub fn from_json(json: &str) -> Result<Self, AppError> {
-        serde_json::from_str(json).map_err(|e| AppError::Validation(format!("Invalid JSON: {}", e)))
+        serde_json::from_str(json).map_err(|e| AppError::Validation(format!("Invalid JSON: {e}")))
     }
 }
 
@@ -84,7 +85,7 @@ pub fn parse_variables(json_str: &str) -> Result<serde_json::Value, AppError> {
         return Ok(serde_json::Value::Null);
     }
     serde_json::from_str(json_str)
-        .map_err(|e| AppError::Validation(format!("Invalid variables JSON: {}", e)))
+        .map_err(|e| AppError::Validation(format!("Invalid variables JSON: {e}")))
 }
 
 pub fn validate_query(query: &str) -> Result<(), AppError> {
@@ -103,7 +104,7 @@ pub fn validate_query(query: &str) -> Result<(), AppError> {
         || trimmed.starts_with("subscription{")
         || trimmed.starts_with("subscription(")
         || trimmed.starts_with("fragment ")
-        || trimmed.starts_with("{");
+        || trimmed.starts_with('{');
 
     if !has_operation {
         return Err(AppError::Validation("Query must start with a valid operation: query, mutation, subscription, fragment, or shorthand { }".to_string()));
@@ -128,8 +129,7 @@ pub fn validate_query(query: &str) -> Result<(), AppError> {
     }
     if open_braces != close_braces {
         return Err(AppError::Validation(format!(
-            "Unbalanced braces: {} opening, {} closing",
-            open_braces, close_braces
+            "Unbalanced braces: {open_braces} opening, {close_braces} closing"
         )));
     }
 
@@ -157,16 +157,16 @@ pub fn format_response(response: &GraphQLResponse) -> String {
                         .iter()
                         .map(|l| format!("line {} col {}", l.line, l.column))
                         .collect();
-                    msg.push_str(&format!(" at {}", locs.join(", ")));
+                    let _ = write!(msg, " at {}", locs.join(", "));
                 }
                 if !err.path.is_empty() {
                     let path: String = err
                         .path
                         .iter()
-                        .map(|p| p.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(".");
-                    msg.push_str(&format!(" (path: {})", path));
+                    let _ = write!(msg, " (path: {path})");
                 }
                 msg
             })
@@ -191,9 +191,7 @@ pub mod graphql_ws {
     #[serde(tag = "type")]
     pub enum ClientMessage {
         #[serde(rename = "ConnectionInit")]
-        ConnectionInit {
-            payload: Option<serde_json::Value>,
-        },
+        ConnectionInit { payload: Option<serde_json::Value> },
         #[serde(rename = "Subscribe")]
         Subscribe {
             id: String,
@@ -202,13 +200,9 @@ pub mod graphql_ws {
         #[serde(rename = "Complete")]
         Complete { id: String },
         #[serde(rename = "Ping")]
-        Ping {
-            payload: Option<serde_json::Value>,
-        },
+        Ping { payload: Option<serde_json::Value> },
         #[serde(rename = "Pong")]
-        Pong {
-            payload: Option<serde_json::Value>,
-        },
+        Pong { payload: Option<serde_json::Value> },
     }
 
     /// Server-to-client messages
@@ -216,14 +210,9 @@ pub mod graphql_ws {
     #[serde(tag = "type")]
     pub enum ServerMessage {
         #[serde(rename = "ConnectionAck")]
-        ConnectionAck {
-            payload: Option<serde_json::Value>,
-        },
+        ConnectionAck { payload: Option<serde_json::Value> },
         #[serde(rename = "Next")]
-        Next {
-            id: String,
-            payload: NextPayload,
-        },
+        Next { id: String, payload: NextPayload },
         #[serde(rename = "Error")]
         Error {
             id: String,
@@ -232,19 +221,13 @@ pub mod graphql_ws {
         #[serde(rename = "Complete")]
         Complete { id: String },
         #[serde(rename = "Ping")]
-        Ping {
-            payload: Option<serde_json::Value>,
-        },
+        Ping { payload: Option<serde_json::Value> },
         #[serde(rename = "Pong")]
-        Pong {
-            payload: Option<serde_json::Value>,
-        },
+        Pong { payload: Option<serde_json::Value> },
         #[serde(rename = "ConnectionError")]
         ConnectionError { payload: ErrorPayload },
         #[serde(rename = "ServerInfo")]
-        ServerInfo {
-            payload: ServerInfoPayload,
-        },
+        ServerInfo { payload: ServerInfoPayload },
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -413,7 +396,7 @@ mod tests {
         };
         let formatted = format_response(&resp);
         assert!(formatted.contains("user"));
-        assert!(formatted.contains("1"));
+        assert!(formatted.contains('1'));
     }
 
     #[test]

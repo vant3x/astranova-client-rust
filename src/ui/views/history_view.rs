@@ -4,6 +4,7 @@ use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Alignment, Color, Element, Length, Padding, Renderer, Theme,
 };
+use iced_aw::ContextMenu;
 use iced_fonts::lucide;
 
 #[derive(Debug, Clone)]
@@ -158,29 +159,25 @@ impl HistoryView {
             None => "N/A".to_string(),
         };
 
-        let close_btn = button(
-            row![lucide::x().size(12), text(" Close").size(11)].spacing(2),
-        )
-        .padding(Padding::from([4, 10]))
-        .style(|_theme, _status| button::Style {
-            background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-            text_color: ThemeColors::TEXT_SECONDARY,
-            border: iced::Border::default()
-                .rounded(4)
-                .color(ThemeColors::BORDER)
-                .width(1),
-            ..button::Style::default()
-        })
-        .on_press(Message::CloseResponse);
+        let close_btn = button(row![lucide::x().size(12), text(" Close").size(11)].spacing(2))
+            .padding(Padding::from([4, 10]))
+            .style(|_theme, _status| button::Style {
+                background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                text_color: ThemeColors::TEXT_SECONDARY,
+                border: iced::Border::default()
+                    .rounded(4)
+                    .color(ThemeColors::BORDER)
+                    .width(1),
+                ..button::Style::default()
+            })
+            .on_press(Message::CloseResponse);
 
         let header = row![
             text("Response Details").size(14).color(status_color),
             text(format!("  {}  ", status_text))
                 .size(12)
                 .color(ThemeColors::TEXT_SECONDARY),
-            text(duration_text)
-                .size(11)
-                .color(ThemeColors::TEXT_MUTED),
+            text(duration_text).size(11).color(ThemeColors::TEXT_MUTED),
             close_btn,
         ]
         .spacing(8)
@@ -215,11 +212,7 @@ impl HistoryView {
                         );
                     }
                     response_content = response_content
-                        .push(
-                            text("Headers")
-                                .size(12)
-                                .color(ThemeColors::TEXT_SECONDARY),
-                        )
+                        .push(text("Headers").size(12).color(ThemeColors::TEXT_SECONDARY))
                         .push(
                             container(scrollable(headers_col).height(Length::Fixed(140.0)))
                                 .padding(8)
@@ -260,13 +253,15 @@ impl HistoryView {
                         ))
                         .height(Length::Fixed(200.0))
                         .padding(8)
-                        .style(|_theme: &Theme| iced::widget::container::Style {
-                            background: Some(iced::Background::Color(ThemeColors::BG_DARK)),
-                            border: iced::Border::default()
-                                .rounded(6)
-                                .color(ThemeColors::BORDER)
-                                .width(1),
-                            ..iced::widget::container::Style::default()
+                        .style(|_theme: &Theme| {
+                            iced::widget::container::Style {
+                                background: Some(iced::Background::Color(ThemeColors::BG_DARK)),
+                                border: iced::Border::default()
+                                    .rounded(6)
+                                    .color(ThemeColors::BORDER)
+                                    .width(1),
+                                ..iced::widget::container::Style::default()
+                            }
                         }),
                     );
             } else {
@@ -277,17 +272,21 @@ impl HistoryView {
                             .color(ThemeColors::TEXT_SECONDARY),
                     )
                     .push(
-                        container(scrollable(text(response_data).size(11).font(iced::Font::MONOSPACE)))
-                            .height(Length::Fixed(200.0))
-                            .padding(8)
-                            .style(|_theme: &Theme| iced::widget::container::Style {
+                        container(scrollable(
+                            text(response_data).size(11).font(iced::Font::MONOSPACE),
+                        ))
+                        .height(Length::Fixed(200.0))
+                        .padding(8)
+                        .style(|_theme: &Theme| {
+                            iced::widget::container::Style {
                                 background: Some(iced::Background::Color(ThemeColors::BG_DARK)),
                                 border: iced::Border::default()
                                     .rounded(6)
                                     .color(ThemeColors::BORDER)
                                     .width(1),
                                 ..iced::widget::container::Style::default()
-                            }),
+                            }
+                        }),
                     );
             }
         } else {
@@ -316,90 +315,81 @@ impl HistoryView {
         // ── Clear button with confirmation ──
         let clear_button: Element<'_, Message, Theme, Renderer> = if self.pending_clear_history {
             row![
-                text("Clear all?")
-                    .size(12)
-                    .color(ThemeColors::ERROR),
-                button(
-                    row![lucide::check().size(11), text(" Yes").size(11)].spacing(2),
-                )
-                .padding(Padding::from([3, 8]))
-                .style(|_theme, _status| button::Style {
-                    background: Some(iced::Background::Color(ThemeColors::ERROR_DIM)),
-                    text_color: ThemeColors::ERROR,
-                    border: iced::Border::default()
-                        .rounded(4)
-                        .color(ThemeColors::ERROR)
-                        .width(1),
-                    ..button::Style::default()
-                })
-                .on_press(Message::ConfirmClearHistory),
-                button(
-                    row![lucide::x().size(11), text(" No").size(11)].spacing(2),
-                )
-                .padding(Padding::from([3, 8]))
+                text("Clear all?").size(12).color(ThemeColors::ERROR),
+                button(row![lucide::check().size(11), text(" Yes").size(11)].spacing(2),)
+                    .padding(Padding::from([3, 8]))
+                    .style(|_theme, _status| button::Style {
+                        background: Some(iced::Background::Color(ThemeColors::ERROR_DIM)),
+                        text_color: ThemeColors::ERROR,
+                        border: iced::Border::default()
+                            .rounded(4)
+                            .color(ThemeColors::ERROR)
+                            .width(1),
+                        ..button::Style::default()
+                    })
+                    .on_press(Message::ConfirmClearHistory),
+                button(row![lucide::x().size(11), text(" No").size(11)].spacing(2),)
+                    .padding(Padding::from([3, 8]))
+                    .style(|_theme, _status| button::Style {
+                        background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                        text_color: ThemeColors::TEXT_SECONDARY,
+                        border: iced::Border::default()
+                            .rounded(4)
+                            .color(ThemeColors::BORDER)
+                            .width(1),
+                        ..button::Style::default()
+                    })
+                    .on_press(Message::CancelClearHistory),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            button(row![lucide::trash().size(13), text(" Clear").size(12)].spacing(4))
+                .padding(Padding::from([5, 10]))
                 .style(|_theme, _status| button::Style {
                     background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                    text_color: ThemeColors::TEXT_SECONDARY,
+                    text_color: if self.entries.is_empty() {
+                        ThemeColors::TEXT_DIM
+                    } else {
+                        ThemeColors::TEXT_SECONDARY
+                    },
                     border: iced::Border::default()
                         .rounded(4)
                         .color(ThemeColors::BORDER)
                         .width(1),
                     ..button::Style::default()
                 })
-                .on_press(Message::CancelClearHistory),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center)
-            .into()
-        } else {
-            button(
-                row![lucide::trash().size(13), text(" Clear").size(12)].spacing(4),
-            )
-            .padding(Padding::from([5, 10]))
-            .style(|_theme, _status| button::Style {
-                background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                text_color: if self.entries.is_empty() {
-                    ThemeColors::TEXT_DIM
+                .on_press_maybe(if self.entries.is_empty() {
+                    None
                 } else {
-                    ThemeColors::TEXT_SECONDARY
-                },
-                border: iced::Border::default()
-                    .rounded(4)
-                    .color(ThemeColors::BORDER)
-                    .width(1),
-                ..button::Style::default()
-            })
-            .on_press_maybe(if self.entries.is_empty() {
-                None
-            } else {
-                Some(Message::RequestClearHistory)
-            })
-            .into()
+                    Some(Message::RequestClearHistory)
+                })
+                .into()
         };
 
-        let export_button: Element<'_, Message, Theme, Renderer> = button(
-            row![lucide::download().size(13), text(" Export").size(12)].spacing(4),
-        )
-        .padding(Padding::from([5, 10]))
-        .style(|_theme, _status| button::Style {
-            background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-            text_color: if self.entries.is_empty() {
-                ThemeColors::TEXT_DIM
-            } else {
-                ThemeColors::TEXT_SECONDARY
-            },
-            border: iced::Border::default()
-                .rounded(4)
-                .color(ThemeColors::BORDER)
-                .width(1),
-            ..button::Style::default()
-        })
-        .on_press_maybe(if self.entries.is_empty() {
-            None
-        } else {
-            Some(Message::ExportHistory)
-        })
-        .into();
+        let export_button: Element<'_, Message, Theme, Renderer> =
+            button(row![lucide::download().size(13), text(" Export").size(12)].spacing(4))
+                .padding(Padding::from([5, 10]))
+                .style(|_theme, _status| button::Style {
+                    background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                    text_color: if self.entries.is_empty() {
+                        ThemeColors::TEXT_DIM
+                    } else {
+                        ThemeColors::TEXT_SECONDARY
+                    },
+                    border: iced::Border::default()
+                        .rounded(4)
+                        .color(ThemeColors::BORDER)
+                        .width(1),
+                    ..button::Style::default()
+                })
+                .on_press_maybe(if self.entries.is_empty() {
+                    None
+                } else {
+                    Some(Message::ExportHistory)
+                })
+                .into();
 
         // ── Header ──
         let header = row![
@@ -439,13 +429,11 @@ impl HistoryView {
         for method in methods {
             let is_active = self.filter_method.eq_ignore_ascii_case(method);
             let method_col = theme::method_color(method);
-            let btn = button(text(method).size(10).color(
-                if is_active {
-                    ThemeColors::TEXT_PRIMARY
-                } else {
-                    method_col
-                }
-            ))
+            let btn = button(text(method).size(10).color(if is_active {
+                ThemeColors::TEXT_PRIMARY
+            } else {
+                method_col
+            }))
             .padding(Padding::from([3, 8]))
             .style(move |_theme, _status| {
                 if is_active {
@@ -481,9 +469,7 @@ impl HistoryView {
             .color(ThemeColors::TEXT_MUTED);
 
         let filter_row = row![
-            text("Filter:")
-                .size(11)
-                .color(ThemeColors::TEXT_SECONDARY),
+            text("Filter:").size(11).color(ThemeColors::TEXT_SECONDARY),
             filter_buttons,
             count_text,
         ]
@@ -499,8 +485,12 @@ impl HistoryView {
                     filter_row,
                     column![
                         lucide::history().size(40).color(ThemeColors::TEXT_DIM),
-                        text("No request history yet").size(15).color(ThemeColors::TEXT_SECONDARY),
-                        text("Send a request to start building history").size(12).color(ThemeColors::TEXT_MUTED),
+                        text("No request history yet")
+                            .size(15)
+                            .color(ThemeColors::TEXT_SECONDARY),
+                        text("Send a request to start building history")
+                            .size(12)
+                            .color(ThemeColors::TEXT_MUTED),
                     ]
                     .spacing(8)
                     .align_x(Alignment::Center),
@@ -551,15 +541,12 @@ impl HistoryView {
             let timestamp_display = entry.timestamp.chars().take(16).collect::<String>();
 
             // ── Method badge ──
-            let method_badge = container(
-                text(&entry.method)
-                    .size(10)
-                    .color(method_color)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..iced::font::Font::default()
-                    }),
-            )
+            let method_badge = container(text(&entry.method).size(10).color(method_color).font(
+                iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::font::Font::default()
+                },
+            ))
             .padding(Padding::from([3, 6]))
             .style(move |_theme: &Theme| iced::widget::container::Style {
                 background: Some(iced::Background::Color(method_bg)),
@@ -571,24 +558,22 @@ impl HistoryView {
             });
 
             // ── Status badge ──
-            let status_badge = container(
-                text(status_text.clone())
-                    .size(10)
-                    .color(status_color)
-                    .font(iced::Font {
+            let status_badge =
+                container(text(status_text.clone()).size(10).color(status_color).font(
+                    iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::font::Font::default()
-                    }),
-            )
-            .padding(Padding::from([3, 6]))
-            .style(move |_theme: &Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(status_bg)),
-                border: iced::Border::default()
-                    .rounded(4)
-                    .color(status_color)
-                    .width(1),
-                ..iced::widget::container::Style::default()
-            });
+                    },
+                ))
+                .padding(Padding::from([3, 6]))
+                .style(move |_theme: &Theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(status_bg)),
+                    border: iced::Border::default()
+                        .rounded(4)
+                        .color(status_color)
+                        .width(1),
+                    ..iced::widget::container::Style::default()
+                });
 
             // ── Duration ──
             let duration_label = text(duration_text.clone())
@@ -623,7 +608,9 @@ impl HistoryView {
                     container(text("body").size(9).color(ThemeColors::CYAN))
                         .padding(Padding::from([1, 4]))
                         .style(|_theme: &Theme| iced::widget::container::Style {
-                            background: Some(iced::Background::Color(Color::from_rgb(0.10, 0.20, 0.25))),
+                            background: Some(iced::Background::Color(Color::from_rgb(
+                                0.10, 0.20, 0.25,
+                            ))),
                             border: iced::Border::default().rounded(3),
                             ..iced::widget::container::Style::default()
                         }),
@@ -634,7 +621,9 @@ impl HistoryView {
                     container(text("auth").size(9).color(ThemeColors::ORANGE))
                         .padding(Padding::from([1, 4]))
                         .style(|_theme: &Theme| iced::widget::container::Style {
-                            background: Some(iced::Background::Color(Color::from_rgb(0.25, 0.18, 0.08))),
+                            background: Some(iced::Background::Color(Color::from_rgb(
+                                0.25, 0.18, 0.08,
+                            ))),
                             border: iced::Border::default().rounded(3),
                             ..iced::widget::container::Style::default()
                         }),
@@ -667,79 +656,101 @@ impl HistoryView {
                 })
                 .on_press(Message::ResendEntry(entry.id));
 
-            // ── View button ──
-            let view_btn = button(lucide::eye().size(12))
-                .padding(Padding::from([4, 8]))
-                .style(|_theme, _status| button::Style {
-                    background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                    text_color: ThemeColors::TEXT_SECONDARY,
-                    border: iced::Border::default()
-                        .rounded(4)
-                        .color(ThemeColors::BORDER)
-                        .width(1),
-                    ..button::Style::default()
-                })
-                .on_press(Message::ViewResponse(entry.id));
+            // ── Three-dot context menu ──
+            let entry_id = entry.id;
+            let is_pending_delete = self.pending_delete_entry == Some(entry.id);
 
-            // ── Delete button (or confirmation) ──
-            let delete_btn: Element<'_, Message, Theme, Renderer> =
-                if self.pending_delete_entry == Some(entry.id) {
+            let context_menu: Element<'_, Message, Theme, Renderer> = if is_pending_delete {
+                // Show inline confirm/cancel instead of context menu
+                row![
+                    entry_button,
                     row![
-                        button(
-                            row![lucide::check().size(10), text(" Yes").size(10)].spacing(2),
-                        )
-                        .padding(Padding::from([3, 6]))
-                        .style(|_theme, _status| button::Style {
-                            background: Some(iced::Background::Color(ThemeColors::ERROR_DIM)),
-                            text_color: ThemeColors::ERROR,
-                            border: iced::Border::default()
-                                .rounded(4)
-                                .color(ThemeColors::ERROR)
-                                .width(1),
-                            ..button::Style::default()
-                        })
-                        .on_press(Message::ConfirmDeleteEntry(entry.id)),
-                        button(
-                            row![lucide::x().size(10), text(" No").size(10)].spacing(2),
-                        )
-                        .padding(Padding::from([3, 6]))
-                        .style(|_theme, _status| button::Style {
-                            background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                            text_color: ThemeColors::TEXT_SECONDARY,
-                            border: iced::Border::default()
-                                .rounded(4)
-                                .color(ThemeColors::BORDER)
-                                .width(1),
-                            ..button::Style::default()
-                        })
-                        .on_press(Message::CancelDeleteEntry),
+                        button(row![lucide::check().size(10), text(" Yes").size(10)].spacing(2),)
+                            .padding(Padding::from([3, 6]))
+                            .style(|_theme, _status| button::Style {
+                                background: Some(iced::Background::Color(ThemeColors::ERROR_DIM)),
+                                text_color: ThemeColors::ERROR,
+                                border: iced::Border::default()
+                                    .rounded(4)
+                                    .color(ThemeColors::ERROR)
+                                    .width(1),
+                                ..button::Style::default()
+                            })
+                            .on_press(Message::ConfirmDeleteEntry(entry_id)),
+                        button(row![lucide::x().size(10), text(" No").size(10)].spacing(2),)
+                            .padding(Padding::from([3, 6]))
+                            .style(|_theme, _status| button::Style {
+                                background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                                text_color: ThemeColors::TEXT_SECONDARY,
+                                border: iced::Border::default()
+                                    .rounded(4)
+                                    .color(ThemeColors::BORDER)
+                                    .width(1),
+                                ..button::Style::default()
+                            })
+                            .on_press(Message::CancelDeleteEntry),
                     ]
                     .spacing(4)
-                    .align_y(Alignment::Center)
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .width(Length::Fill)
+                .into()
+            } else {
+                ContextMenu::new(entry_button, move || {
+                    container(
+                        column![
+                            button(row![lucide::eye().size(12), text(" View").size(11)].spacing(4))
+                                .width(Length::Fill)
+                                .padding(Padding::from([6, 10]))
+                                .style(|_theme, _status| button::Style {
+                                    background: Some(iced::Background::Color(
+                                        ThemeColors::BG_LIGHT
+                                    )),
+                                    text_color: ThemeColors::TEXT_PRIMARY,
+                                    border: iced::Border::default()
+                                        .rounded(4)
+                                        .color(ThemeColors::BORDER)
+                                        .width(1),
+                                    ..button::Style::default()
+                                })
+                                .on_press(Message::ViewResponse(entry_id)),
+                            button(
+                                row![lucide::trash().size(12), text(" Delete").size(11)].spacing(4)
+                            )
+                            .width(Length::Fill)
+                            .padding(Padding::from([6, 10]))
+                            .style(|_theme, _status| button::Style {
+                                background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
+                                text_color: ThemeColors::TEXT_SECONDARY,
+                                border: iced::Border::default()
+                                    .rounded(4)
+                                    .color(ThemeColors::BORDER)
+                                    .width(1),
+                                ..button::Style::default()
+                            })
+                            .on_press(Message::RequestDeleteEntry(entry_id)),
+                        ]
+                        .spacing(2),
+                    )
+                    .padding(4)
+                    .style(|_theme: &Theme| iced::widget::container::Style {
+                        background: Some(iced::Background::Color(ThemeColors::BG_DARK)),
+                        border: iced::Border::default()
+                            .rounded(6)
+                            .color(ThemeColors::BORDER)
+                            .width(1),
+                        ..iced::widget::container::Style::default()
+                    })
+                    .width(Length::Fixed(150.0))
                     .into()
-                } else {
-                    button(lucide::trash().size(12))
-                        .padding(Padding::from([4, 6]))
-                        .style(|_theme, _status| button::Style {
-                            background: Some(iced::Background::Color(ThemeColors::BG_LIGHT)),
-                            text_color: ThemeColors::TEXT_DIM,
-                            border: iced::Border::default()
-                                .rounded(4)
-                                .color(ThemeColors::BORDER)
-                                .width(1),
-                            ..button::Style::default()
-                        })
-                        .on_press(Message::RequestDeleteEntry(entry.id))
-                        .into()
-                };
+                })
+                .into()
+            };
 
-            // ── Action buttons row ──
-            let actions = row![view_btn, delete_btn]
-                .spacing(4)
-                .align_y(Alignment::Center);
-
-            // ── Full row with entry + actions ──
-            let full_row = row![entry_button, actions]
+            // ── Full row with entry + context menu ──
+            let full_row = row![context_menu]
                 .spacing(6)
                 .align_y(Alignment::Center)
                 .width(Length::Fill);
@@ -768,17 +779,15 @@ impl HistoryView {
         let mut content = column![header, search_input, filter_row].spacing(10);
 
         if let Some(ref entry) = self.viewing_response {
-            content = content
-                .push(
-                    container(text(""))
-                        .height(1)
-                        .width(Length::Fill)
-                        .style(|_theme: &Theme| iced::widget::container::Style {
+            content =
+                content
+                    .push(container(text("")).height(1).width(Length::Fill).style(
+                        |_theme: &Theme| iced::widget::container::Style {
                             background: Some(iced::Background::Color(ThemeColors::BORDER)),
                             ..iced::widget::container::Style::default()
-                        }),
-                )
-                .push(Self::build_response_panel(entry));
+                        },
+                    ))
+                    .push(Self::build_response_panel(entry));
         }
 
         content = content.push(scrollable(list).height(Length::Fill));
@@ -787,7 +796,9 @@ impl HistoryView {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_theme: &Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(ThemeColors::BG_DARK)),
+                background: Some(iced::Background::Color(
+                    iced::Theme::Dark.palette().background,
+                )),
                 ..iced::widget::container::Style::default()
             })
             .into()

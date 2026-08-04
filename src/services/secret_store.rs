@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use rusqlite::params;
 
 const SERVICE_NAME: &str = "com.astraio.client";
 
@@ -12,7 +13,7 @@ impl SecretStore {
     }
 
     fn build_key(category: &str, identifier: &str, field: &str) -> String {
-        format!("{}:{}:{}", category, identifier, field)
+        format!("{category}:{identifier}:{field}")
     }
 
     pub fn store_secret(
@@ -23,16 +24,12 @@ impl SecretStore {
         secret: &str,
     ) -> Result<(), AppError> {
         let key = Self::build_key(category, identifier, field);
-        let entry = keyring::Entry::new(SERVICE_NAME, &key).map_err(|e| {
-            AppError::Io(format!("Failed to create keyring entry '{}': {}", key, e))
-        })?;
-        entry.set_password(secret).map_err(|e| {
-            AppError::Io(format!(
-                "Failed to store secret in keyring '{}': {}",
-                key, e
-            ))
-        })?;
-        log::debug!("Stored secret: category={}, field={}", category, field);
+        let entry = keyring::Entry::new(SERVICE_NAME, &key)
+            .map_err(|e| AppError::Io(format!("Failed to create keyring entry '{key}': {e}")))?;
+        entry
+            .set_password(secret)
+            .map_err(|e| AppError::Io(format!("Failed to store secret in keyring '{key}': {e}")))?;
+        log::debug!("Stored secret: category={category}, field={field}");
         Ok(())
     }
 
@@ -43,15 +40,13 @@ impl SecretStore {
         field: &str,
     ) -> Result<Option<String>, AppError> {
         let key = Self::build_key(category, identifier, field);
-        let entry = keyring::Entry::new(SERVICE_NAME, &key).map_err(|e| {
-            AppError::Io(format!("Failed to create keyring entry '{}': {}", key, e))
-        })?;
+        let entry = keyring::Entry::new(SERVICE_NAME, &key)
+            .map_err(|e| AppError::Io(format!("Failed to create keyring entry '{key}': {e}")))?;
         match entry.get_password() {
             Ok(value) => Ok(Some(value)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(AppError::Io(format!(
-                "Failed to read secret from keyring '{}': {}",
-                key, e
+                "Failed to read secret from keyring '{key}': {e}"
             ))),
         }
     }
@@ -63,18 +58,16 @@ impl SecretStore {
         field: &str,
     ) -> Result<bool, AppError> {
         let key = Self::build_key(category, identifier, field);
-        let entry = keyring::Entry::new(SERVICE_NAME, &key).map_err(|e| {
-            AppError::Io(format!("Failed to create keyring entry '{}': {}", key, e))
-        })?;
+        let entry = keyring::Entry::new(SERVICE_NAME, &key)
+            .map_err(|e| AppError::Io(format!("Failed to create keyring entry '{key}': {e}")))?;
         match entry.delete_credential() {
             Ok(()) => {
-                log::debug!("Deleted secret: category={}, field={}", category, field);
+                log::debug!("Deleted secret: category={category}, field={field}");
                 Ok(true)
             }
             Err(keyring::Error::NoEntry) => Ok(false),
             Err(e) => Err(AppError::Io(format!(
-                "Failed to delete secret from keyring '{}': {}",
-                key, e
+                "Failed to delete secret from keyring '{key}': {e}"
             ))),
         }
     }
@@ -187,8 +180,7 @@ pub fn migrate_plaintext_tokens_to_keyring(
     conn: &rusqlite::Connection,
 ) -> Result<u32, AppError> {
     let already_migrated = crate::persistence::database::get_app_setting(conn, "keyring_migrated")
-        .map(|v| v == "true")
-        .unwrap_or(false);
+        .is_some_and(|v| v == "true");
 
     if already_migrated {
         log::debug!("Keyring migration already completed, skipping");
@@ -212,12 +204,12 @@ pub fn migrate_plaintext_tokens_to_keyring(
                     ))
                 })
                 .map_err(|e| AppError::Database(e.to_string()))?
-                .filter_map(|r| r.ok())
+                .filter_map(std::result::Result::ok)
                 .collect();
 
             for (id, collection_id, _name, _auth_type, auth_data) in rows {
                 if let Ok(crate::data::auth::Auth::OAuth2(config)) = serde_json::from_str::<crate::data::auth::Auth>(&auth_data) {
-                    let identifier = format!("col_{}_{}", collection_id, id);
+                    let identifier = format!("col_{collection_id}_{id}");
 
                     if !config.access_token.is_empty()
                         && store.store_secret("oauth2", &identifier, "access_token", &config.access_token).is_ok() {
@@ -230,10 +222,22 @@ pub fn migrate_plaintext_tokens_to_keyring(
                         let _ = store.store_secret("oauth2", &identifier, "client_secret", &config.client_secret);
                     }
                 }
+
+                // Sanitize auth_data in DB after migrating to keyring
+                if let Ok(safe_auth) = serde_json::from_str::<crate::data::auth::Auth>(&auth_data)
+                    .and_then(|a| a.to_safe_json())
+                {
+                    if let Err(e) = conn.execute(
+                        "UPDATE collection_requests SET auth_data = ?1 WHERE id = ?2",
+                        params![safe_auth, id],
+                    ) {
+                        log::warn!("Failed to sanitize auth_data for request {id}: {e}");
+                    }
+                }
             }
         }
         Err(e) => {
-            log::warn!("Failed to query collection_requests for migration: {}", e);
+            log::warn!("Failed to query collection_requests for migration: {e}");
         }
     }
 
@@ -246,15 +250,15 @@ pub fn migrate_plaintext_tokens_to_keyring(
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
                 })
                 .map_err(|e| AppError::Database(e.to_string()))?
-                .filter_map(|r| r.ok())
+                .filter_map(std::result::Result::ok)
                 .collect();
 
             for (id, _method, _url, request_data) in rows {
-                if let Ok(request) =
+                if let Ok(mut request) =
                     serde_json::from_str::<crate::http_client::request::HttpRequest>(&request_data)
                 {
                     if let Some(crate::data::auth::Auth::OAuth2(config)) = &request.auth {
-                        let identifier = format!("hist_{}", id);
+                        let identifier = format!("hist_{id}");
 
                         if !config.access_token.is_empty()
                             && store
@@ -277,15 +281,28 @@ pub fn migrate_plaintext_tokens_to_keyring(
                             );
                         }
                     }
+
+                    // Sanitize auth in request_data after migration
+                    if request.auth.is_some() {
+                        request.auth = None;
+                        if let Ok(sanitized) = serde_json::to_string(&request) {
+                            if let Err(e) = conn.execute(
+                                "UPDATE request_history SET request_data = ?1 WHERE id = ?2",
+                                params![sanitized, id],
+                            ) {
+                                log::warn!("Failed to sanitize request_data for history {id}: {e}");
+                            }
+                        }
+                    }
                 }
             }
         }
         Err(e) => {
-            log::warn!("Failed to query request_history for migration: {}", e);
+            log::warn!("Failed to query request_history for migration: {e}");
         }
     }
 
-    log::info!("Keyring migration complete: {} tokens migrated", migrated);
+    log::info!("Keyring migration complete: {migrated} tokens migrated");
 
     let _ = crate::persistence::database::set_app_setting(conn, "keyring_migrated", "true");
 

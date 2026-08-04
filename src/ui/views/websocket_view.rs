@@ -178,9 +178,7 @@ impl WebSocketView {
             WsStatus::Disconnected => text("Disconnected").color(Color::from_rgb(0.5, 0.5, 0.5)),
             WsStatus::Connecting => text("Connecting...").color(Color::from_rgb(0.8, 0.7, 0.1)),
             WsStatus::Connected => text("Connected").color(Color::from_rgb(0.2, 0.7, 0.3)),
-            WsStatus::Error(e) => {
-                text(format!("Error: {}", e)).color(Color::from_rgb(0.8, 0.2, 0.2))
-            }
+            WsStatus::Error(e) => text(format!("Error: {e}")).color(Color::from_rgb(0.8, 0.2, 0.2)),
         };
 
         let connect_button = match &self.status {
@@ -340,7 +338,7 @@ impl WebSocketView {
             for (i, (k, v)) in self.headers.iter().enumerate() {
                 header_list = header_list.push(
                     row![
-                        text(format!("{}: {}", k, v)).size(12),
+                        text(format!("{k}: {v}")).size(12),
                         button(lucide::x().size(11)).on_press(Message::RemoveHeader(i)),
                     ]
                     .spacing(8),
@@ -453,7 +451,7 @@ impl WebSocketView {
                     .align_y(Alignment::Center),
             );
         } else {
-            for msg in filtered_messages.iter() {
+            for msg in &filtered_messages {
                 let dir_color = if msg.direction == ">" {
                     Color::from_rgb(0.2, 0.4, 0.8)
                 } else {
@@ -484,7 +482,7 @@ impl WebSocketView {
                 } else {
                     let truncated: String = formatted.chars().take(200).collect();
                     if formatted.len() > 200 {
-                        format!("{}...", truncated)
+                        format!("{truncated}...")
                     } else {
                         truncated
                     }
@@ -503,7 +501,7 @@ impl WebSocketView {
                 let size_label = if byte_size >= 1024 {
                     format!("{:.1}KB", byte_size as f64 / 1024.0)
                 } else {
-                    format!("{}B", byte_size)
+                    format!("{byte_size}B")
                 };
 
                 let time_display = msg
@@ -535,7 +533,7 @@ impl WebSocketView {
                             text(data_display.clone()).size(12),
                         ]
                         .spacing(6),
-                        row![text(format!("  {} - {}", time_display, size_label))
+                        row![text(format!("  {time_display} - {size_label}"))
                             .size(10)
                             .color(Color::from_rgb(0.4, 0.4, 0.4)),],
                     ]
@@ -548,7 +546,7 @@ impl WebSocketView {
                             text(data_display).size(13),
                         ]
                         .spacing(6),
-                        row![text(format!("  {} - {}", time_display, size_label))
+                        row![text(format!("  {time_display} - {size_label}"))
                             .size(10)
                             .color(Color::from_rgb(0.4, 0.4, 0.4)),],
                     ]
@@ -559,14 +557,15 @@ impl WebSocketView {
                     .on_press(Message::CopyMessage(msg_data_clone))
                     .style(button::secondary);
 
-                let re_send_button = if msg.direction == ">" && msg.message_type == WsMessageType::Text {
-                    let re_send_data = msg.data.clone();
-                    button(lucide::repeat().size(10))
-                        .on_press(Message::ReSendMessage(re_send_data))
-                        .style(button::secondary)
-                } else {
-                    button(text(""))
-                };
+                let re_send_button =
+                    if msg.direction == ">" && msg.message_type == WsMessageType::Text {
+                        let re_send_data = msg.data.clone();
+                        button(lucide::repeat().size(10))
+                            .on_press(Message::ReSendMessage(re_send_data))
+                            .style(button::secondary)
+                    } else {
+                        button(text(""))
+                    };
 
                 let actions_row = row![copy_button, re_send_button].spacing(4);
 
@@ -597,13 +596,12 @@ impl WebSocketView {
 
         let message_stats = if total_messages != filtered_count {
             text(format!(
-                "Showing {}/{} messages",
-                filtered_count, total_messages
+                "Showing {filtered_count}/{total_messages} messages"
             ))
             .size(11)
             .color(Color::from_rgb(0.5, 0.5, 0.5))
         } else if total_messages > 0 {
-            text(format!("{} messages", total_messages))
+            text(format!("{total_messages} messages"))
                 .size(11)
                 .color(Color::from_rgb(0.5, 0.5, 0.5))
         } else {

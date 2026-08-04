@@ -78,9 +78,9 @@ impl HttpRequestView {
 
         let status_text = if let Some(status) = self.status_code {
             let color = status_color(status);
-            text(format!("  {}  ", status)).size(14).color(color)
+            text(format!("  {status}  ")).size(14).color(color)
         } else {
-            text("".to_string()).size(14)
+            text(String::new()).size(14)
         };
 
         let content_type_badge = self.build_content_type_badge();
@@ -223,38 +223,37 @@ impl HttpRequestView {
             RequestStatus::Loading { started_at } => {
                 let elapsed = started_at.elapsed().as_millis();
                 if elapsed < 1000 {
-                    format!("{}ms", elapsed)
+                    format!("{elapsed}ms")
                 } else {
                     format!("{:.1}s", elapsed as f64 / 1000.0)
                 }
             }
-            _ => self
-                .response_duration
-                .map(|d| {
+            _ => self.response_duration.map_or_else(
+                || "N/A".to_string(),
+                |d| {
                     let ms = d.as_millis();
                     if ms < 1000 {
-                        format!("{}ms", ms)
+                        format!("{ms}ms")
                     } else {
                         format!("{:.1}s", ms as f64 / 1000.0)
                     }
-                })
-                .unwrap_or_else(|| "N/A".to_string()),
+                },
+            ),
         };
         text(display).size(14).into()
     }
 
     fn build_size_text(&self) -> Element<'_, Message, Theme, iced::Renderer> {
-        text(
-            self.response_size
-                .map(|s| {
-                    if s > 1024 {
-                        format!("{:.1} KB", s as f64 / 1024.0)
-                    } else {
-                        format!("{} B", s)
-                    }
-                })
-                .unwrap_or_else(|| "N/A".to_string()),
-        )
+        text(self.response_size.map_or_else(
+            || "N/A".to_string(),
+            |s| {
+                if s > 1024 {
+                    format!("{:.1} KB", s as f64 / 1024.0)
+                } else {
+                    format!("{s} B")
+                }
+            },
+        ))
         .size(14)
         .into()
     }
@@ -304,19 +303,15 @@ impl HttpRequestView {
 
     fn build_download_button(&self) -> Element<'_, Message, Theme, iced::Renderer> {
         if matches!(self.request_status, RequestStatus::Success) {
-            let is_binary = self
-                .content_type
-                .as_deref()
-                .map(|ct| {
-                    ct.contains("image/")
-                        || ct.contains("application/octet-stream")
-                        || ct.contains("application/pdf")
-                        || ct.contains("application/zip")
-                        || ct.contains("application/gzip")
-                        || ct.contains("audio/")
-                        || ct.contains("video/")
-                })
-                .unwrap_or(false);
+            let is_binary = self.content_type.as_deref().is_some_and(|ct| {
+                ct.contains("image/")
+                    || ct.contains("application/octet-stream")
+                    || ct.contains("application/pdf")
+                    || ct.contains("application/zip")
+                    || ct.contains("application/gzip")
+                    || ct.contains("audio/")
+                    || ct.contains("video/")
+            });
             if is_binary {
                 button(row![lucide::download().size(14), text(" Save File")].spacing(4))
                     .on_press(Message::DownloadResponse)

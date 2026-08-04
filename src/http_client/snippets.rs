@@ -1,22 +1,6 @@
 use super::request::{HttpMethod, HttpRequest};
 
-fn escape_python_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}
-
-fn escape_js_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}
-
-fn escape_rust_string(s: &str) -> String {
+fn escape_string(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n")
@@ -78,13 +62,7 @@ pub fn to_python(request: &HttpRequest) -> String {
         let headers: Vec<String> = request
             .headers
             .iter()
-            .map(|(k, v)| {
-                format!(
-                    "    \"{}\": \"{}\"",
-                    escape_python_string(k),
-                    escape_python_string(v)
-                )
-            })
+            .map(|(k, v)| format!("    \"{}\": \"{}\"", escape_string(k), escape_string(v)))
             .collect();
         lines.push("headers = {".to_string());
         lines.extend(headers);
@@ -95,11 +73,11 @@ pub fn to_python(request: &HttpRequest) -> String {
 
     if let Some(body) = &request.body {
         if is_json(body) {
-            lines.push(format!("json_data = {}", body));
+            lines.push(format!("json_data = {body}"));
             lines.push(String::new());
             kwargs.push("json=json_data");
         } else {
-            lines.push(format!("data = \"{}\"", escape_python_string(body)));
+            lines.push(format!("data = \"{}\"", escape_string(body)));
             lines.push(String::new());
             kwargs.push("data=data");
         }
@@ -114,8 +92,8 @@ pub fn to_python(request: &HttpRequest) -> String {
                 super::request::MultipartValue::Text(text) => {
                     format!(
                         "    \"{}\": (None, \"{}\")",
-                        escape_python_string(&f.name),
-                        escape_python_string(text)
+                        escape_string(&f.name),
+                        escape_string(text)
                     )
                 }
                 super::request::MultipartValue::File { path, .. } => {
@@ -158,13 +136,7 @@ pub fn to_javascript(request: &HttpRequest) -> String {
         let headers: Vec<String> = request
             .headers
             .iter()
-            .map(|(k, v)| {
-                format!(
-                    "    \"{}\": \"{}\"",
-                    escape_js_string(k),
-                    escape_js_string(v)
-                )
-            })
+            .map(|(k, v)| format!("    \"{}\": \"{}\"", escape_string(k), escape_string(v)))
             .collect();
         options.push("    headers: {".to_string());
         for h in &headers {
@@ -175,9 +147,9 @@ pub fn to_javascript(request: &HttpRequest) -> String {
 
     if let Some(body) = &request.body {
         if is_json(body) {
-            options.push(format!("    body: JSON.stringify({})", body));
+            options.push(format!("    body: JSON.stringify({body})"));
         } else {
-            options.push(format!("    body: \"{}\"", escape_js_string(body)));
+            options.push(format!("    body: \"{}\"", escape_string(body)));
         }
     }
 
@@ -188,8 +160,8 @@ pub fn to_javascript(request: &HttpRequest) -> String {
                 super::request::MultipartValue::Text(text) => {
                     lines.push(format!(
                         "formData.append(\"{}\", \"{}\");",
-                        escape_js_string(&field.name),
-                        escape_js_string(text)
+                        escape_string(&field.name),
+                        escape_string(text)
                     ));
                 }
                 super::request::MultipartValue::File { path, .. } => {
@@ -234,7 +206,12 @@ pub fn to_rust(request: &HttpRequest) -> String {
         ));
     }
 
-    if !request.headers.is_empty() {
+    if request.headers.is_empty() {
+        lines.push(format!(
+            "    let resp = reqwest::get(\"{}\").await?;",
+            request.url
+        ));
+    } else {
         lines.push("    let client = reqwest::Client::new();".to_string());
         lines.push(format!(
             "    let resp = client.{}(\"{}\")",
@@ -243,24 +220,19 @@ pub fn to_rust(request: &HttpRequest) -> String {
         for (key, value) in &request.headers {
             lines.push(format!(
                 "        .header(\"{}\", \"{}\")",
-                escape_rust_string(key),
-                escape_rust_string(value)
+                escape_string(key),
+                escape_string(value)
             ));
         }
         if let Some(body) = &request.body {
             if is_json(body) {
-                lines.push(format!("        .json(&{})", body));
+                lines.push(format!("        .json(&{body})"));
             } else {
-                lines.push(format!("        .body(\"{}\")", escape_rust_string(body)));
+                lines.push(format!("        .body(\"{}\")", escape_string(body)));
             }
         }
         lines.push("        .send()".to_string());
         lines.push("        .await?;".to_string());
-    } else {
-        lines.push(format!(
-            "    let resp = reqwest::get(\"{}\").await?;",
-            request.url
-        ));
     }
 
     lines.push(String::new());
@@ -435,7 +407,7 @@ mod tests {
     #[test]
     fn is_json_detects_objects() {
         assert!(is_json(r#"{"key": "value"}"#));
-        assert!(is_json(r#"[1, 2, 3]"#));
+        assert!(is_json(r"[1, 2, 3]"));
         assert!(is_json("  { }  "));
         assert!(!is_json("hello"));
         assert!(!is_json("<html></html>"));

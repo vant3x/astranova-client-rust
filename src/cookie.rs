@@ -293,7 +293,7 @@ impl CookieJar {
     }
 
     pub fn total_count(&self) -> usize {
-        self.cookies.values().map(|v| v.len()).sum()
+        self.cookies.values().map(std::vec::Vec::len).sum()
     }
 
     #[allow(dead_code)]
@@ -309,7 +309,7 @@ impl CookieJar {
         if let Some(v) = self.cookies.get(domain) {
             return v.iter().collect();
         }
-        let dotted = format!(".{}", domain);
+        let dotted = format!(".{domain}");
         if let Some(v) = self.cookies.get(&dotted) {
             return v.iter().collect();
         }
@@ -325,7 +325,7 @@ impl CookieJar {
         if self.cookies.contains_key(domain) {
             return self.cookies.get_mut(domain);
         }
-        let dotted = format!(".{}", domain);
+        let dotted = format!(".{domain}");
         if self.cookies.contains_key(&dotted) {
             return self.cookies.get_mut(&dotted);
         }
@@ -335,7 +335,7 @@ impl CookieJar {
     fn domain_matches(host: &str, cookie_domain: &str) -> bool {
         let cd = cookie_domain.strip_prefix('.').unwrap_or(cookie_domain);
         let h = host.strip_prefix('.').unwrap_or(host);
-        h == cd || h.ends_with(&format!(".{}", cd))
+        h == cd || h.ends_with(&format!(".{cd}"))
     }
 
     pub fn remove_cookie(&mut self, domain: &str, name: &str, path: &str) -> bool {
@@ -465,7 +465,7 @@ impl CookieJar {
                 "None" => SameSite::None,
                 _ => SameSite::Lax,
             };
-            let expires = v["expires"].as_str().map(|s| s.to_string());
+            let expires = v["expires"].as_str().map(std::string::ToString::to_string);
             if name.is_empty() || domain.is_empty() {
                 continue;
             }

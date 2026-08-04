@@ -83,8 +83,7 @@ impl WsMessage {
                     .split(' ')
                     .filter_map(|s| u8::from_str_radix(s, 16).ok())
                     .collect();
-                let hex_formatted: Vec<String> =
-                    bytes.iter().map(|b| format!("{:02X}", b)).collect();
+                let hex_formatted: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
                 let hex_display = hex_formatted
                     .chunks(16)
                     .map(|chunk| chunk.join(" "))
@@ -95,7 +94,7 @@ impl WsMessage {
                     .iter()
                     .all(|b| b.is_ascii_graphic() || b.is_ascii_whitespace())
                 {
-                    format!("\n\nUTF-8: {}", as_utf8)
+                    format!("\n\nUTF-8: {as_utf8}")
                 } else {
                     String::new()
                 };
@@ -183,7 +182,7 @@ impl WsStats {
             Some(d) => {
                 let secs = d.as_secs();
                 if secs < 60 {
-                    format!("{}s", secs)
+                    format!("{secs}s")
                 } else if secs < 3600 {
                     format!("{}m {}s", secs / 60, secs % 60)
                 } else {
@@ -200,7 +199,7 @@ impl WsStats {
         } else if bytes >= 1024 {
             format!("{:.1} KB", bytes as f64 / 1024.0)
         } else {
-            format!("{} B", bytes)
+            format!("{bytes} B")
         }
     }
 }
@@ -236,19 +235,19 @@ impl WsSender {
     pub fn send(&self, text: &str) -> Result<(), AppError> {
         self.tx
             .send(Message::Text(text.to_string()))
-            .map_err(|e| AppError::WebSocket(format!("Send error: {}", e)))
+            .map_err(|e| AppError::WebSocket(format!("Send error: {e}")))
     }
 
     pub fn send_binary(&self, data: Vec<u8>) -> Result<(), AppError> {
         self.tx
             .send(Message::Binary(data))
-            .map_err(|e| AppError::WebSocket(format!("Send binary error: {}", e)))
+            .map_err(|e| AppError::WebSocket(format!("Send binary error: {e}")))
     }
 
     pub fn send_ping(&self, data: Vec<u8>) -> Result<(), AppError> {
         self.tx
             .send(Message::Ping(data))
-            .map_err(|e| AppError::WebSocket(format!("Send ping error: {}", e)))
+            .map_err(|e| AppError::WebSocket(format!("Send ping error: {e}")))
     }
 
     pub fn send_close(&self, reason: &str) -> Result<(), AppError> {
@@ -258,7 +257,7 @@ impl WsSender {
         };
         self.tx
             .send(Message::Close(Some(frame)))
-            .map_err(|e| AppError::WebSocket(format!("Send close error: {}", e)))
+            .map_err(|e| AppError::WebSocket(format!("Send close error: {e}")))
     }
 }
 
@@ -284,23 +283,23 @@ fn build_tls_connector(config: &WsTlsConfig) -> Result<Connector, AppError> {
 
     if let Some(ref ca_pem) = config.ca_cert_pem {
         let cert = native_tls::Certificate::from_pem(ca_pem.as_bytes())
-            .map_err(|e| AppError::WebSocket(format!("Invalid CA certificate: {}", e)))?;
+            .map_err(|e| AppError::WebSocket(format!("Invalid CA certificate: {e}")))?;
         builder.add_root_certificate(cert);
     }
 
     if let (Some(ref cert_pem), Some(ref key_pem)) =
         (&config.client_cert_pem, &config.client_key_pem)
     {
-        let combined = format!("{}\n{}", cert_pem, key_pem);
+        let combined = format!("{cert_pem}\n{key_pem}");
         let identity = native_tls::Identity::from_pkcs8(combined.as_bytes(), combined.as_bytes())
             .or_else(|_| native_tls::Identity::from_pkcs8(cert_pem.as_bytes(), key_pem.as_bytes()))
-            .map_err(|e| AppError::WebSocket(format!("Invalid client certificate: {}", e)))?;
+            .map_err(|e| AppError::WebSocket(format!("Invalid client certificate: {e}")))?;
         builder.identity(identity);
     }
 
     let connector = builder
         .build()
-        .map_err(|e| AppError::WebSocket(format!("TLS build error: {}", e)))?;
+        .map_err(|e| AppError::WebSocket(format!("TLS build error: {e}")))?;
     Ok(Connector::NativeTls(connector))
 }
 
@@ -321,7 +320,7 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, AppError> {
     let http_request = request_builder
         .uri(&url)
         .body(())
-        .map_err(|e| AppError::WebSocket(format!("Failed to build WebSocket request: {}", e)))?;
+        .map_err(|e| AppError::WebSocket(format!("Failed to build WebSocket request: {e}")))?;
 
     let connect_timeout = std::time::Duration::from_millis(request.config.connect_timeout_ms);
     let ping_interval = std::time::Duration::from_millis(request.config.ping_interval_ms);
@@ -341,11 +340,11 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, AppError> {
                 Some(tls_connector),
             )
             .await
-            .map_err(|e| AppError::WebSocket(format!("WebSocket connection failed: {}", e)))
+            .map_err(|e| AppError::WebSocket(format!("WebSocket connection failed: {e}")))
         } else {
             tokio_tungstenite::connect_async(http_request)
                 .await
-                .map_err(|e| AppError::WebSocket(format!("WebSocket connection failed: {}", e)))
+                .map_err(|e| AppError::WebSocket(format!("WebSocket connection failed: {e}")))
         }
     };
 
@@ -374,7 +373,7 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, AppError> {
                     match msg {
                         Some(msg) => {
                             if let Err(e) = write.send(msg).await {
-                                let _ = tx_event_for_write.send(WsEvent::Error(format!("Send error: {}", e)));
+                                let _ = tx_event_for_write.send(WsEvent::Error(format!("Send error: {e}")));
                                 break;
                             }
                         }
@@ -422,7 +421,7 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, AppError> {
                     }
                 }
                 Err(e) => {
-                    let _ = tx_event_for_read.send(WsEvent::Error(format!("Read error: {}", e)));
+                    let _ = tx_event_for_read.send(WsEvent::Error(format!("Read error: {e}")));
                     break;
                 }
             }
@@ -436,7 +435,7 @@ pub async fn connect_ws(request: &WsRequest) -> Result<WsConnection, AppError> {
         Some(tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = tokio::time::sleep(ping_interval) => {
+                    () = tokio::time::sleep(ping_interval) => {
                         let ping_data = b"ping".to_vec();
                         if ping_tx.send(WsEvent::Message(WsMessage::outgoing_ping(
                             "auto-ping".to_string(),
@@ -470,7 +469,7 @@ pub fn parse_ws_message(msg: Message) -> Option<WsMessage> {
         Message::Binary(data) => {
             let hex_display = data
                 .iter()
-                .map(|b| format!("{:02X}", b))
+                .map(|b| format!("{b:02X}"))
                 .collect::<Vec<_>>()
                 .join(" ");
             Some(WsMessage::incoming(WsMessageType::Binary, hex_display))
@@ -585,13 +584,21 @@ mod tests {
         assert_eq!(stats.format_duration(), "-");
 
         let stats = WsStats {
-            connected_at: Some(Instant::now() - std::time::Duration::from_secs(45)),
+            connected_at: Some(
+                Instant::now()
+                    .checked_sub(std::time::Duration::from_secs(45))
+                    .unwrap(),
+            ),
             ..Default::default()
         };
         assert_eq!(stats.format_duration(), "45s");
 
         let stats = WsStats {
-            connected_at: Some(Instant::now() - std::time::Duration::from_secs(125)),
+            connected_at: Some(
+                Instant::now()
+                    .checked_sub(std::time::Duration::from_secs(125))
+                    .unwrap(),
+            ),
             ..Default::default()
         };
         assert_eq!(stats.format_duration(), "2m 5s");

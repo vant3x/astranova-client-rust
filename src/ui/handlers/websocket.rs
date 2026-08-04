@@ -66,7 +66,7 @@ pub fn handle_message(app: &mut AstraioApp, message: websocket_view::Message) ->
                         app.websocket_view.stats.bytes_sent += byte_len;
                         let hex_display = bytes
                             .iter()
-                            .map(|b| format!("{:02X}", b))
+                            .map(|b| format!("{b:02X}"))
                             .collect::<Vec<_>>()
                             .join(" ");
                         app.websocket_view
@@ -109,7 +109,7 @@ pub fn handle_message(app: &mut AstraioApp, message: websocket_view::Message) ->
                     .add_message(crate::protocols::websocket::WsMessage {
                         direction: ">".to_string(),
                         message_type: crate::protocols::websocket::WsMessageType::Close,
-                        data: format!("Close sent: {}", close_reason),
+                        data: format!("Close sent: {close_reason}"),
                         timestamp: crate::utils::timestamp_seconds(),
                     });
             }
@@ -249,7 +249,7 @@ fn handle_connect(app: &mut AstraioApp) -> Task<Message> {
     app.websocket_view.current_retries = 0;
     app.websocket_view.stats = WsStats::default();
 
-    log::info!("Connecting to WebSocket: {}", url);
+    log::info!("Connecting to WebSocket: {url}");
 
     Task::perform(
         async move {
@@ -271,7 +271,7 @@ fn handle_connect(app: &mut AstraioApp) -> Task<Message> {
                 Arc::new(Mutex::new(conn.ping_handle)),
             ),
             Err(e) => {
-                log::error!("WebSocket connection failed: {}", e);
+                log::error!("WebSocket connection failed: {e}");
                 Message::WebSocketMsg(websocket_view::Message::Disconnected(e.to_string()))
             }
         },
@@ -329,11 +329,7 @@ fn handle_disconnected(app: &mut AstraioApp, reason: String) -> Task<Message> {
 
         let response_data = serde_json::to_string(&messages).ok();
 
-        let connected = if app.websocket_view.status.is_connected() {
-            1
-        } else {
-            0
-        };
+        let connected = u16::from(app.websocket_view.status.is_connected());
 
         let _ = crate::services::history_service::save_raw(
             &app.db_conn,
@@ -365,7 +361,7 @@ fn handle_disconnected(app: &mut AstraioApp, reason: String) -> Task<Message> {
         let retries = app.websocket_view.current_retries;
         let max = app.websocket_view.max_retries;
 
-        log::info!("Auto-reconnect {}/{} in {}ms", retries, max, delay);
+        log::info!("Auto-reconnect {retries}/{max} in {delay}ms");
 
         app.websocket_view.status = WsStatus::Connecting;
 
@@ -399,7 +395,7 @@ fn handle_disconnected(app: &mut AstraioApp, reason: String) -> Task<Message> {
                     Arc::new(Mutex::new(conn.ping_handle)),
                 ),
                 Err(e) => {
-                    log::error!("WebSocket reconnection failed: {}", e);
+                    log::error!("WebSocket reconnection failed: {e}");
                     Message::WebSocketMsg(websocket_view::Message::Disconnected(e.to_string()))
                 }
             },
@@ -407,7 +403,7 @@ fn handle_disconnected(app: &mut AstraioApp, reason: String) -> Task<Message> {
     }
 
     if !reason.is_empty() && reason != "Connection closed" {
-        log::warn!("WebSocket disconnected: {}", reason);
+        log::warn!("WebSocket disconnected: {reason}");
     }
 
     Task::none()
@@ -432,7 +428,7 @@ pub fn handle_ws_event(
             handle_disconnected(app, reason)
         }
         crate::protocols::websocket::WsEvent::Error(e) => {
-            log::error!("WebSocket error: {}", e);
+            log::error!("WebSocket error: {e}");
             app.websocket_view.status = WsStatus::Error(e.clone());
 
             if app.websocket_view.auto_reconnect

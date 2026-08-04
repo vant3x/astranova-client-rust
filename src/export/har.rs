@@ -247,8 +247,7 @@ pub fn export_collection_to_har(
             let _content_type = headers
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| "application/json".to_string());
+                .map_or_else(|| "application/json".to_string(), |(_, v)| v.clone());
 
             let http_req = HttpRequest {
                 method,
@@ -337,16 +336,14 @@ pub fn export_entries(entries: &[(&HttpRequest, &HttpResponse)]) -> String {
                 .headers
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| "text/plain".to_string());
+                .map_or_else(|| "text/plain".to_string(), |(_, v)| v.clone());
 
             let post_data = req.body.as_ref().map(|body| HarPostData {
                 mime_type: req
                     .headers
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_else(|| "application/json".to_string()),
+                    .map_or_else(|| "application/json".to_string(), |(_, v)| v.clone()),
                 text: Some(body.clone()),
             });
 
@@ -420,7 +417,7 @@ fn status_text(status: u16) -> String {
         500 => "Internal Server Error".to_string(),
         502 => "Bad Gateway".to_string(),
         503 => "Service Unavailable".to_string(),
-        _ => format!("Status {}", status),
+        _ => format!("Status {status}"),
     }
 }
 

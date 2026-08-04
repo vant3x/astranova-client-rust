@@ -1,6 +1,6 @@
 use super::config::RequestConfig;
 use super::request::{HttpRequest, MultipartField, MultipartValue};
-use super::response::{BodyEncoding, HttpStreamEvent, HttpResponse};
+use super::response::{BodyEncoding, HttpResponse, HttpStreamEvent};
 use crate::data::auth::Auth;
 use crate::error::AppError;
 use base64::Engine;
@@ -51,8 +51,7 @@ async fn read_response_body(
         if text.len() > MAX_BODY_SIZE {
             let truncated: String = text.chars().take(MAX_BODY_SIZE).collect();
             let display = format!(
-                "{}\n\n--- Response truncated ({} bytes total, showing first {} bytes) ---",
-                truncated, size, MAX_BODY_SIZE
+                "{truncated}\n\n--- Response truncated ({size} bytes total, showing first {MAX_BODY_SIZE} bytes) ---"
             );
             Ok((display, BodyEncoding::Text, size))
         } else {
@@ -101,9 +100,9 @@ pub fn build_client(config: &RequestConfig) -> Result<reqwest::Client, AppError>
     // CA certificate
     if let Some(ca_path) = &config.tls.ca_cert_path {
         let ca_cert = std::fs::read(ca_path)
-            .map_err(|e| AppError::Http(format!("Failed to read CA cert {}: {}", ca_path, e)))?;
+            .map_err(|e| AppError::Http(format!("Failed to read CA cert {ca_path}: {e}")))?;
         let cert = reqwest::Certificate::from_pem(&ca_cert)
-            .map_err(|e| AppError::Http(format!("Invalid CA cert: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Invalid CA cert: {e}")))?;
         builder = builder.add_root_certificate(cert);
     }
 
@@ -113,19 +112,17 @@ pub fn build_client(config: &RequestConfig) -> Result<reqwest::Client, AppError>
             AppError::Http("Client cert provided but no client key path".to_string())
         })?;
 
-        let cert_bytes = std::fs::read(cert_path).map_err(|e| {
-            AppError::Http(format!("Failed to read client cert {}: {}", cert_path, e))
-        })?;
-        let key_bytes = std::fs::read(key_path).map_err(|e| {
-            AppError::Http(format!("Failed to read client key {}: {}", key_path, e))
-        })?;
+        let cert_bytes = std::fs::read(cert_path)
+            .map_err(|e| AppError::Http(format!("Failed to read client cert {cert_path}: {e}")))?;
+        let key_bytes = std::fs::read(key_path)
+            .map_err(|e| AppError::Http(format!("Failed to read client key {key_path}: {e}")))?;
 
         // Combine cert + key PEM into a single identity
         let mut combined = cert_bytes;
         combined.extend_from_slice(&key_bytes);
 
         let identity = reqwest::Identity::from_pem(&combined)
-            .map_err(|e| AppError::Http(format!("Invalid client certificate/key: {}", e)))?;
+            .map_err(|e| AppError::Http(format!("Invalid client certificate/key: {e}")))?;
         builder = builder.identity(identity);
     }
 
@@ -164,10 +161,7 @@ async fn build_multipart_form(
                 let part = reqwest::multipart::Part::stream(body)
                     .file_name(file_name)
                     .mime_str("application/octet-stream")
-                    .unwrap_or_else(|_| {
-                        reqwest::multipart::Part::bytes(vec![])
-                            .file_name("file")
-                    });
+                    .unwrap_or_else(|_| reqwest::multipart::Part::bytes(vec![]).file_name("file"));
                 form = form.part(field.name.clone(), part);
             }
         }
@@ -211,10 +205,7 @@ async fn build_request_builder(
     for (key, value) in &request.headers {
         if cross_origin && SENSITIVE_REDIRECT_HEADERS.contains(&key.to_lowercase().as_str()) {
             log::warn!(
-                "Stripping '{}' header on cross-origin redirect ({} -> {})",
-                key,
-                original_url,
-                current_url
+                "Stripping '{key}' header on cross-origin redirect ({original_url} -> {current_url})"
             );
             continue;
         }
@@ -293,13 +284,8 @@ pub async fn send_request(
 
     for attempt in 0..=max_retries {
         if attempt > 0 {
-            log::info!(
-                "Retry attempt {}/{} after {}ms backoff",
-                attempt,
-                max_retries,
-                backoff_ms
-            );
-            tokio::time::sleep(Duration::from_millis(backoff_ms * attempt as u64)).await;
+            log::info!("Retry attempt {attempt}/{max_retries} after {backoff_ms}ms backoff");
+            tokio::time::sleep(Duration::from_millis(backoff_ms * u64::from(attempt))).await;
         }
 
         let mut redirect_chain: Vec<String> = Vec::new();
@@ -412,7 +398,7 @@ pub async fn send_request(
                         }
 
                         redirect_chain.push(current_url.clone());
-                        log::debug!("Redirect {} -> {}", status, location);
+                        log::debug!("Redirect {status} -> {location}");
 
                         current_url = if location.starts_with("http://")
                             || location.starts_with("https://")
@@ -466,7 +452,7 @@ pub async fn send_request(
 
         if last_error.is_empty() {
             let total_duration = total_start.elapsed();
-            log::debug!("Total request completed in: {:?}", total_duration);
+            log::debug!("Total request completed in: {total_duration:?}");
 
             return Ok(HttpResponse {
                 url: url_for_log,
@@ -498,8 +484,7 @@ pub async fn send_request_stream(
 ) -> Result<(), AppError> {
     let method_str = request.method.to_string();
 
-    let req_builder =
-        build_request_builder(client, &request, &request.url, &request.url).await?;
+    let req_builder = build_request_builder(client, &request, &request.url, &request.url).await?;
 
     log::info!("Streaming {} request to: {}", method_str, request.url);
 
@@ -554,9 +539,7 @@ pub async fn send_request_stream(
         }
     }
 
-    let _ = tx.send(HttpStreamEvent::StreamComplete {
-        total_size,
-    });
+    let _ = tx.send(HttpStreamEvent::StreamComplete { total_size });
 
     Ok(())
 }
@@ -586,12 +569,9 @@ fn compute_digest_auth(
             .as_nanos()
     );
 
-    let ha1 = md5_hex(&format!("{}:{}:{}", username, realm, password));
-    let ha2 = md5_hex(&format!("{}:{}", method, uri));
-    let response_hash = md5_hex(&format!(
-        "{}:{}:{}:{}:{}:{}",
-        ha1, nonce, nc, cnonce, qop, ha2
-    ));
+    let ha1 = md5_hex(&format!("{username}:{realm}:{password}"));
+    let ha2 = md5_hex(&format!("{method}:{uri}"));
+    let response_hash = md5_hex(&format!("{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}"));
 
     let mut parts = vec![
         format!("username=\"{}\"", username),
@@ -605,7 +585,7 @@ fn compute_digest_auth(
     ];
 
     if let Some(opaque_val) = &opaque {
-        parts.push(format!("opaque=\"{}\"", opaque_val));
+        parts.push(format!("opaque=\"{opaque_val}\""));
     }
 
     Some(format!("Digest {}", parts.join(", ")))
@@ -628,7 +608,7 @@ fn parse_digest_params(header: &str) -> HashMap<String, String> {
 
 fn md5_hex(input: &str) -> String {
     let hash = md5::compute(input.as_bytes());
-    format!("{:x}", hash)
+    format!("{hash:x}")
 }
 
 #[cfg(test)]

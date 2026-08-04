@@ -243,12 +243,10 @@ impl ParsedSpec {
                 e.path.to_lowercase().contains(&query_lower)
                     || e.summary
                         .as_ref()
-                        .map(|s| s.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
+                        .is_some_and(|s| s.to_lowercase().contains(&query_lower))
                     || e.operation_id
                         .as_ref()
-                        .map(|o| o.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
+                        .is_some_and(|o| o.to_lowercase().contains(&query_lower))
                     || e.method.to_lowercase().contains(&query_lower)
             })
             .collect()

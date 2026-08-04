@@ -173,7 +173,8 @@ fn build_menu() -> (MenuIds, Menu) {
                 &PredefinedMenuItem::separator(),
             ])
             .expect("failed to append macOS app menu items");
-        menu.prepend(&app_menu).expect("failed to prepend macOS app menu");
+        menu.prepend(&app_menu)
+            .expect("failed to prepend macOS app menu");
     }
 
     let menu_ids = MenuIds {

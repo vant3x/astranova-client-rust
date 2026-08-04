@@ -147,8 +147,8 @@ impl std::fmt::Display for OAuth2Status {
         match self {
             OAuth2Status::Idle => write!(f, ""),
             OAuth2Status::Loading => write!(f, "Loading..."),
-            OAuth2Status::Success(msg) => write!(f, "{}", msg),
-            OAuth2Status::Error(msg) => write!(f, "Error: {}", msg),
+            OAuth2Status::Success(msg) => write!(f, "{msg}"),
+            OAuth2Status::Error(msg) => write!(f, "Error: {msg}"),
             OAuth2Status::AwaitingAuthorization => write!(f, "Awaiting authorization..."),
         }
     }

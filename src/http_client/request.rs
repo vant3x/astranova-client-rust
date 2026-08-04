@@ -41,7 +41,7 @@ impl fmt::Display for HttpMethod {
             HttpMethod::Head => write!(f, "HEAD"),
             HttpMethod::Options => write!(f, "OPTIONS"),
             HttpMethod::Trace => write!(f, "TRACE"),
-            HttpMethod::Other(method) => write!(f, "{}", method),
+            HttpMethod::Other(method) => write!(f, "{method}"),
         }
     }
 }
@@ -169,7 +169,7 @@ mod tests {
     fn request_with_custom_timeout() {
         use std::time::Duration;
         let config = RequestConfig {
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
             ..Default::default()
         };
         let req = HttpRequest {
@@ -181,7 +181,7 @@ mod tests {
             multipart_fields: vec![],
             auth: None,
         };
-        assert_eq!(req.config.timeout, Duration::from_secs(60));
+        assert_eq!(req.config.timeout, Duration::from_mins(1));
     }
 
     #[test]

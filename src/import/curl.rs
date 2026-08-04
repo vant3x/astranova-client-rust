@@ -85,7 +85,7 @@ pub fn parse_curl(curl: &str) -> Result<CurlParseResult, AppError> {
                         } else {
                             urlencoding::encode(value).to_string()
                         };
-                        format!("{}={}", key, encoded_value)
+                        format!("{key}={encoded_value}")
                     } else if tokens[i].starts_with('@') {
                         let file_path = &tokens[i][1..];
                         match std::fs::read_to_string(file_path) {
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn parse_with_escaped_chars() {
-        let curl = r#"curl https://api.example.com/users\?page=1"#;
+        let curl = r"curl https://api.example.com/users\?page=1";
         let result = parse_curl(curl).unwrap();
         assert_eq!(result.url, "https://api.example.com/users?page=1");
     }

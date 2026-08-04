@@ -16,7 +16,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
-type HttpStreamReceiver = Arc<Mutex<Option<mpsc::UnboundedReceiver<crate::http_client::response::HttpStreamEvent>>>>;
+type HttpStreamReceiver =
+    Arc<Mutex<Option<mpsc::UnboundedReceiver<crate::http_client::response::HttpStreamEvent>>>>;
 
 use super::views::graphql_view::{self, GraphQLView};
 use super::views::http_request_view::CookieSnapshot;
@@ -61,7 +62,8 @@ impl Recipe for WsRecipe {
 }
 
 struct HttpStreamRecipe {
-    receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<crate::http_client::response::HttpStreamEvent>>>>,
+    receiver:
+        Arc<Mutex<Option<mpsc::UnboundedReceiver<crate::http_client::response::HttpStreamEvent>>>>,
     tab_index: usize,
     stream_id: u64,
 }
@@ -113,7 +115,10 @@ impl Recipe for MenuEventRecipe {
         let log_interval = Duration::from_secs(1);
 
         futures::stream::unfold(
-            (tokio::time::Instant::now() + menu_interval, tokio::time::Instant::now() + log_interval),
+            (
+                tokio::time::Instant::now() + menu_interval,
+                tokio::time::Instant::now() + log_interval,
+            ),
             move |(next_menu_tick, next_log_tick)| async move {
                 let now = tokio::time::Instant::now();
 
@@ -140,7 +145,10 @@ impl Recipe for MenuEventRecipe {
 
                 // Then check mock server logs (lower frequency)
                 if now >= next_log_tick {
-                    return Some((Message::PollMockServerLogs, (next_menu_tick, now + log_interval)));
+                    return Some((
+                        Message::PollMockServerLogs,
+                        (next_menu_tick, now + log_interval),
+                    ));
                 }
 
                 // Nothing to do, sleep until next menu tick
@@ -284,6 +292,9 @@ pub(crate) struct AstraioApp {
     pub(crate) global_config: crate::http_client::config::GlobalConfig,
     pub(crate) main_window_id: Option<iced::window::Id>,
     pub(crate) cookie_manager_view: crate::ui::views::cookie_manager::CookieManagerView,
+    pub(crate) show_collection_runner: bool,
+    pub(crate) collection_runner_state:
+        Option<crate::ui::views::collection_runner::CollectionRunnerState>,
 }
 
 impl Drop for AstraioApp {
@@ -387,6 +398,7 @@ pub enum Message {
     HttpStreamChunk(usize, crate::http_client::response::HttpStreamEvent),
     CookieManagerMsg(crate::ui::views::cookie_manager::Message),
     ToggleCookieManager,
+    CollectionRunnerMsg(crate::ui::views::collection_runner::Message),
 }
 
 impl AstraioApp {
@@ -395,17 +407,17 @@ impl AstraioApp {
             Ok(conn) => {
                 let envs =
                     crate::services::environment_service::get_all(&conn).unwrap_or_else(|e| {
-                        log::error!("Failed to load environments: {}", e);
+                        log::error!("Failed to load environments: {e}");
                         Vec::new()
                     });
                 (conn, envs)
             }
             Err(e) => {
-                log::error!("Failed to initialize database: {}", e);
+                log::error!("Failed to initialize database: {e}");
                 let conn = rusqlite::Connection::open_in_memory()
                     .expect("In-memory DB should always work");
                 if let Err(schema_err) = database::init_schema(&conn) {
-                    log::error!("Failed to init in-memory schema: {}", schema_err);
+                    log::error!("Failed to init in-memory schema: {schema_err}");
                 }
                 (conn, Vec::new())
             }
@@ -413,12 +425,12 @@ impl AstraioApp {
 
         let history =
             crate::services::history_service::get_all(&db_conn, 200).unwrap_or_else(|e| {
-                log::error!("Failed to load history: {}", e);
+                log::error!("Failed to load history: {e}");
                 Vec::new()
             });
         let collections =
             crate::services::collection_service::get_all(&db_conn).unwrap_or_else(|e| {
-                log::error!("Failed to load collections: {}", e);
+                log::error!("Failed to load collections: {e}");
                 Vec::new()
             });
 
@@ -427,7 +439,7 @@ impl AstraioApp {
 
         let mock_servers =
             crate::services::mock_server_service::get_all(&db_conn).unwrap_or_else(|e| {
-                log::warn!("Failed to load mock servers: {}", e);
+                log::warn!("Failed to load mock servers: {e}");
                 Vec::new()
             });
 
@@ -437,20 +449,19 @@ impl AstraioApp {
             &db_conn,
         ) {
             Ok(0) => {}
-            Ok(n) => log::info!("Migrated {} plaintext tokens to OS keyring", n),
-            Err(e) => log::warn!("Keyring migration skipped: {}", e),
+            Ok(n) => log::info!("Migrated {n} plaintext tokens to OS keyring"),
+            Err(e) => log::warn!("Keyring migration skipped: {e}"),
         }
 
         // Load theme preference from database
         let dark_mode = crate::persistence::database::get_app_setting(&db_conn, "theme")
-            .map(|v| v != "light")
-            .unwrap_or(true);
+            .is_none_or(|v| v != "light");
 
         // Load global config
         let global_config = crate::http_client::config::GlobalConfig::load(&db_conn);
 
         let sessions = crate::persistence::database::load_sessions(&db_conn).unwrap_or_else(|e| {
-            log::warn!("Failed to load sessions: {}", e);
+            log::warn!("Failed to load sessions: {e}");
             Vec::new()
         });
 
@@ -472,7 +483,7 @@ impl AstraioApp {
             custom_clients: HashMap::new(),
             cookie_jar: Arc::new(std::sync::Mutex::new(
                 crate::persistence::database::load_cookies(&db_conn).unwrap_or_else(|e| {
-                    log::warn!("Failed to load cookies from SQLite: {}", e);
+                    log::warn!("Failed to load cookies from SQLite: {e}");
                     CookieJar::new()
                 }),
             )),
@@ -514,6 +525,8 @@ impl AstraioApp {
             global_config,
             main_window_id: None,
             cookie_manager_view: crate::ui::views::cookie_manager::CookieManagerView::default(),
+            show_collection_runner: false,
+            collection_runner_state: None,
         };
         (app, Task::none())
     }
@@ -548,13 +561,13 @@ impl AstraioApp {
         // Persist cookies on shutdown
         if let Ok(jar) = self.cookie_jar.lock() {
             if let Err(e) = crate::persistence::database::save_cookies(&self.db_conn, &jar) {
-                log::warn!("Failed to persist cookies on shutdown: {}", e);
+                log::warn!("Failed to persist cookies on shutdown: {e}");
             }
         }
         // Shutdown mock servers
         for (id, handle) in self.mock_server_handles.drain() {
             crate::protocols::mock_server::stop_mock_server(handle);
-            log::info!("[Mock] Stopped mock server id={}", id);
+            log::info!("[Mock] Stopped mock server id={id}");
         }
         log::info!("Astraio cleanup complete");
     }
@@ -568,9 +581,15 @@ impl AstraioApp {
             Message::HttpStreamChunk(tab_index, event) => {
                 use crate::http_client::response::HttpStreamEvent;
                 if let Some(view) = self.request_tabs.get_mut(tab_index) {
-                    view.update(http_request_view::Message::StreamEvent(tab_index, event.clone()));
+                    view.update(http_request_view::Message::StreamEvent(
+                        tab_index,
+                        event.clone(),
+                    ));
 
-                    if matches!(event, HttpStreamEvent::StreamComplete { .. } | HttpStreamEvent::StreamError(_)) {
+                    if matches!(
+                        event,
+                        HttpStreamEvent::StreamComplete { .. } | HttpStreamEvent::StreamError(_)
+                    ) {
                         self.http_stream_receivers.remove(&tab_index);
                     }
                 }
@@ -676,7 +695,7 @@ impl AstraioApp {
                 if self.show_collections {
                     let cols = crate::services::collection_service::get_all(&self.db_conn)
                         .unwrap_or_else(|e| {
-                            log::error!("Failed to refresh collections: {}", e);
+                            log::error!("Failed to refresh collections: {e}");
                             Vec::new()
                         });
                     self.collection_view.sync_collections(&cols);
@@ -725,7 +744,7 @@ impl AstraioApp {
                     crate::protocols::mock_server::MockServerStatus::Running { actual_port },
                 );
                 self.toast_manager
-                    .success(format!("Mock server running on port {}", actual_port));
+                    .success(format!("Mock server running on port {actual_port}"));
                 Task::none()
             }
             Message::MockServerStartError(id, error) => {
@@ -734,7 +753,7 @@ impl AstraioApp {
                     crate::protocols::mock_server::MockServerStatus::Error(error.clone()),
                 );
                 self.toast_manager
-                    .error(format!("Mock server error: {}", error));
+                    .error(format!("Mock server error: {error}"));
                 Task::none()
             }
             Message::PollMockServerLogs => {
@@ -888,7 +907,7 @@ impl AstraioApp {
                 {
                     if let Ok(rows) = stmt.query_map([], |row| row.get::<_, i32>(0)) {
                         for row in rows.flatten() {
-                            identifiers.push(format!("hist_{}", row));
+                            identifiers.push(format!("hist_{row}"));
                         }
                     }
                 }
@@ -909,11 +928,11 @@ impl AstraioApp {
                 match result {
                     Ok(count) => {
                         self.toast_manager
-                            .success(format!("Cleared {} keychain entries", count));
+                            .success(format!("Cleared {count} keychain entries"));
                     }
                     Err(e) => {
                         self.toast_manager
-                            .error(format!("Failed to clear keychain: {}", e));
+                            .error(format!("Failed to clear keychain: {e}"));
                     }
                 }
                 Task::none()
@@ -925,7 +944,7 @@ impl AstraioApp {
                     log::error!("Failed to acquire cookie_jar lock for ClearCookies");
                 }
                 if let Err(e) = crate::persistence::database::clear_cookies_db(&self.db_conn) {
-                    log::warn!("Failed to clear cookies from DB: {}", e);
+                    log::warn!("Failed to clear cookies from DB: {e}");
                 }
                 for tab in &mut self.request_tabs {
                     tab.cookie_count = 0;
@@ -945,11 +964,11 @@ impl AstraioApp {
                 if let Err(e) =
                     crate::persistence::database::clear_domain_cookies_db(&self.db_conn, &domain)
                 {
-                    log::warn!("Failed to clear domain cookies from DB: {}", e);
+                    log::warn!("Failed to clear domain cookies from DB: {e}");
                 }
                 self.sync_cookie_data_to_tabs();
                 self.toast_manager
-                    .success(format!("Cookies for {} cleared", domain));
+                    .success(format!("Cookies for {domain} cleared"));
                 Task::none()
             }
             Message::DeleteCookie(domain, name, path) => {
@@ -964,7 +983,7 @@ impl AstraioApp {
                     &name,
                     &path,
                 ) {
-                    log::warn!("Failed to delete cookie from DB: {}", e);
+                    log::warn!("Failed to delete cookie from DB: {e}");
                 }
                 self.sync_cookie_data_to_tabs();
                 Task::none()
@@ -989,7 +1008,7 @@ impl AstraioApp {
                     &path,
                     &new_value,
                 ) {
-                    log::warn!("Failed to update cookie in DB: {}", e);
+                    log::warn!("Failed to update cookie in DB: {e}");
                 }
                 self.sync_cookie_data_to_tabs();
                 Task::none()
@@ -1027,7 +1046,7 @@ impl AstraioApp {
                         if let Err(e) =
                             crate::persistence::database::save_cookies(&self.db_conn, &jar)
                         {
-                            log::warn!("Failed to persist imported cookies: {}", e);
+                            log::warn!("Failed to persist imported cookies: {e}");
                         }
                     } else {
                         log::error!(
@@ -1044,7 +1063,7 @@ impl AstraioApp {
                 let content = match self.cookie_jar.lock() {
                     Ok(jar) => jar.to_netscape(),
                     Err(e) => {
-                        log::error!("Failed to acquire cookie_jar lock for export: {}", e);
+                        log::error!("Failed to acquire cookie_jar lock for export: {e}");
                         return Task::none();
                     }
                 };
@@ -1060,7 +1079,9 @@ impl AstraioApp {
                                 Some(())
                             })
                     },
-                    |result| Message::ExportCookiesComplete(result.map(|_| "Exported".to_string())),
+                    |result| {
+                        Message::ExportCookiesComplete(result.map(|()| "Exported".to_string()))
+                    },
                 )
             }
             Message::ExportCookiesComplete(result) => {
@@ -1103,9 +1124,12 @@ impl AstraioApp {
                                 jar.remove_cookie(&domain, &name, &path);
                             }
                             if let Err(e) = crate::persistence::database::delete_cookie_db(
-                                &self.db_conn, &domain, &name, &path,
+                                &self.db_conn,
+                                &domain,
+                                &name,
+                                &path,
                             ) {
-                                log::warn!("Failed to delete cookie from DB: {}", e);
+                                log::warn!("Failed to delete cookie from DB: {e}");
                             }
                             self.sync_cookie_data_to_tabs();
                             self.toast_manager.success("Cookie deleted");
@@ -1115,19 +1139,23 @@ impl AstraioApp {
                                 jar.clear_domain(&domain);
                             }
                             if let Err(e) = crate::persistence::database::clear_domain_cookies_db(
-                                &self.db_conn, &domain,
+                                &self.db_conn,
+                                &domain,
                             ) {
-                                log::warn!("Failed to clear domain cookies from DB: {}", e);
+                                log::warn!("Failed to clear domain cookies from DB: {e}");
                             }
                             self.sync_cookie_data_to_tabs();
-                            self.toast_manager.success(format!("Cookies for {} cleared", domain));
+                            self.toast_manager
+                                .success(format!("Cookies for {domain} cleared"));
                         }
                         CookieManagerAction::ClearAll => {
                             if let Ok(mut jar) = self.cookie_jar.lock() {
                                 jar.clear();
                             }
-                            if let Err(e) = crate::persistence::database::clear_cookies_db(&self.db_conn) {
-                                log::warn!("Failed to clear cookies from DB: {}", e);
+                            if let Err(e) =
+                                crate::persistence::database::clear_cookies_db(&self.db_conn)
+                            {
+                                log::warn!("Failed to clear cookies from DB: {e}");
                             }
                             for tab in &mut self.request_tabs {
                                 tab.cookie_count = 0;
@@ -1149,9 +1177,13 @@ impl AstraioApp {
                                 }
                             }
                             if let Err(e) = crate::persistence::database::update_cookie_value_db(
-                                &self.db_conn, &domain, &name, &path, &new_value,
+                                &self.db_conn,
+                                &domain,
+                                &name,
+                                &path,
+                                &new_value,
                             ) {
-                                log::warn!("Failed to update cookie in DB: {}", e);
+                                log::warn!("Failed to update cookie in DB: {e}");
                             }
                             self.sync_cookie_data_to_tabs();
                             self.toast_manager.success("Cookie updated");
@@ -1160,7 +1192,10 @@ impl AstraioApp {
                             return Task::perform(
                                 async {
                                     rfd::AsyncFileDialog::new()
-                                        .add_filter("Cookie files", &["txt", "json", "cookie", "cookies"])
+                                        .add_filter(
+                                            "Cookie files",
+                                            &["txt", "json", "cookie", "cookies"],
+                                        )
                                         .pick_file()
                                         .await
                                         .map(|f| f.path().to_path_buf())
@@ -1173,7 +1208,9 @@ impl AstraioApp {
                             let content = match self.cookie_jar.lock() {
                                 Ok(jar) => jar.to_netscape(),
                                 Err(e) => {
-                                    log::error!("Failed to acquire cookie_jar lock for export: {}", e);
+                                    log::error!(
+                                        "Failed to acquire cookie_jar lock for export: {e}"
+                                    );
                                     return Task::none();
                                 }
                             };
@@ -1189,7 +1226,11 @@ impl AstraioApp {
                                             Some(())
                                         })
                                 },
-                                |result| Message::ExportCookiesComplete(result.map(|_| "Exported".to_string())),
+                                |result| {
+                                    Message::ExportCookiesComplete(
+                                        result.map(|()| "Exported".to_string()),
+                                    )
+                                },
                             );
                         }
                     }
@@ -1213,6 +1254,9 @@ impl AstraioApp {
                 }
                 Task::none()
             }
+            Message::CollectionRunnerMsg(msg) => {
+                super::handlers::collection_runner::handle_message(self, msg)
+            }
         }
     }
 
@@ -1220,7 +1264,7 @@ impl AstraioApp {
         let jar = match self.cookie_jar.lock() {
             Ok(jar) => jar,
             Err(e) => {
-                log::error!("Failed to acquire cookie_jar lock for sync: {}", e);
+                log::error!("Failed to acquire cookie_jar lock for sync: {e}");
                 return;
             }
         };
@@ -1552,7 +1596,7 @@ impl AstraioApp {
                     } else {
                         let url = request_tab.url_input.chars().take(25).collect::<String>();
                         let truncated_url = if request_tab.url_input.len() > 25 {
-                            format!("{}...", url)
+                            format!("{url}...")
                         } else {
                             url
                         };
@@ -1610,7 +1654,7 @@ impl AstraioApp {
                 let toast_overlay = self
                     .toast_manager
                     .view(&self.theme())
-                    .map(|_| Message::NoOp);
+                    .map(|()| Message::NoOp);
 
                 let content: Element<'_, Message> = {
                     let history_panel_opt = if self.show_history {
@@ -1635,12 +1679,7 @@ impl AstraioApp {
 
                     let has_right = history_panel_opt.is_some() || collections_panel_opt.is_some();
 
-                    if !has_right {
-                        container(main_content)
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .into()
-                    } else {
+                    let base_content: Element<'_, Message> = if has_right {
                         let mut row = row![main_content.width(Length::FillPortion(2))];
                         if let Some(p) = history_panel_opt {
                             row = row.push(rule::vertical(1)).push(p);
@@ -1652,15 +1691,36 @@ impl AstraioApp {
                             .width(Length::Fill)
                             .height(Length::Fill)
                             .into()
+                    } else {
+                        container(main_content)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .into()
+                    };
+
+                    if self.show_collection_runner {
+                        if let Some(runner) = &self.collection_runner_state {
+                            let runner_view = runner.view().map(Message::CollectionRunnerMsg);
+                            let overlay = container(runner_view)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .padding(20);
+                            stack![base_content, overlay].into()
+                        } else {
+                            base_content
+                        }
+                    } else {
+                        base_content
                     }
                 };
 
                 stack![content, toast_overlay].into()
             }
             View::EnvironmentManager => self.env_manager_view.view().map(Message::EnvManagerMsg),
-            View::CookieManager => {
-                self.cookie_manager_view.view().map(Message::CookieManagerMsg)
-            }
+            View::CookieManager => self
+                .cookie_manager_view
+                .view()
+                .map(Message::CookieManagerMsg),
         }
     }
 }

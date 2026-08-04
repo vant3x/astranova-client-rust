@@ -183,12 +183,12 @@ impl MockServerView {
 
         let status_text = match &status {
             MockServerStatus::Running { actual_port } => {
-                text(format!("Running on 127.0.0.1:{}", actual_port))
+                text(format!("Running on 127.0.0.1:{actual_port}"))
                     .color(Color::from_rgb(0.2, 0.7, 0.3))
             }
             MockServerStatus::Starting => text("Starting...").color(Color::from_rgb(0.8, 0.7, 0.1)),
             MockServerStatus::Error(e) => {
-                text(format!("Error: {}", e)).color(Color::from_rgb(0.8, 0.2, 0.2))
+                text(format!("Error: {e}")).color(Color::from_rgb(0.8, 0.2, 0.2))
             }
             MockServerStatus::Stopped => text("Stopped").color(Color::from_rgb(0.5, 0.5, 0.5)),
         };

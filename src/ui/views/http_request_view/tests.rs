@@ -216,9 +216,7 @@ mod view_tests {
                 req.headers
                     .iter()
                     .any(|(k, v)| k == "Content-Type" && v == expected),
-                "Failed for {:?}: expected {}",
-                ct,
-                expected
+                "Failed for {ct:?}: expected {expected}"
             );
         }
     }
@@ -411,7 +409,7 @@ mod view_tests {
             crate::http_client::request::MultipartValue::File { path, .. } => {
                 assert_eq!(path, "/tmp/test.pdf");
             }
-            _ => panic!("Expected File variant"),
+            crate::http_client::request::MultipartValue::Text(_) => panic!("Expected File variant"),
         }
     }
 
