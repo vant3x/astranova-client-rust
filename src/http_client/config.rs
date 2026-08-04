@@ -23,7 +23,7 @@ pub struct RequestConfig {
 }
 
 fn default_user_agent() -> String {
-    "Astraio/0.5.0".to_string()
+    "Astraio/0.6.0".to_string()
 }
 
 fn default_true() -> bool {
