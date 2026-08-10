@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod collection;
 pub mod collection_runner;
 pub mod environment;

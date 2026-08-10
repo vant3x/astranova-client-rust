@@ -1,3 +1,4 @@
+pub mod ai_chat_view;
 pub mod collection_runner;
 pub mod collection_view;
 pub mod cookie_manager;

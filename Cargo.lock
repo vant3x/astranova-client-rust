@@ -262,6 +262,7 @@ name = "astraio-client"
 version = "0.6.0"
 dependencies = [
  "arboard",
+ "async-trait",
  "axum",
  "base64",
  "bytes",

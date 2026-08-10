@@ -217,6 +217,7 @@ pub enum Protocol {
     WebSocket,
     GraphQL,
     MockServer,
+    Ai,
 }
 
 impl std::fmt::Display for Protocol {
@@ -226,16 +227,18 @@ impl std::fmt::Display for Protocol {
             Protocol::WebSocket => write!(f, "WebSocket"),
             Protocol::GraphQL => write!(f, "GraphQL"),
             Protocol::MockServer => write!(f, "Mock Server"),
+            Protocol::Ai => write!(f, "AI"),
         }
     }
 }
 
 impl Protocol {
-    pub const ALL: [Protocol; 4] = [
+    pub const ALL: [Protocol; 5] = [
         Protocol::Http,
         Protocol::WebSocket,
         Protocol::GraphQL,
         Protocol::MockServer,
+        Protocol::Ai,
     ];
 }
 
@@ -295,6 +298,8 @@ pub(crate) struct AstraioApp {
     pub(crate) show_collection_runner: bool,
     pub(crate) collection_runner_state:
         Option<crate::ui::views::collection_runner::CollectionRunnerState>,
+    pub(crate) ai_view: crate::ui::views::ai_chat_view::AiChatView,
+    pub(crate) ai_service: std::sync::Arc<tokio::sync::Mutex<crate::ai::service::AiService>>,
 }
 
 impl Drop for AstraioApp {
@@ -399,6 +404,7 @@ pub enum Message {
     CookieManagerMsg(crate::ui::views::cookie_manager::Message),
     ToggleCookieManager,
     CollectionRunnerMsg(crate::ui::views::collection_runner::Message),
+    AiMsg(crate::ui::views::ai_chat_view::Message),
 }
 
 impl AstraioApp {
@@ -465,6 +471,33 @@ impl AstraioApp {
             Vec::new()
         });
 
+        // Pre-load AI provider configs before moving db_conn and secret_store into the struct
+        let ai_provider_configs =
+            crate::persistence::database::get_all_ai_providers(&db_conn).unwrap_or_default();
+        let ai_service_init = {
+            let mut svc = crate::ai::service::AiService::new();
+            for config in &ai_provider_configs {
+                let secret_key = format!("{}_{}", config.provider, config.name);
+                let api_key = secret_store
+                    .get_secret("ai", &secret_key, "api_key")
+                    .ok()
+                    .flatten();
+                svc.register_provider(config.clone(), api_key);
+            }
+            std::sync::Arc::new(tokio::sync::Mutex::new(svc))
+        };
+        let ai_view_init = {
+            let mut view = crate::ui::views::ai_chat_view::AiChatView::new();
+            if !ai_provider_configs.is_empty() {
+                view.active_provider_index = ai_provider_configs
+                    .iter()
+                    .position(|p| p.is_default)
+                    .or(Some(0));
+            }
+            view.providers = ai_provider_configs;
+            view
+        };
+
         let default_tab = HttpRequestView {
             request_config: global_config.request_config.clone(),
             sessions: sessions.clone(),
@@ -527,6 +560,8 @@ impl AstraioApp {
             cookie_manager_view: crate::ui::views::cookie_manager::CookieManagerView::default(),
             show_collection_runner: false,
             collection_runner_state: None,
+            ai_view: ai_view_init,
+            ai_service: ai_service_init,
         };
         (app, Task::none())
     }
@@ -737,6 +772,7 @@ impl AstraioApp {
             Message::WebSocketMsg(msg) => super::handlers::websocket::handle_message(self, msg),
             Message::GraphQLMsg(msg) => super::handlers::graphql::handle_message(self, msg),
             Message::MockServerMsg(msg) => super::handlers::mock_server::handle_message(self, msg),
+            Message::AiMsg(msg) => super::handlers::ai::handle_message(self, msg),
             Message::MockServerStarted(id, handle, actual_port) => {
                 self.mock_server_handles.insert(id, handle);
                 self.mock_server_view.statuses.insert(
@@ -862,6 +898,12 @@ impl AstraioApp {
                         );
                     }
                     Protocol::MockServer => {}
+                    Protocol::Ai => {
+                        return super::handlers::ai::handle_message(
+                            self,
+                            crate::ui::views::ai_chat_view::Message::SendMessage,
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -1647,6 +1689,13 @@ impl AstraioApp {
                             toolbar,
                             env_help_section,
                             self.mock_server_view.view().map(Message::MockServerMsg),
+                        ]
+                    }
+                    Protocol::Ai => {
+                        column![
+                            toolbar,
+                            env_help_section,
+                            self.ai_view.view().map(Message::AiMsg),
                         ]
                     }
                 };

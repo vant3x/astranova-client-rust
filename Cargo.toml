@@ -49,6 +49,7 @@ rquickjs = { version = "0.12", features = ["futures", "macro"] }
 open = "5"
 iced_fonts = { version = "0.3.0", features = ["lucide"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+async-trait = "0.1"
 muda = { version = "0.17", default-features = false }
 [target.'cfg(target_os = "linux")'.dependencies]
 muda = { version = "0.17", features = ["gtk"] }
